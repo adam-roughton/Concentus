@@ -1,0 +1,45 @@
+allprojects {
+	ext.buildType = 'java' // anticipating different languages for client code
+	ext.useCommon = false
+	ext.useDisruptor = false
+	ext.useZMQ = false
+	
+	group = 'com.adamroughton'
+	version = '1.0-SNAPSHOT'
+}
+
+configure([project(':Common'), project(':Service'), project(':Clients:Java')]) {
+	ext.useDisruptor = true
+	ext.useZMQ = true
+}
+
+configure([project(':Service'), project(':Clients:Java')]) {
+	ext.useCommon = true
+}
+
+def javaProjects() {
+	subprojects.findAll { project -> project.buildType == 'java' }
+}
+
+// Common Configuration for Java Projects
+configure(javaProjects()) {
+	apply plugin: 'java'
+
+	sourceCompatibility = 1.7
+
+	defaultTasks 'build'
+	
+	repositories {
+		mavenCentral()
+	}
+
+	// allow the subprojects to update flags before adding dependencies
+	afterEvaluate {
+		dependencies {
+			if (useDisruptor) compile 'com.lmax:disruptor:2.10.4'
+			if (project.name != 'Common' && useCommon) compile project(':Common')
+			if (useZMQ) compile files('lib/zmq.jar')
+			testCompile 'junit:junit:4.5', 'org.jmock:jmock-junit4:2.5.1'
+		}
+	}
+}
