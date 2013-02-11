@@ -36,7 +36,7 @@ configure(javaProjects()) {
 	// allow the subprojects to update flags before adding dependencies
 	afterEvaluate {
 		dependencies {
-			if (useDisruptor) compile 'com.lmax:disruptor:2.10.4'
+			if (useDisruptor) compile 'com.googlecode.disruptor:disruptor:2.10.4'
 			if (project.name != 'Common' && useCommon) compile project(':Common')
 			if (useZMQ) compile files('lib/zmq.jar')
 			testCompile 'junit:junit:4.5', 'org.jmock:jmock-junit4:2.5.1'
