@@ -23,7 +23,7 @@ public class CrowdHammerProcess implements ConsentusProcessCallback {
 	private final AtomicBoolean _hasStarted;
 	private final AtomicBoolean _isShuttingDown;
 	private final ConsentusService _service;
-	private final Config _conf;
+	private final TestConfig _conf;
 	
 	public CrowdHammerProcess(ConsentusService service) {
 		_service = service;
@@ -31,10 +31,12 @@ public class CrowdHammerProcess implements ConsentusProcessCallback {
 		_isShuttingDown = new AtomicBoolean(false);
 		
 		//TODO load from file
-		_conf = new Config();
+		_conf = new TestConfig();
 		_conf.setWorkingDir(".");
 		_conf.setCanonicalSubPort("9000");
 		_conf.setCanonicalStatePubPort("9001");
+		_conf.setTestMetricSubPort("10000");
+		_conf.setTestClass("com.adamroughton.consentus.");
 		
 		Runtime.getRuntime().addShutdownHook(new Thread() {
 			@Override

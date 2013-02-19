@@ -8,6 +8,7 @@ import com.adamroughton.consentus.ConsentusService;
 import com.adamroughton.consentus.Config;
 import com.adamroughton.consentus.ConsentusProcessCallback;
 import com.adamroughton.consentus.FailFastExceptionHandler;
+import com.adamroughton.consentus.crowdhammer.TestConfig;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
@@ -46,7 +47,7 @@ public class MetricListenerService implements ConsentusService {
 		
 		_inputDisruptor.start();
 		
-		_eventListener = new EventListener(_zmqContext, _inputDisruptor.getRingBuffer(), config, exHandler);
+		_eventListener = new EventListener(_zmqContext, _inputDisruptor.getRingBuffer(), (TestConfig)config, exHandler);
 		_executor.submit(_eventListener);
 	}
 	
