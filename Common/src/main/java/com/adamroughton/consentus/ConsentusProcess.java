@@ -12,17 +12,17 @@ import org.apache.commons.cli.Options;
 
 import com.esotericsoftware.minlog.Log;
 
-public class ConcentusProcess implements ConcentusProcessCallback {
+public class ConsentusProcess implements ConsentusProcessCallback {
 	
 	private final static char SERVICE_CLASS_OPTION = 's';
 	private final static char PROPERTIES_FILE_OPTION = 'p';
 	
 	private final AtomicBoolean _hasStarted;
 	private final AtomicBoolean _isShuttingDown;
-	private final ConcentusService _service;
+	private final ConsentusService _service;
 	private final Config _conf;
 	
-	public ConcentusProcess(ConcentusService service) {
+	public ConsentusProcess(ConsentusService service) {
 		_service = service;
 		_hasStarted = new AtomicBoolean(false);
 		_isShuttingDown = new AtomicBoolean(false);
@@ -36,6 +36,7 @@ public class ConcentusProcess implements ConcentusProcessCallback {
 		Runtime.getRuntime().addShutdownHook(new Thread() {
 			@Override
 			public void run() {
+				Log.info("Shutting Down");
 				shutdown();
 			}	
 		});
@@ -86,14 +87,14 @@ public class ConcentusProcess implements ConcentusProcessCallback {
 	}
 	
 	@SuppressWarnings("unchecked")
-	private static ConcentusService getTestEntryFactory(final String serviceClassName) {
-		Class<? extends ConcentusService> serviceClass;
+	private static ConsentusService getTestEntryFactory(final String serviceClassName) {
+		Class<? extends ConsentusService> serviceClass;
 		try {
 			Class<?> clazz = Class.forName(serviceClassName);
-			if (ConcentusService.class.isAssignableFrom(clazz)) {
-				serviceClass = (Class<? extends ConcentusService>) clazz;
+			if (ConsentusService.class.isAssignableFrom(clazz)) {
+				serviceClass = (Class<? extends ConsentusService>) clazz;
 			} else {
-				throw new RuntimeException(String.format("Provided service class was not of type '%1$s'.", ConcentusService.class.getName()));
+				throw new RuntimeException(String.format("Provided service class was not of type '%1$s'.", ConsentusService.class.getName()));
 			}
 		} catch (ClassNotFoundException eNotFound){
 			throw new RuntimeException(String.format("Could not find the service class '%1$s'.", serviceClassName), eNotFound);
@@ -111,7 +112,7 @@ public class ConcentusProcess implements ConcentusProcessCallback {
 		
 		Options cliOptions = getCommandLineOptions();
 		
-		ConcentusService service = null;
+		ConsentusService service = null;
 		try {
 			CommandLineParser parser = new GnuParser();
 			CommandLine commandLine = parser.parse(cliOptions, args);
@@ -123,9 +124,12 @@ public class ConcentusProcess implements ConcentusProcessCallback {
 			System.exit(1);
 		}
 		try {
-			ConcentusProcess process = new ConcentusProcess(service);
+			ConsentusProcess process = new ConsentusProcess(service);
 			process.start();
-			new Object().wait();
+			final Object foreverWait = new Object();
+			synchronized (foreverWait) {
+				foreverWait.wait();
+			}
 		} catch (Exception e) {
 			e.printStackTrace();
 		}		
