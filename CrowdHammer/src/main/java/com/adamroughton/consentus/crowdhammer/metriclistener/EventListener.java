@@ -1,4 +1,4 @@
-package com.adamroughton.consentus.canonicalstate;
+package com.adamroughton.consentus.crowdhammer.metriclistener;
 
 import com.esotericsoftware.minlog.*;
 
@@ -10,11 +10,13 @@ import com.adamroughton.consentus.Config;
 import com.adamroughton.consentus.EventListenerBase;
 import com.adamroughton.consentus.FatalExceptionCallback;
 import com.adamroughton.consentus.Util;
+import com.adamroughton.consentus.messaging.MessageBytesUtil;
+import com.adamroughton.consentus.messaging.events.EventType;
 import com.lmax.disruptor.RingBuffer;
 
 class EventListener extends EventListenerBase {
 	
-	private final int _listenPort;
+	private final int _metricsPort;
 	
 	public EventListener(
 			final ZMQ.Context zmqContext, 
@@ -23,9 +25,9 @@ class EventListener extends EventListenerBase {
 			final FatalExceptionCallback exCallback) {
 		super(zmqContext, ringBuffer, conf, exCallback);
 		
-		String portString = conf.getCanonicalSubPort();
-		_listenPort = Integer.parseInt(portString);
-		Util.assertPortValid(_listenPort);
+		String portString = conf.getCanonicalStatePubPort();
+		_metricsPort = Integer.parseInt(portString);
+		Util.assertPortValid(_metricsPort);
 	}
 
 	@Override
@@ -33,9 +35,13 @@ class EventListener extends EventListenerBase {
 			throws Exception {
 		ZMQ.Socket input = zmqContext.socket(ZMQ.SUB);
 		input.setHWM(100);
-		input.bind("tcp://*:" + _listenPort);
-		input.subscribe(new byte[0]);
-		Log.info(String.format("Listening on port %d", _listenPort));
+		input.connect("tcp://127.0.0.1:" + _metricsPort);
+		
+		byte[] subId = new byte[4];
+		MessageBytesUtil.writeInt(subId, 0, EventType.STATE_METRIC.getId());
+		input.subscribe(subId);
+		
+		Log.info(String.format("Connected to port %d", _metricsPort));
 		return input;
 	}
 }

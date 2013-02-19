@@ -143,6 +143,7 @@ public class StateProcessor implements EventProcessor {
 			// create metric event
 			seq = _publishRingBuffer.next();
 			outputBytes = _publishRingBuffer.get(seq);
+			_metricEvent.setBackingArray(outputBytes, 1);
 			_metricEvent.setUpdateId(updateId);
 			_metricEvent.setInputActionsProcessed(_sequence.get() - _seqStart);
 			_metricEvent.setTimeDuration(frameTime);
@@ -158,7 +159,10 @@ public class StateProcessor implements EventProcessor {
 	}
 	
 	private long getTimeUntilNextTick() {
-		return _lastTickTime + Constants.TIME_STEP;
+		long remainingTime = _lastTickTime + Constants.TIME_STEP - System.currentTimeMillis();
+		if (remainingTime < 0)
+			remainingTime = 0;
+		return remainingTime;
 	}
 	
 	private void processInput(byte[] input) {

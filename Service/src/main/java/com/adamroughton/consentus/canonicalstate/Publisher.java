@@ -32,7 +32,8 @@ class Publisher implements EventHandler<byte[]>, LifecycleAware {
 	public void onStart() {
 		_pub = _zmqContext.socket(ZMQ.PUB);
 		_pub.setHWM(100);
-		_pub.bind("tcp://localhost:" + _publishPort);
+		_pub.bind("tcp://*:" + _publishPort);
+		Log.info(String.format("Publishing on port %d", _publishPort));
 	}
 
 	@Override

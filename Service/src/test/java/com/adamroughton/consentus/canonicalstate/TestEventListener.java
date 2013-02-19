@@ -16,6 +16,7 @@ import org.mockito.stubbing.OngoingStubbing;
 import org.zeromq.ZMQ;
 
 import com.adamroughton.consentus.Config;
+import com.adamroughton.consentus.FatalExceptionCallback;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
 import com.adamroughton.consentus.messaging.ZmqTestUtil.BlockingCall;
 import com.lmax.disruptor.EventFactory;
@@ -52,7 +53,13 @@ public class TestEventListener {
 		}, BUFFER_SIZE);
 		_disruptor.setGatingSequences(new Sequence(BUFFER_SIZE - 1));
 		when(_zmqContext.socket(ZMQ.SUB)).thenReturn(_zmqSocket);
-		_eventListener = new EventListener(_zmqContext, _disruptor, conf);
+		_eventListener = new EventListener(_zmqContext, _disruptor, conf, new FatalExceptionCallback() {
+			
+			@Override
+			public void signalFatalException(Throwable exception) {
+				//TODO
+			}
+		});
 	}
 	
 	@Test(timeout=5000)
