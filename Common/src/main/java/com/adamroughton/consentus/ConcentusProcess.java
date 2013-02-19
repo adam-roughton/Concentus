@@ -48,7 +48,7 @@ public class ConcentusProcess implements ConcentusProcessCallback {
 	}
 
 	@Override
-	public void handleException(Throwable ex) {
+	public void signalFatalException(Throwable ex) {
 		Log.error(String.format("Error in service: %s", _service.name()), ex);
 		shutdown(1);
 	}

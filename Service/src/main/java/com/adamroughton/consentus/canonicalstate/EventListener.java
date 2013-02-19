@@ -14,12 +14,12 @@ import com.lmax.disruptor.RingBuffer;
 class EventListener implements Runnable {
 	
 	private final ZMQ.Context _zmqContext;
-	private final RingBuffer<byte[]> _disruptor;
+	private final RingBuffer<byte[]> _ringBuffer;
 	private final int _listenPort;
 	
-	public EventListener(ZMQ.Context zmqContext, RingBuffer<byte[]> disruptor, Config conf) {
+	public EventListener(ZMQ.Context zmqContext, RingBuffer<byte[]> ringBuffer, Config conf) {
 		_zmqContext = Objects.requireNonNull(zmqContext);
-		_disruptor = Objects.requireNonNull(disruptor);
+		_ringBuffer = Objects.requireNonNull(ringBuffer);
 		
 		String portString = conf.getCanonicalSubPort();
 		_listenPort = Integer.parseInt(portString);
@@ -53,8 +53,8 @@ class EventListener implements Runnable {
 	}
 	
 	private void nextEvent(ZMQ.Socket input) {
-		long seq = _disruptor.next();
-		byte[] array =_disruptor.get(seq);
+		long seq = _ringBuffer.next();
+		byte[] array =_ringBuffer.get(seq);
 		try {
 			// we reserve the first byte of the buffer to communicate
 			// whether the event was received correctly
@@ -69,7 +69,7 @@ class EventListener implements Runnable {
 			Log.error("An error was raised on receiving a message.", e);
 			throw new RuntimeException(e);
 		} finally {
-			_disruptor.publish(seq);
+			_ringBuffer.publish(seq);
 		}
 	}
 }

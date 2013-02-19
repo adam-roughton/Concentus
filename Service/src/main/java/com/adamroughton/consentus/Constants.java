@@ -2,6 +2,6 @@ package com.adamroughton.consentus;
 
 public final class Constants {
 
-	public static final double TIME_STEP = 0.01f;
+	public static final long TIME_STEP = 100L;
 	
 }

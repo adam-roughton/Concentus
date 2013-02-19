@@ -7,106 +7,20 @@ import org.zeromq.ZMQException;
 
 import com.adamroughton.consentus.Config;
 import com.adamroughton.consentus.Util;
+import com.adamroughton.consentus.messaging.MessageBytesUtil;
+import com.adamroughton.consentus.messaging.events.EventType;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventHandler;
-import com.lmax.disruptor.ExceptionHandler;
 import com.lmax.disruptor.LifecycleAware;
-import com.lmax.disruptor.RingBuffer;
-import com.lmax.disruptor.Sequence;
-import com.lmax.disruptor.SequenceBarrier;
-
-//class Publisher implements Runnable {
-//
-//	private final RingBuffer<byte[]> _pubDisruptor;
-//
-//	private final ZMQ.Context _zmqContext;
-//	private final int _publishPort;
-//
-//	private final Sequence _sequence;
-//	private final SequenceBarrier _barrier;
-//
-//	public Publisher(ZMQ.Context zmqContext, 
-//			RingBuffer<byte[]> pubDisruptor, 
-//			SequenceBarrier barrier,
-//			Config conf) {
-//		_zmqContext = Objects.requireNonNull(zmqContext);
-//		_pubDisruptor = Objects.requireNonNull(pubDisruptor);
-//
-//		_publishPort = Integer.parseInt(conf.getCanonicalStatePubPort());
-//		Util.assertPortValid(_publishPort);
-//
-//		_barrier = Objects.requireNonNull(barrier);
-//		_sequence = new Sequence();
-//	}
-//
-//	@Override
-//	public void run() {
-//		ZMQ.Socket pub = _zmqContext.socket(ZMQ.PUB);
-//		pub.setHWM(100);
-//		pub.bind("tcp://localhost:" + _publishPort);
-//
-//		try {
-//			while (!Thread.interrupted()) {
-//				publishNext(pub);
-//			}
-//		} catch (ZMQException eZmq) {
-//			// check that the socket hasn't just been closed
-//			if (eZmq.getErrorCode() != ZMQ.Error.ETERM.getCode()) {
-//				throw eZmq;
-//			}
-//		} finally {
-//			try {
-//				pub.close();
-//			} catch (Exception eClose) {
-//				Log.warn("Exception thrown when closing ZMQ socket.", eClose);
-//			}
-//		}
-//	}
-//
-//	Sequence getSequence() {
-//		return _sequence;
-//	}
-//
-//	private void publishNext(ZMQ.Socket pub) {
-//
-//	}
-//
-//
-//
-//}
 
 class Publisher implements EventHandler<byte[]>, LifecycleAware {
 
 	private final ZMQ.Context _zmqContext;
 	private final int _publishPort;
-	private final ExceptionHandler _exceptionHandler = new ExceptionHandler() {
-		
-		@Override
-		public void handleOnStartException(Throwable ex) {
-			Log.error("Error Starting Publisher", ex);
-		}
-		
-		@Override
-		public void handleOnShutdownException(Throwable ex) {
-		}
-		
-		@Override
-		public void handleEventException(Throwable ex, long sequence, Object event) {
-			// check that the socket hasn't just been closed
-			if (ex instanceof ZMQException) {
-				if (((ZMQException)ex).getErrorCode() == ZMQ.Error.ETERM.getCode()) {
-					return;
-				}
-			}
-			Log.error("Error during publishing", ex);
-		}
-	};
 
 	private ZMQ.Socket _pub;
 	
-	public Publisher(ZMQ.Context zmqContext, 
-			RingBuffer<byte[]> pubDisruptor, 
-			SequenceBarrier barrier,
+	public Publisher(ZMQ.Context zmqContext,
 			Config conf) {
 		_zmqContext = Objects.requireNonNull(zmqContext);
 		
@@ -136,13 +50,35 @@ class Publisher implements EventHandler<byte[]>, LifecycleAware {
 	@Override
 	public void onEvent(byte[] event, long sequence, boolean endOfBatch)
 			throws Exception {
-		
+		try {
+			// check if the error flag is raised
+			if (!isValid(event)) {
+				return;
+			}
+			byte[] subIdCode = new byte[4];
+			// is this a metric
+			if (isMetricEvent(event)) {
+				MessageBytesUtil.writeInt(subIdCode, 0, EventType.STATE_METRIC.getId());
+			} else {
+				MessageBytesUtil.writeInt(subIdCode, 0, EventType.STATE_UPDATE.getId());
+			}
+			_pub.send(subIdCode,ZMQ.SNDMORE);
+			_pub.send(event, 1, 0);
+		} catch (ZMQException eZmq) {
+			if (eZmq.getErrorCode() != ZMQ.Error.ETERM.getCode()) {
+				throw eZmq;
+			}
+		}
 	}
 	
-	// replay?
-	// open another socket and listen? Then rebroadcast, or just send updates to the requester?
-	// what if more than one update was requested? Do we send them all in one?
+	private static boolean isValid(byte[] event) {
+		return !MessageBytesUtil.readFlagFromByte(event, 0, 0);
+	}
 	
+	private static boolean isMetricEvent(byte[] event) {
+		return MessageBytesUtil.readFlagFromByte(event, 0, 1);
+	}
+
 }
 
 
