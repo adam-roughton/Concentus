@@ -176,7 +176,6 @@ public class StateProcessor implements EventProcessor {
 		// read header (client handler) etc
 		long clientHandlerId = _inputEvent.getClientHandlerId();
 		long inputId = _inputEvent.getInputId();
-		Log.info(String.format("ClientHandlerId: %d, InputId: %d", clientHandlerId, inputId));
 		
 		// get input bytes
 		_stateLogic.collectInput(_inputEvent.getInputBuffer());
