@@ -20,7 +20,7 @@ public class LoadDriver implements Runnable {
 	private final RingBuffer<byte[]> _publishRingBuffer;
 	private final FatalExceptionCallback _exCallback;
 
-	private static long EVENT_SPACING = 10;
+	private static long EVENT_SPACING = 0;
 	
 	private long _lastEventTime;
 	private long _accumulator;

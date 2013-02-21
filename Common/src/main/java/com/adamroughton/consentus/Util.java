@@ -1,5 +1,6 @@
 package com.adamroughton.consentus;
 
+import com.adamroughton.consentus.messaging.MessageBytesUtil;
 import com.adamroughton.consentus.messaging.events.EventType;
 import com.esotericsoftware.kryo.Kryo;
 
@@ -20,6 +21,12 @@ public class Util {
 		Kryo kryo = new Kryo();
 		initialiseKryo(kryo);
 		return kryo;
+	}
+	
+	public static byte[] getSubscriptionBytes(EventType eventType) {
+		byte[] subId = new byte[4];
+		MessageBytesUtil.writeInt(subId, 0, eventType.getId());
+		return subId;
 	}
 
 }

@@ -38,6 +38,95 @@ public class TestMessageBytesUtil {
 	}
 	
 	@Test
+	public void testRead4BitUInt() {
+		byte[] array = new byte[1];
+		int expected = 11;
+		array[0] = (byte) ((0xFF & expected) << 4);
+		assertEquals(expected, MessageBytesUtil.read4BitUInt(array, 0, 0));
+	}
+	
+	@Test
+	public void testRead4BitUInt_NonZeroOffset() {
+		byte[] array = new byte[4];
+		int expected = 11;
+		array[3] = (byte) ((0xFF & expected) << 4);
+		assertEquals(expected, MessageBytesUtil.read4BitUInt(array, 3, 0));
+	}
+	
+	@Test
+	public void testWrite4BitUInt() {
+		byte[] array = new byte[1];
+		int expected = 11;
+		MessageBytesUtil.write4BitUInt(array, 0, 0, expected);
+		byte expByte = (byte) ((0xFF & expected) << 4);
+		assertEquals(expByte, array[0]);
+	}
+	
+	@Test
+	public void testWrite4BitUInt_NonZeroOffset() {
+		byte[] array = new byte[5];
+		int expected = 11;
+		MessageBytesUtil.write4BitUInt(array, 3, 0, expected);
+		byte expByte = (byte) ((0xFF & expected) << 4);
+		assertEquals(expByte, array[3]);
+	}
+	
+	@Test
+	public void testRead4BitUInt_BitOffset2() {
+		byte[] array = new byte[1];
+		int expected = 11;
+		array[0] = (byte) ((0xFF & expected) << 2);
+		assertEquals(expected, MessageBytesUtil.read4BitUInt(array, 0, 2));
+	}
+	
+	@Test
+	public void testWrite4BitUInt_BitOffset2() {
+		byte[] array = new byte[1];
+		int expected = 11;
+		MessageBytesUtil.write4BitUInt(array, 0, 2, expected);
+		byte expByte = (byte) ((0xFF & expected) << 2);
+		assertEquals(expByte, array[0]);
+	}
+	
+	@Test
+	public void testRead4BitUInt_BitOffset4() {
+		byte[] array = new byte[1];
+		int expected = 11;
+		array[0] = (byte) (0xFF & expected);
+		assertEquals(expected, MessageBytesUtil.read4BitUInt(array, 0, 4));
+	}
+	
+	@Test
+	public void testWrite4BitUInt_BitOffset4() {
+		byte[] array = new byte[1];
+		int expected = 11;
+		MessageBytesUtil.write4BitUInt(array, 0, 4, expected);
+		byte expByte = (byte) (0xFF & expected);
+		assertEquals(expByte, array[0]);
+	}
+	
+	@Test
+	public void testRead4BitUInt_BitOffset4WithOtherFlag() {
+		byte[] array = new byte[1];
+		int expected = 11;
+		MessageBytesUtil.writeFlagToByte(array, 0, 1, true);
+		array[0] = (byte) ((0xFF & expected) << 2);
+		assertEquals(expected, MessageBytesUtil.read4BitUInt(array, 0, 2));
+	}
+	
+	@Test
+	public void testWrite4BitUInt_BitOffset4WithOtherFlag() {
+		byte[] array = new byte[1];
+		int expected = 11;
+		MessageBytesUtil.writeFlagToByte(array, 0, 1, true);
+		MessageBytesUtil.write4BitUInt(array, 0, 2, expected);
+		byte expByte = (byte) (((0xFF & expected) << 2) | 0x40);
+		assertEquals(expByte, array[0]);
+		assertTrue(MessageBytesUtil.readFlagFromByte(array, 0, 1));
+		assertEquals(expected, MessageBytesUtil.read4BitUInt(array, 0, 2));
+	}
+	
+	@Test
 	public void testReadShort() {
 		ByteBuffer bb = ByteBuffer.allocate(2);
 		bb.putShort((short)25);

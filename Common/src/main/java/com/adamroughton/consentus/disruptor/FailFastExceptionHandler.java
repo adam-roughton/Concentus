@@ -1,7 +1,8 @@
-package com.adamroughton.consentus;
+package com.adamroughton.consentus.disruptor;
 
 import java.util.Objects;
 
+import com.adamroughton.consentus.FatalExceptionCallback;
 import com.lmax.disruptor.ExceptionHandler;
 
 public class FailFastExceptionHandler implements ExceptionHandler {

@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit;
 import com.adamroughton.consentus.ConsentusService;
 import com.adamroughton.consentus.Config;
 import com.adamroughton.consentus.ConsentusProcessCallback;
-import com.adamroughton.consentus.FailFastExceptionHandler;
+import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;

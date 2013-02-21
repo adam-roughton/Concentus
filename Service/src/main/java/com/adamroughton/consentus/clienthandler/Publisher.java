@@ -1,4 +1,4 @@
-package com.adamroughton.consentus.canonicalstate;
+package com.adamroughton.consentus.clienthandler;
 
 import java.util.Objects;
 
@@ -8,6 +8,7 @@ import org.zeromq.ZMQException;
 import com.adamroughton.consentus.Config;
 import com.adamroughton.consentus.Util;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
+import com.adamroughton.consentus.messaging.events.EventType;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
@@ -54,8 +55,15 @@ class Publisher implements EventHandler<byte[]>, LifecycleAware {
 			// check if the error flag is raised
 			if (!isValid(event)) {
 				return;
-			}			
-			_pub.send(getSubId(event), ZMQ.SNDMORE);
+			}
+			byte[] subIdCode = new byte[4];
+			// is this a metric
+			if (isMetricEvent(event)) {
+				MessageBytesUtil.writeInt(subIdCode, 0, EventType.STATE_METRIC.getId());
+			} else {
+				MessageBytesUtil.writeInt(subIdCode, 0, EventType.STATE_UPDATE.getId());
+			}
+			_pub.send(subIdCode,ZMQ.SNDMORE);
 			_pub.send(event, 1, 0);
 		} catch (ZMQException eZmq) {
 			if (eZmq.getErrorCode() != ZMQ.Error.ETERM.getCode()) {
@@ -67,13 +75,11 @@ class Publisher implements EventHandler<byte[]>, LifecycleAware {
 	private static boolean isValid(byte[] event) {
 		return !MessageBytesUtil.readFlagFromByte(event, 0, 0);
 	}
-
-	private byte[] getSubId(byte[] event) {
-		byte[] subId = new byte[4];
-		System.arraycopy(event, 1, subId, 0, 4);
-		return subId;
-	}
 	
+	private static boolean isMetricEvent(byte[] event) {
+		return MessageBytesUtil.readFlagFromByte(event, 0, 1);
+	}
+
 }
 
 

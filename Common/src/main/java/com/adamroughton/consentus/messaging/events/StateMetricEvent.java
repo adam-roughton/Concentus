@@ -6,7 +6,7 @@ public class StateMetricEvent extends ByteArrayBackedEvent {
 
 	private final static int UPDATE_ID_OFFSET = 0;
 	private final static int INPUT_ACTIONS_OFFSET = 8;
-	private final static int TIME_DURATION_OFFSET = 16;
+	private final static int DURATION_OFFSET = 16;
 	private final static int EVENT_ERROR_COUNT_OFFSET = 24;
 
 	public StateMetricEvent() {
@@ -29,12 +29,12 @@ public class StateMetricEvent extends ByteArrayBackedEvent {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(INPUT_ACTIONS_OFFSET), inputActionsProcessed);
 	}
 
-	public long getTimeDuration() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(TIME_DURATION_OFFSET));
+	public long getDurationInMs() {
+		return MessageBytesUtil.readLong(getBackingArray(), getOffset(DURATION_OFFSET));
 	}
 
-	public void setTimeDuration(long timeDuration) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(TIME_DURATION_OFFSET), timeDuration);
+	public void setDurationInMs(long durationInMs) {
+		MessageBytesUtil.writeLong(getBackingArray(), getOffset(DURATION_OFFSET), durationInMs);
 	}
 	
 	public int getEventErrorCount() {

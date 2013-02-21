@@ -89,6 +89,26 @@ public final class MessageBytesUtil {
 		_unsafe.putChar(array, BYTE_ARRAY_OFFSET + offset, value);
 	}
 	
+	private static int get4BitUIntMask(int bitOffset) {
+		return 0xF << (_isLittleEndian? 4 - bitOffset : bitOffset);
+	} 
+	
+	public static int read4BitUInt(byte[] array, long fieldOffset, int bitOffset) {
+		int intMask = get4BitUIntMask(bitOffset);
+		byte field = _unsafe.getByte(array, BYTE_ARRAY_OFFSET + fieldOffset);
+		int val = (field & intMask);
+		val >>= (_isLittleEndian? 4 - bitOffset : bitOffset);
+		return val;
+	}
+	
+	public static void write4BitUInt(byte[] array, long fieldOffset, int bitOffset, int value) {
+		int intMask = get4BitUIntMask(bitOffset);
+		byte field = _unsafe.getByte(array, BYTE_ARRAY_OFFSET + fieldOffset);
+		int val = (value & 0xF) << (_isLittleEndian? 4 - bitOffset : bitOffset);
+		field = (byte) ((field & ~intMask) | val);
+		_unsafe.putByte(array, BYTE_ARRAY_OFFSET + fieldOffset, field);
+	}
+	
 	public static short readShort(byte[] array, long offset) {
 		short res = _unsafe.getShort(array, BYTE_ARRAY_OFFSET + offset);
 		return _isLittleEndian? Short.reverseBytes(res) : res;

@@ -3,11 +3,11 @@ package com.adamroughton.consentus.crowdhammer.messaging.events;
 import com.adamroughton.consentus.messaging.events.EventType;
 
 public enum TestEventType {
-	
-	// INPUT
+	CLIENT_INPUT(EventType.CLIENT_INPUT.getId(), EventType.CLIENT_INPUT.getEventClass()),
 	STATE_INPUT(EventType.STATE_INPUT.getId(), EventType.STATE_INPUT.getEventClass()),
 	STATE_UPDATE(EventType.STATE_UPDATE.getId(), EventType.STATE_UPDATE.getEventClass()),
 	STATE_METRIC(EventType.STATE_METRIC.getId(), EventType.STATE_METRIC.getEventClass()),
+	STATE_INFO(EventType.STATE_INFO.getId(), EventType.STATE_INFO.getEventClass()),
 	LOAD_METRIC(100, LoadMetricEvent.class)
 	;
 	private final int _id;

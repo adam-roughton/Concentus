@@ -59,7 +59,13 @@ public abstract class EventListenerBase implements Runnable {
 		try {
 			// we reserve the first byte of the buffer to communicate
 			// whether the event was received correctly
-			if (input.recv(array, 1, array.length - 1, 0) == -1) {
+			int result = input.recv(array, 1, array.length - 1, 0);
+			if (input.hasReceiveMore()) {
+				// assume the first part is the subscription ID
+				input.recv(array, 1, array.length - 1, 0);
+			}
+			
+			if (result == -1) {
 				MessageBytesUtil.writeFlagToByte(array, 0, 0, true);
 			} else {
 				MessageBytesUtil.writeFlagToByte(array, 0, 0, false);

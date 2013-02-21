@@ -23,20 +23,24 @@ public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 		if (MessageBytesUtil.readInt(event, 1) == EventType.STATE_METRIC.getId()) {
 			_metricEvent.setBackingArray(event, 1);
 			long actionsProcessed = _metricEvent.getInputActionsProcessed();
-			long duration = _metricEvent.getTimeDuration();
+			long duration = _metricEvent.getDurationInMs();
 			
+			double throughput = 0;
 			if (duration > 0) {
-				long throughput = actionsProcessed / duration;
-				_histogram.addObservation(throughput);
+				throughput = ((double) actionsProcessed / (double) duration) * 1000;
+				//_histogram.addObservation(throughput);
 			}
-			
-			if (sequence % 1000 == 0) {
-				StringBuilder sb = new StringBuilder();
-				sb.append("Histogram:\n");
-				for (int i = 0; i < _histogram.getSize(); i++) {
-					sb.append(String.format("%d: %d\n", _histogram.getUpperBoundAt(i), _histogram.getCountAt(i)));
-				}
-				Log.info(sb.toString());
+			if (sequence % 100 == 0) {
+				Log.info(String.format("Throughput: %f per second", throughput));
+				
+				
+				/*Log.info(String.format("Mean: %s, Max: %d, Min: %d, 99.00%%: %d, 99.99%%: %d", 
+						_histogram.getMean().toEngineeringString(),
+						_histogram.getMax(),
+						_histogram.getMin(),
+						_histogram.getTwoNinesUpperBound(),
+						_histogram.getFourNinesUpperBound()
+						));*/
 			}
 			_metricEvent.clear();
 		}
@@ -44,7 +48,11 @@ public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 
 	@Override
 	public void onStart() {
-		_histogram = new Histogram(new long[] {10, 100, 1000, 10000});
+		long[] upperBounds = new long[10000];
+		for (int i = 0; i < 10000; i++) {
+			upperBounds[i] = (i + 1) * 10;
+		}
+		_histogram = new Histogram(upperBounds);
 	}
 
 	@Override

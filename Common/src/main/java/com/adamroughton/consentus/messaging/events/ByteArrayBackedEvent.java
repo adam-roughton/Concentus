@@ -46,4 +46,16 @@ public abstract class ByteArrayBackedEvent {
 		_backingArray = null;
 		_offset = 0;
 	}
+	
+	/**
+	 * Helper method for determining the number of bytes that can
+	 * be written to this event by the super class given the underlying 
+	 * byte array size.
+	 * {@link #setBackingArray(byte[], int)} should be called with the 
+	 * intended backing array before invoking this method.
+	 * @return the number of bytes that can be written into this event
+	 */
+	protected int getAvailableSize() {
+		return _backingArray.length - (_writeId? 4 : 0);
+	}
 }

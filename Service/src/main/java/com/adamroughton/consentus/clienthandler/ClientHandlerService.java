@@ -1,4 +1,4 @@
-package com.adamroughton.consentus;
+package com.adamroughton.consentus.clienthandler;
 
 public class ClientHandlerService {
 
@@ -13,6 +13,9 @@ public class ClientHandlerService {
 	 * either the quota is filled or none are found
 	 * 3. if the quote is not filled, add this client to the free slots list
 	 */
+	
+	
+	
 	
 	
 }
