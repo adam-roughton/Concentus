@@ -11,6 +11,7 @@ import com.lmax.disruptor.collections.Histogram;
 public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 
 	private final StateMetricEvent _metricEvent = new StateMetricEvent();
+	private long _lastUpdateId = -1;
 	private Histogram _histogram;
 	
 	@Override
@@ -30,8 +31,16 @@ public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 				throughput = ((double) actionsProcessed / (double) duration) * 1000;
 				//_histogram.addObservation(throughput);
 			}
+			
+			long missedEventCount = 0;
+			long updateId = _metricEvent.getUpdateId();
+			if (updateId > _lastUpdateId + 1) {
+				missedEventCount = updateId - _lastUpdateId;
+			}
+			_lastUpdateId = updateId;
+			
 			if (sequence % 100 == 0) {
-				Log.info(String.format("Throughput: %f per second", throughput));
+				Log.info(String.format("Throughput: %f per second. Missed event count: %d", throughput, missedEventCount));
 				
 				
 				/*Log.info(String.format("Mean: %s, Max: %d, Min: %d, 99.00%%: %d, 99.99%%: %d", 

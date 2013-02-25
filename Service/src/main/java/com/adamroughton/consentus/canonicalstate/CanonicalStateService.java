@@ -8,7 +8,11 @@ import java.util.concurrent.TimeUnit;
 import com.adamroughton.consentus.ConsentusService;
 import com.adamroughton.consentus.Config;
 import com.adamroughton.consentus.ConsentusProcessCallback;
+import com.adamroughton.consentus.Util;
 import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
+import com.adamroughton.consentus.messaging.EventListener;
+import com.adamroughton.consentus.messaging.SocketSettings;
+import com.adamroughton.consentus.messaging.SubSocketSettings;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
@@ -87,7 +91,14 @@ public class CanonicalStateService implements ConsentusService {
 		_outputDisruptor.start();
 		_inputDisruptor.start();
 		
-		_eventListener = new EventListener(_zmqContext, _inputDisruptor.getRingBuffer(), config, exHandler);
+		int listenPort = Util.getPort(config.getCanonicalSubPort());
+		SocketSettings socketSettings = SocketSettings.create(ZMQ.SUB)
+				.bindToPort(listenPort)
+				.setMessageOffsets(0, 0);
+		SubSocketSettings subSocketSettings = SubSocketSettings.create(socketSettings)
+				.subscribeToAll();
+		
+		_eventListener = new EventListener(subSocketSettings, _inputDisruptor.getRingBuffer(), _zmqContext, exHandler);
 		_executor.submit(_eventListener);
 	}
 	

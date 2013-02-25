@@ -7,8 +7,13 @@ import java.util.concurrent.TimeUnit;
 import com.adamroughton.consentus.ConsentusService;
 import com.adamroughton.consentus.Config;
 import com.adamroughton.consentus.ConsentusProcessCallback;
+import com.adamroughton.consentus.Util;
 import com.adamroughton.consentus.crowdhammer.TestConfig;
 import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
+import com.adamroughton.consentus.messaging.EventListener;
+import com.adamroughton.consentus.messaging.SocketSettings;
+import com.adamroughton.consentus.messaging.SubSocketSettings;
+import com.adamroughton.consentus.messaging.events.EventType;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
@@ -47,7 +52,21 @@ public class MetricListenerService implements ConsentusService {
 		
 		_inputDisruptor.start();
 		
-		_eventListener = new EventListener(_zmqContext, _inputDisruptor.getRingBuffer(), (TestConfig)config, exHandler);
+		// listener
+		int metricsPort = Util.getPort(config.getCanonicalStatePubPort());
+		String canonicalStateConnString = String.format("tcp://127.0.0.1:%d", metricsPort);
+		
+		int testMetricsSubPort = Util.getPort(((TestConfig)config).getTestMetricSubPort());
+		
+		SocketSettings socketSettings = SocketSettings.create(ZMQ.SUB)
+				.bindToPort(testMetricsSubPort)
+				.connectToAddress(canonicalStateConnString)
+				.setMessageOffsets(0, 0);
+		
+		SubSocketSettings subSocketSettings = SubSocketSettings.create(socketSettings)
+				.subscribeTo(EventType.STATE_METRIC);
+		
+		_eventListener = new EventListener(subSocketSettings, _inputDisruptor.getRingBuffer(), _zmqContext, exHandler);
 		_executor.submit(_eventListener);
 	}
 	

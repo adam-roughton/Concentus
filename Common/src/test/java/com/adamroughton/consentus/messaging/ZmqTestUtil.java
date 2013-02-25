@@ -23,8 +23,11 @@ public class ZmqTestUtil {
 			public Integer answer(InvocationOnMock invocation) throws Throwable {
 				Object[] args = invocation.getArguments();
 				byte[] array = (byte[]) args[0];
-				System.arraycopy(content, 0, array, 0, array.length);
-				return array.length;
+				int offset = (int) args[1];
+				int bufferLength = (int) args[2];
+				int length = content.length > bufferLength? bufferLength : content.length;
+				System.arraycopy(content, 0, array, offset, length);
+				return length;
 			}
 		};
 	}
@@ -53,23 +56,30 @@ public class ZmqTestUtil {
 		private final Condition _blockCond = _lock.newCondition();
 		private final Condition _callerHasBlockedCond = _lock.newCondition();
 		
-		private boolean _isBlocked = false;
 		private boolean _raiseEterm = false;
+		private boolean _interrupt = false;
 		private boolean _hasBlocked = false;
 		
-		public void waitForBlockingCall(long timeout, TimeUnit unit) throws InterruptedException {
+		public boolean waitForBlockingCall(long timeout, TimeUnit unit) throws InterruptedException {
+			boolean success = false;
 			_lock.lock();
 			try {
-				while (!_hasBlocked) {
-					if (timeout >= 0) {
-						_callerHasBlockedCond.await(timeout, unit);
-					} else {
+				if (timeout >= 0) {
+					long endTime = System.nanoTime() + unit.toNanos(timeout);
+					long remainingNanos;
+					while ((remainingNanos = endTime - System.nanoTime()) > 0 && !_hasBlocked) {
+						success = _callerHasBlockedCond.await(remainingNanos, TimeUnit.NANOSECONDS);
+					}
+				} else {
+					while(!_hasBlocked) {
 						_callerHasBlockedCond.await();
+						success = true;
 					}
 				}
 			} finally {
 				_lock.unlock();
 			}
+			return success;
 		}
 		
 		public void waitForBlockingCall() throws InterruptedException {
@@ -85,11 +95,23 @@ public class ZmqTestUtil {
 			}
 		}
 		
+		public void interruptBlockedCall() {
+			_lock.lock();
+			try {
+				if (_hasBlocked) {
+					_interrupt = true;
+				}
+				_blockCond.signal();
+			} finally {
+				_lock.unlock();
+			}
+		}
+		
 		public void raiseEtermOnBlockedCall() {
 			_lock.lock();
 			try {
 				// only raise if actually blocked
-				if (_isBlocked) {
+				if (_hasBlocked) {
 					_raiseEterm = true;
 				}
 				_blockCond.signal();
@@ -99,8 +121,10 @@ public class ZmqTestUtil {
 		}
 		
 		public void block() {
-			_lock.lock();
 			boolean raiseEterm;
+			boolean interrupt;
+			
+			_lock.lock();
 			try {
 				_hasBlocked = true;
 				_callerHasBlockedCond.signalAll();
@@ -110,11 +134,14 @@ public class ZmqTestUtil {
 					Thread.currentThread().interrupt();
 				}
 				raiseEterm = _raiseEterm;
+				interrupt = _interrupt;
 			} finally {
 				_lock.unlock();
 			}
 			if (raiseEterm) {
 				throw new ZMQException("Fake Socket Close", (int) ZMQ.Error.ETERM.getCode());
+			} else if (interrupt) {
+				Thread.currentThread().interrupt();
 			}
 		}
 		

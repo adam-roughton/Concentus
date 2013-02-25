@@ -90,4 +90,25 @@ public class Config extends HashMap<String, Object> {
 		conf.put(CANONICAL_SERVICE_METRICS_PUB_PORT, canonicalMetricsPubPort);
 	}
 	
+	/**
+	 * The port on which client handler service nodes listen for events.
+	 */
+	public static final String CLIENT_HANDLER_SERVICE_LISTEN_PORT = "consentus.clienthandler.port";
+	
+	public String getClientHandlerListenPort() {
+		return getClientHandlerListenPort(this);
+	}
+	
+	public static String getClientHandlerListenPort(Config conf) {
+		return (String) conf.get(CLIENT_HANDLER_SERVICE_LISTEN_PORT);
+	}
+	
+	public void setClientHandlerListenPort(String clientHandlerListenPort) {
+		setClientHandlerListenPort(this, clientHandlerListenPort);
+	}
+	
+	public static void setClientHandlerListenPort(Config conf, String clientHandlerListenPort) {
+		conf.put(CLIENT_HANDLER_SERVICE_LISTEN_PORT, clientHandlerListenPort);
+	}
+	
 }

@@ -33,6 +33,14 @@ public class TestConfig extends Config {
 		return (String) conf.get(CANONICAL_SERVICE_METRICS_PUB_PORT);
 	}
 	
+	public static String getClientHandlerListenPort(Config conf) {
+		return (String) conf.get(CLIENT_HANDLER_SERVICE_LISTEN_PORT);
+	}
+	
+	public static void setClientHandlerListenPort(Config conf, String clientHandlerListenPort) {
+		conf.put(CLIENT_HANDLER_SERVICE_LISTEN_PORT, clientHandlerListenPort);
+	}
+	
 	/**
 	 * The name of the test class to use in testing.
 	 */
