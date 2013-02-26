@@ -1,18 +1,79 @@
+/*
+ * Copyright 2013 Adam Roughton
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.adamroughton.consentus.clienthandler;
 
-public class ClientHandlerService {
+import java.nio.ByteBuffer;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
-	/**
-	 * We want a free list containing clients who have free connections available
-	 * this list should be sorted by the number of connections
-	 * 
-	 * when a new client is added:
-	 * 1. search on this handler for the free slots first (i.e. prefer to cluster neighbours on the
-	 * same node)
-	 * 2. if slots are not available, round-robin on the other client handlers for free connections until
-	 * either the quota is filled or none are found
-	 * 3. if the quote is not filled, add this client to the free slots list
-	 */
+import org.zeromq.ZMQ;
+
+import com.adamroughton.consentus.Config;
+import com.adamroughton.consentus.ConsentusProcessCallback;
+import com.adamroughton.consentus.ConsentusService;
+import com.adamroughton.consentus.Util;
+import com.adamroughton.consentus.canonicalstate.StateLogic;
+import com.adamroughton.consentus.canonicalstate.StateProcessor;
+import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
+import com.adamroughton.consentus.messaging.EventListener;
+import com.adamroughton.consentus.messaging.SocketSettings;
+import com.adamroughton.consentus.messaging.SubSocketSettings;
+import com.lmax.disruptor.EventFactory;
+import com.lmax.disruptor.SequenceBarrier;
+import com.lmax.disruptor.SingleThreadedClaimStrategy;
+import com.lmax.disruptor.YieldingWaitStrategy;
+import com.lmax.disruptor.dsl.Disruptor;
+
+public class ClientHandlerService implements ConsentusService {
+
+	private ExecutorService _executor;
+	private Disruptor<byte[]> _inputDisruptor;
+	private Disruptor<byte[]> _outputDisruptor;
+	
+	private EventListener _eventListener;
+	private StateProcessor _stateProcessor;
+	private Publisher _publisher;	
+	
+	private ZMQ.Context _zmqContext;
+	
+	private int _clientHandlerId;
+	
+	@Override
+	public void start(final Config config, final ConsentusProcessCallback exHandler) {
+
+	}
+
+	@Override
+	public void shutdown() {
+		_zmqContext.term();
+		_executor.shutdownNow();
+		try {
+			_executor.awaitTermination(5, TimeUnit.SECONDS);
+		} catch (InterruptedException eInterrupted) {
+			// ignore
+		}
+	}
+
+	@Override
+	public String name() {
+		return String.format("Client Handler %d", _clientHandlerId);
+	}
+
+
 	
 	
 	

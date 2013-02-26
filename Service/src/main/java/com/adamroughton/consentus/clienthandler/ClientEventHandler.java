@@ -13,24 +13,13 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.adamroughton.consentus.messaging.events;
+package com.adamroughton.consentus.clienthandler;
 
-public final class ClientHandlerEntry {
+/**
+ * 
+ * @author Adam Roughton
+ *
+ */
+public class ClientEventHandler {
 
-	private final int _clientHandlerId;
-	private final long _highestHandlerSeq;
-	
-	public ClientHandlerEntry(int clientHandlerId, long highestClientHandlerSeq) {
-		_clientHandlerId = clientHandlerId;
-		_highestHandlerSeq = highestClientHandlerSeq;
-	}
-	
-	public int getClientHandlerId() {
-		return _clientHandlerId;
-	}
-
-	public long getHighestHandlerSeq() {
-		return _highestHandlerSeq;
-	}
-	
 }
