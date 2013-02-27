@@ -30,16 +30,11 @@ public class ClientInputEvent extends ByteArrayBackedEvent {
 	}
 	
 	public UUID getClientId() {
-		long msb = MessageBytesUtil.readLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
-		long lsb = MessageBytesUtil.readLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET + 8));
-		return new UUID(msb, lsb);
+		return MessageBytesUtil.readUUID(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
 	}
 
 	public void setClientId(UUID clientId) {
-		long msb = clientId.getMostSignificantBits();
-		long lsb = clientId.getLeastSignificantBits();
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET), msb);
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET + 8), lsb);
+		MessageBytesUtil.writeUUID(getBackingArray(), getOffset(CLIENT_ID_OFFSET), clientId);
 	}
 	
 	public void copyClientId(byte[] targetBuffer, int offset) {

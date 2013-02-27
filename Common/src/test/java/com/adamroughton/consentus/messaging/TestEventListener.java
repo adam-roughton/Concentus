@@ -21,7 +21,6 @@ import java.util.concurrent.TimeUnit;
 
 import org.junit.*;
 import org.junit.runner.RunWith;
-import org.mockito.ArgumentMatcher;
 import org.mockito.Mock;
 import org.mockito.runners.MockitoJUnitRunner;
 import org.mockito.stubbing.OngoingStubbing;
@@ -39,6 +38,7 @@ import com.lmax.disruptor.Sequence;
 
 import static org.mockito.Mockito.*;
 import static com.adamroughton.consentus.messaging.ZmqTestUtil.*;
+import static com.adamroughton.consentus.Util.*;
 import static org.junit.Assert.*;
 
 @RunWith(MockitoJUnitRunner.class)
@@ -171,38 +171,6 @@ public class TestEventListener {
 	
 	public void GeneralRuntimeException() throws Exception {
 		
-	}
-	
-	private String toHexString(byte[] array) {
-	   return toHexString(array, 0, array.length);
-	}
-	
-	private String toHexString(byte[] array, int offset, int length) {
-		   StringBuilder sb = new StringBuilder();
-		   for (int i = offset; i < offset + length; i++) {
-			   sb.append(String.format("%02x", array[i] & 0xff));
-		   }
-		   return sb.toString();
-		}
-	
-	private static class ArrayLengthMatcher<T> extends ArgumentMatcher<T> {
-
-		private final int _expectedLength;
-		
-		public ArrayLengthMatcher(final int expectedLength) {
-			_expectedLength = expectedLength;
-		}
-		
-		@Override
-		public boolean matches(Object argument) {
-			int length = java.lang.reflect.Array.getLength(argument);
-			return length == _expectedLength;
-		}
-	}
-	
-	private static <T> ArrayLengthMatcher<T> matchesLength(final T array) {
-		int length = java.lang.reflect.Array.getLength(array);
-		return new ArrayLengthMatcher<>(length);
 	}
 	
 }

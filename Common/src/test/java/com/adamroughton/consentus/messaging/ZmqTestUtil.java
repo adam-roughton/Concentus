@@ -16,15 +16,9 @@
 package com.adamroughton.consentus.messaging;
 
 import java.nio.ByteBuffer;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.locks.Condition;
-import java.util.concurrent.locks.Lock;
-import java.util.concurrent.locks.ReentrantLock;
 
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
-import org.zeromq.ZMQ;
-import org.zeromq.ZMQException;
 
 public class ZmqTestUtil {
 
@@ -65,102 +59,33 @@ public class ZmqTestUtil {
 		};
 	}
 	
-	public static class BlockingCall {
-		
-		private final Lock _lock = new ReentrantLock();
-		private final Condition _blockCond = _lock.newCondition();
-		private final Condition _callerHasBlockedCond = _lock.newCondition();
-		
-		private boolean _raiseEterm = false;
-		private boolean _interrupt = false;
-		private boolean _hasBlocked = false;
-		
-		public boolean waitForBlockingCall(long timeout, TimeUnit unit) throws InterruptedException {
-			boolean success = false;
-			_lock.lock();
-			try {
-				if (timeout >= 0) {
-					long endTime = System.nanoTime() + unit.toNanos(timeout);
-					long remainingNanos;
-					while ((remainingNanos = endTime - System.nanoTime()) > 0 && !_hasBlocked) {
-						success = _callerHasBlockedCond.await(remainingNanos, TimeUnit.NANOSECONDS);
-					}
-				} else {
-					while(!_hasBlocked) {
-						_callerHasBlockedCond.await();
-						success = true;
-					}
-				}
-			} finally {
-				_lock.unlock();
-			}
-			return success;
-		}
-		
-		public void waitForBlockingCall() throws InterruptedException {
-			waitForBlockingCall(-1, TimeUnit.NANOSECONDS);
-		}
-		
-		public void releaseBlockedCall() {
-			_lock.lock();
-			try {
-				_blockCond.signal();
-			} finally {
-				_lock.unlock();
-			}
-		}
-		
-		public void interruptBlockedCall() {
-			_lock.lock();
-			try {
-				if (_hasBlocked) {
-					_interrupt = true;
-				}
-				_blockCond.signal();
-			} finally {
-				_lock.unlock();
-			}
-		}
-		
-		public void raiseEtermOnBlockedCall() {
-			_lock.lock();
-			try {
-				// only raise if actually blocked
-				if (_hasBlocked) {
-					_raiseEterm = true;
-				}
-				_blockCond.signal();
-			} finally {
-				_lock.unlock();
-			}
-		}
-		
-		public void block() {
-			boolean raiseEterm;
-			boolean interrupt;
-			
-			_lock.lock();
-			try {
-				_hasBlocked = true;
-				_callerHasBlockedCond.signalAll();
-				try {
-					_blockCond.await();
-				} catch (InterruptedException eInterrupted) {
-					Thread.currentThread().interrupt();
-				}
-				raiseEterm = _raiseEterm;
-				interrupt = _interrupt;
-			} finally {
-				_lock.unlock();
-			}
-			if (raiseEterm) {
-				throw new ZMQException("Fake Socket Close", (int) ZMQ.Error.ETERM.getCode());
-			} else if (interrupt) {
-				Thread.currentThread().interrupt();
-			}
-		}
-		
+	public static <T> ArrayLengthMatcher<T> matchesLength(final T array) {
+		int length = java.lang.reflect.Array.getLength(array);
+		return new ArrayLengthMatcher<>(length);
 	}
 	
+	public static ByteArrayMatcher hasBytes(final byte[] bytes) {
+		return new ByteArrayMatcher(bytes);
+	}
+	
+	public static ByteArrayMatcher hasBytesInRange(final byte[] bytes, int offsetInActual, int length) {
+		return new ByteArrayMatcher(bytes, offsetInActual, length);
+	}
+	
+	public static boolean arrayRangeEqual(byte[] expected, byte[] actual, int offsetOnActual, int length) {
+		if (offsetOnActual < 0)
+			throw new IllegalArgumentException("The offset must be 0 or greater.");
+		if (length < 0)
+			throw new IllegalArgumentException("The length must be 0 or greater.");
+		
+		if (actual.length < offsetOnActual + length) {
+			return false;
+		}
+		for (int i = 0; i < expected.length; i++) {
+			if (expected[i] != actual[i + offsetOnActual])
+				return false;
+		}
+		return true;
+	}
 	
 }

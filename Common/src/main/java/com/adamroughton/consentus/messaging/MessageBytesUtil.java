@@ -16,6 +16,7 @@
 package com.adamroughton.consentus.messaging;
 
 import java.lang.reflect.Field;
+import java.util.UUID;
 
 import sun.misc.Unsafe;
 
@@ -174,6 +175,19 @@ public final class MessageBytesUtil {
 		long lVal = Double.doubleToRawLongBits(value);
 		lVal = _isLittleEndian? Long.reverseBytes(lVal) : lVal;
 		_unsafe.putLong(array, BYTE_ARRAY_OFFSET + offset, lVal);
+	}
+	
+	public static UUID readUUID(byte[] array, long offset) {
+		long msb = readLong(array, offset);
+		long lsb = readLong(array, offset + 8);
+		return new UUID(msb, lsb);
+	}
+	
+	public static void writeUUID(byte[] array, long offset, UUID value) {
+		long msb = value.getMostSignificantBits();
+		long lsb = value.getLeastSignificantBits();
+		writeLong(array, offset, msb);
+		writeLong(array, offset + 8, lsb);
 	}
 	
 	/*public static int[] readIntArray(byte[] array, long offset) {

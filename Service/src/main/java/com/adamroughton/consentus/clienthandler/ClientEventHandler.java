@@ -15,11 +15,83 @@
  */
 package com.adamroughton.consentus.clienthandler;
 
+import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.LockSupport;
+
+import org.zeromq.ZMQ;
+
+import com.adamroughton.consentus.FatalExceptionCallback;
+import com.adamroughton.consentus.Util;
+import com.lmax.disruptor.RingBuffer;
+import com.lmax.disruptor.Sequence;
+import com.lmax.disruptor.SequenceBarrier;
+
 /**
+ * Manages a 0MQ Router socket that communicates with all 
+ * connected clients for this client handler. As we need 
+ * to both send and receive on the same socket, this class 
+ * fairly multiplexes send and receive operations.
  * 
  * @author Adam Roughton
  *
  */
-public class ClientEventHandler {
+public class ClientEventHandler implements Runnable {
 
+	private final int _clientPort;
+	private final ZMQ.Context _zmqContext;
+	private final AtomicBoolean _hasStarted = new AtomicBoolean(false);
+	
+	private final IncomingClientEventHandler _incomingEventHandler;
+	private final OutgoingClientEventHandler _outgoingEventHandler;
+		
+	private final FatalExceptionCallback _exCallback;
+	
+	public ClientEventHandler(
+			final int clientPort, 
+			final ZMQ.Context zmqContext,
+			final RingBuffer<byte[]> incomingRingBuffer,
+			final RingBuffer<byte[]> outgoingRingBuffer,
+			final SequenceBarrier outgoingBarrier,
+			final FatalExceptionCallback exCallback) {
+		Util.assertPortValid(clientPort);
+		_clientPort = clientPort;
+		_zmqContext = Objects.requireNonNull(zmqContext);
+		
+		_incomingEventHandler = new IncomingClientEventHandler(incomingRingBuffer);
+		_outgoingEventHandler = new OutgoingClientEventHandler(outgoingRingBuffer, outgoingBarrier);
+		
+		_exCallback = Objects.requireNonNull(exCallback);
+	}
+
+	@Override
+	public void run() {
+		if (!_hasStarted.compareAndSet(false, true)) {
+			_exCallback.signalFatalException(new RuntimeException(
+					"The client event handler has already been started."));
+		}
+		try {
+			ZMQ.Socket socket = _zmqContext.socket(ZMQ.ROUTER);
+			socket.bind(String.format("tcp://*:%d", _clientPort));
+			
+			boolean wasActivity = false;
+			while(!Thread.interrupted()) {				
+				wasActivity &= _incomingEventHandler.recvIfReady(socket);
+				wasActivity &= _outgoingEventHandler.sendIfReady(socket);
+				if (!wasActivity) {
+					// yield the thread
+					LockSupport.parkNanos(1L);
+				}
+			}
+		} catch (Throwable e) {
+			_exCallback.signalFatalException(e);
+		} finally {
+			_incomingEventHandler.tidyUp();
+		}
+	}
+	
+	public Sequence getIncomingSequence() {
+		return _incomingEventHandler.getSequence();
+	}
+	
 }

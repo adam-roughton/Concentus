@@ -17,6 +17,16 @@ package com.adamroughton.consentus;
 
 public final class Constants {
 
-	public static final long TIME_STEP = 100L;
+	/**
+	 * The time length for each simulation tick in
+	 * milliseconds. 
+	 */
+	public static final long TIME_STEP_IN_MS = 100L;
+	
+	/**
+	 * The number of bytes used to uniquely identify
+	 * a client.
+	 */
+	public static final int CLIENT_ID_LENGTH = 16;
 	
 }

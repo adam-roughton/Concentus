@@ -131,11 +131,11 @@ public class StateProcessor implements EventProcessor {
 	
 	private void tickIfNeeded() {
 		long nextTickTime = System.currentTimeMillis();
-		if (nextTickTime >= _lastTickTime + Constants.TIME_STEP) {
+		if (nextTickTime >= _lastTickTime + Constants.TIME_STEP_IN_MS) {
 			long frameTime = nextTickTime - _lastTickTime;
 			_accumulator += frameTime;
 			
-			long dt = Constants.TIME_STEP;
+			long dt = Constants.TIME_STEP_IN_MS;
 			while (_accumulator >= dt) {
 				_stateLogic.tick(_simTime, dt);
 				_simTime += dt;
@@ -155,7 +155,7 @@ public class StateProcessor implements EventProcessor {
 	}
 	
 	private long getTimeUntilNextTick() {
-		long remainingTime = _lastTickTime + Constants.TIME_STEP - System.currentTimeMillis();
+		long remainingTime = _lastTickTime + Constants.TIME_STEP_IN_MS - System.currentTimeMillis();
 		if (remainingTime < 0)
 			remainingTime = 0;
 		return remainingTime;

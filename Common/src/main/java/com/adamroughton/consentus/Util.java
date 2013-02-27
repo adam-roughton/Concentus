@@ -49,5 +49,36 @@ public class Util {
 		MessageBytesUtil.writeInt(subId, 0, eventType.getId());
 		return subId;
 	}
-
+	
+	public static String toHexString(byte[] array) {
+	   return toHexString(array, 0, array.length);
+	}
+			
+	public static String toHexString(byte[] array, int offset, int length) {
+	   StringBuilder sb = new StringBuilder();
+	   for (int i = offset; i < offset + length; i++) {
+		   sb.append(String.format("%02x", array[i] & 0xff));
+	   }
+	   return sb.toString();
+	}
+	
+	public static String toHexStringSegment(byte[] array, int offset, int range) {
+	   StringBuilder sb = new StringBuilder();
+	   int start = offset - range;
+	   start = start < 0? 0 : start;
+	   
+	   int end = offset + range;
+	   end = end > array.length? array.length: end;
+	   
+	   for (int i = start; i < end; i++) {
+		   if (i == offset) {
+			   sb.append('[');
+		   }
+		   sb.append(String.format("%02x", array[i] & 0xff));
+		   if (i == offset) {
+			   sb.append(']');
+		   }
+	   }
+	   return sb.toString();
+	}
 }

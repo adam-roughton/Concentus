@@ -16,6 +16,7 @@
 package com.adamroughton.consentus.messaging;
 
 import java.nio.ByteBuffer;
+import java.util.UUID;
 
 import org.junit.*;
 import static org.junit.Assert.*;
@@ -289,6 +290,52 @@ public class TestMessageBytesUtil {
 		MessageBytesUtil.writeDouble(array, 1, 25);
 		ByteBuffer bb = ByteBuffer.wrap(array);
 		assertEquals(25, bb.getDouble(1), 0);
+	}
+	
+	@Test
+	public void testReadUUID() {
+		ByteBuffer bb = ByteBuffer.allocate(16);
+		
+		UUID expected = UUID.fromString("abababab-abab-abab-abab-abababababab");
+		long msb = expected.getMostSignificantBits();
+		long lsb = expected.getLeastSignificantBits();
+		bb.putLong(msb);
+		bb.putLong(lsb);
+		assertEquals(expected, MessageBytesUtil.readUUID(bb.array(), 0));
+	}
+	
+	@Test
+	public void testReadUUID_NonZeroOffset() {
+		ByteBuffer bb = ByteBuffer.allocate(32);
+		
+		UUID expected = UUID.fromString("abababab-abab-abab-abab-abababababab");
+		long msb = expected.getMostSignificantBits();
+		long lsb = expected.getLeastSignificantBits();
+		bb.putLong(1, msb);
+		bb.putLong(9, lsb);
+		assertEquals(expected, MessageBytesUtil.readUUID(bb.array(), 1));
+	}
+	
+	@Test
+	public void testWriteUUID() {
+		byte[] array = new byte[16];
+		UUID expected = UUID.fromString("abababab-abab-abab-abab-abababababab");
+		
+		MessageBytesUtil.writeUUID(array, 0, expected);
+		ByteBuffer bb = ByteBuffer.wrap(array);
+		assertEquals(expected.getMostSignificantBits(), bb.getLong());
+		assertEquals(expected.getLeastSignificantBits(), bb.getLong());
+	}
+	
+	@Test
+	public void testWriteUUID_NonZeroOffset() {
+		byte[] array = new byte[32];
+		UUID expected = UUID.fromString("abababab-abab-abab-abab-abababababab");
+		
+		MessageBytesUtil.writeUUID(array, 1, expected);
+		ByteBuffer bb = ByteBuffer.wrap(array);
+		assertEquals(expected.getMostSignificantBits(), bb.getLong(1));
+		assertEquals(expected.getLeastSignificantBits(), bb.getLong(9));
 	}
 	
 	@Test
