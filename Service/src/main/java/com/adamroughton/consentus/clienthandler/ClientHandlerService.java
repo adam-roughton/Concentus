@@ -42,7 +42,7 @@ public class ClientHandlerService implements ConsentusService {
 
 	private ExecutorService _executor;
 	private Disruptor<byte[]> _inputDisruptor;
-	private Disruptor<byte[]> _outputDisruptor;
+	private Disruptor<byte[]> _clientOutputDisruptor;
 	
 	private EventListener _eventListener;
 	private StateProcessor _stateProcessor;

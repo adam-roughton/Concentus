@@ -17,6 +17,9 @@ package com.adamroughton.consentus.clienthandler;
 
 public final class ClientProxy {
 
+	private byte[] _clientId;
+	private long _lastHeartbeat;
+	private byte[] _activeJointActionId;
 	
 	
 }

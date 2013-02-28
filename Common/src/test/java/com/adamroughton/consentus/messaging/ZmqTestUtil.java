@@ -15,10 +15,13 @@
  */
 package com.adamroughton.consentus.messaging;
 
+import static com.adamroughton.consentus.Util.toHexStringSegment;
+
 import java.nio.ByteBuffer;
 
 import org.mockito.invocation.InvocationOnMock;
 import org.mockito.stubbing.Answer;
+import static org.junit.Assert.*;
 
 public class ZmqTestUtil {
 
@@ -88,4 +91,33 @@ public class ZmqTestUtil {
 		return true;
 	}
 	
+	public static void assertRangeEqual(byte[] expected, byte[] actual, int offsetOnActual, int length) {
+		if (offsetOnActual < 0)
+			throw new IllegalArgumentException("The offset must be 0 or greater.");
+		if (length < 0)
+			throw new IllegalArgumentException("The length must be 0 or greater.");
+		
+		boolean areEqual = true;
+		String reason = "";
+		if (actual.length < offsetOnActual + length) {
+			reason = "the actual array was shorter than the length + offset";
+			areEqual = false;
+		} else {
+			for (int i = 0; i < expected.length; i++) {
+				if (expected[i] != actual[i + offsetOnActual]) {
+					reason = getUnmatchedOffsetMessage(expected[i], i + offsetOnActual, actual);
+					areEqual = false;
+					break;
+				}
+			}
+		}
+		assertTrue(reason, areEqual);
+	}
+	
+	public static String getUnmatchedOffsetMessage(int expectedValue, int offset, byte[] actual) {
+		return String.format("expected: %d at offset %d, actual array: %s", 
+				expectedValue, 
+				offset, 
+				toHexStringSegment(actual, offset, 5));
+	}
 }

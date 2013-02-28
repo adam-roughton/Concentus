@@ -17,7 +17,6 @@ package com.adamroughton.consentus.clienthandler;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.concurrent.locks.LockSupport;
 
 import org.zeromq.ZMQ;
 
@@ -36,7 +35,7 @@ import com.lmax.disruptor.SequenceBarrier;
  * @author Adam Roughton
  *
  */
-public class ClientEventHandler implements Runnable {
+class EventHandler implements Runnable {
 
 	private final int _clientPort;
 	private final ZMQ.Context _zmqContext;
@@ -47,7 +46,7 @@ public class ClientEventHandler implements Runnable {
 		
 	private final FatalExceptionCallback _exCallback;
 	
-	public ClientEventHandler(
+	public EventHandler(
 			final int clientPort, 
 			final ZMQ.Context zmqContext,
 			final RingBuffer<byte[]> incomingRingBuffer,
@@ -74,13 +73,17 @@ public class ClientEventHandler implements Runnable {
 			ZMQ.Socket socket = _zmqContext.socket(ZMQ.ROUTER);
 			socket.bind(String.format("tcp://*:%d", _clientPort));
 			
-			boolean wasActivity = false;
-			while(!Thread.interrupted()) {				
+			int inactivityCount = 0;
+			while(!Thread.interrupted()) {	
+				boolean wasActivity = false;
 				wasActivity &= _incomingEventHandler.recvIfReady(socket);
 				wasActivity &= _outgoingEventHandler.sendIfReady(socket);
 				if (!wasActivity) {
-					// yield the thread
-					LockSupport.parkNanos(1L);
+					inactivityCount--;
+				}
+				if (inactivityCount >= 10) {
+					Thread.yield();
+					inactivityCount = 0;
 				}
 			}
 		} catch (Throwable e) {
@@ -92,6 +95,10 @@ public class ClientEventHandler implements Runnable {
 	
 	public Sequence getIncomingSequence() {
 		return _incomingEventHandler.getSequence();
+	}
+	
+	public Sequence getOutgoingSequence() {
+		return _outgoingEventHandler.getSequence();
 	}
 	
 }

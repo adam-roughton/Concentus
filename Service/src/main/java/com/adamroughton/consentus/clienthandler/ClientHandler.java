@@ -58,6 +58,26 @@ public class ClientHandler implements EventHandler<byte[]> {
 		// action
 		
 		
+		// clientId : {clientHandlerID:internalId}
+		
+		// assume authentication system separate to the client handlers
+		// therefore the client handler gets given 
+		/*
+		 * connection:
+		 *  1. get free client slot count (count)
+		 * 	2. request client proxy slot (slotID, failure)
+		 * 	3. client connects with ID = {clientHandlerId:slotID}
+		 * 
+		 * for testing:
+		 *  1. client connects -> internal ID
+		 *  2. proxy stores mapping from internal ID -> proxy ID
+		 *  3. 
+		 * 
+		 * event flow:
+		 *  
+		 * 
+		 */
+		
 		
 	}
 
