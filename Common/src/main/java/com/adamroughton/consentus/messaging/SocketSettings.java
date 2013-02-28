@@ -25,10 +25,11 @@ public final class SocketSettings {
 	private final int[] _portsToBindTo;
 	private final String[] _connectionStrings;
 	private final long _hwm;
-	private final int[] _messageOffsets;
+	private final MessagePartBufferPolicy _messagePartPolicy;
+	private final int _socketId;
 	
 	public static SocketSettings create(final int socketType) {
-		return new SocketSettings(socketType, new int[0], new String[0], -1, new int[] { 0 });
+		return new SocketSettings(socketType, new int[0], new String[0], -1, new MessagePartBufferPolicy(0), 0);
 	}
 	
 	private SocketSettings(
@@ -36,12 +37,14 @@ public final class SocketSettings {
 			final int[] portsToBindTo, 
 			final String[] connectionStrings,
 			final long hwm,
-			final int[] messageOffsets) {
+			final MessagePartBufferPolicy messagePartPolicy,
+			final int socketId) {
 		_socketType = socketType;
 		_portsToBindTo = portsToBindTo;
 		_connectionStrings = connectionStrings;
 		_hwm = hwm;
-		_messageOffsets = messageOffsets;
+		_messagePartPolicy = messagePartPolicy;
+		_socketId = socketId;
 	}
 	
 	public SocketSettings bindToPort(final int port) {
@@ -49,38 +52,39 @@ public final class SocketSettings {
 		int[] portsToBindTo = new int[_portsToBindTo.length + 1];
 		System.arraycopy(_portsToBindTo, 0, portsToBindTo, 0, _portsToBindTo.length);
 		portsToBindTo[_portsToBindTo.length] = port;
-		return new SocketSettings(_socketType, portsToBindTo, _connectionStrings, _hwm, _messageOffsets);
+		return new SocketSettings(_socketType, portsToBindTo, _connectionStrings, _hwm, _messagePartPolicy, _socketId);
 	}
 	
 	public SocketSettings connectToAddress(final String address) {
 		String[] connectionStrings = new String[_connectionStrings.length + 1];
 		System.arraycopy(_connectionStrings, 0, connectionStrings, 0, _connectionStrings.length);
 		connectionStrings[_connectionStrings.length] = address;
-		return new SocketSettings(_socketType, _portsToBindTo, connectionStrings, _hwm, _messageOffsets);
+		return new SocketSettings(_socketType, _portsToBindTo, connectionStrings, _hwm, _messagePartPolicy, _socketId);
 	}
 	
 	public SocketSettings setHWM(final int hwm) {
 		if (hwm < 0)
 			throw new IllegalArgumentException("The HWM must be 0 or greater.");
-		return new SocketSettings(_socketType, _portsToBindTo, _connectionStrings, hwm, _messageOffsets);
+		return new SocketSettings(_socketType, _portsToBindTo, _connectionStrings, hwm, _messagePartPolicy, _socketId);
 	}
 	
 	public SocketSettings setMessageOffsets(final int firstOffset, int... subsequentOffsets) {
 		int[] offsets = new int[subsequentOffsets.length + 1];
-		for (int i = 0; i < subsequentOffsets.length + 1; i++) {
-			int offset;
-			if (i == 0) {
-				offset = firstOffset;
-			} else {
-				offset = subsequentOffsets[i - 1];
-			}
-			if (offset < 0) {
-				throw new IllegalArgumentException("The offset must be 0 or greater.");
-			} else {
-				offsets[i] = offset;
-			}
-		}
-		return new SocketSettings(_socketType, _portsToBindTo, _connectionStrings, _hwm, offsets);
+		offsets[0] = firstOffset;
+		System.arraycopy(subsequentOffsets, 0, offsets, 1, subsequentOffsets.length);
+		MessagePartBufferPolicy messagePartPolicy = new MessagePartBufferPolicy(offsets);
+		return new SocketSettings(_socketType, _portsToBindTo, _connectionStrings, _hwm, messagePartPolicy, _socketId);
+	}
+	
+	/**
+	 * An optional identifier that will be written in to an attached
+	 * buffer as part of a header.
+	 * 
+	 * @param socketId
+	 * @return
+	 */
+	public SocketSettings setSocketId(final int socketId) {
+		return new SocketSettings(_socketType, _portsToBindTo, _connectionStrings, _hwm, _messagePartPolicy, socketId);
 	}
 	
 	public int getSocketType() {
@@ -99,8 +103,18 @@ public final class SocketSettings {
 		return _hwm;
 	}
 	
-	public int[] getMessageOffsets() {
-		return Arrays.copyOf(_messageOffsets, _messageOffsets.length);
+	public MessagePartBufferPolicy getMessagePartPolicy() {
+		return new MessagePartBufferPolicy(_messagePartPolicy);
+	}
+	
+	/**
+	 * An optional identifier that will be written in to an attached
+	 * buffer as part of a header.
+	 * 
+	 * @return the socket ID
+	 */
+	public int getSocketId() {
+		return _socketId;
 	}
 
 	@Override
@@ -109,8 +123,12 @@ public final class SocketSettings {
 		int result = 1;
 		result = prime * result + Arrays.hashCode(_connectionStrings);
 		result = prime * result + (int) (_hwm ^ (_hwm >>> 32));
-		result = prime * result + Arrays.hashCode(_messageOffsets);
+		result = prime
+				* result
+				+ ((_messagePartPolicy == null) ? 0 : _messagePartPolicy
+						.hashCode());
 		result = prime * result + Arrays.hashCode(_portsToBindTo);
+		result = prime * result + _socketId;
 		result = prime * result + _socketType;
 		return result;
 	}
@@ -128,9 +146,14 @@ public final class SocketSettings {
 			return false;
 		if (_hwm != other._hwm)
 			return false;
-		if (!Arrays.equals(_messageOffsets, other._messageOffsets))
+		if (_messagePartPolicy == null) {
+			if (other._messagePartPolicy != null)
+				return false;
+		} else if (!_messagePartPolicy.equals(other._messagePartPolicy))
 			return false;
 		if (!Arrays.equals(_portsToBindTo, other._portsToBindTo))
+			return false;
+		if (_socketId != other._socketId)
 			return false;
 		if (_socketType != other._socketType)
 			return false;

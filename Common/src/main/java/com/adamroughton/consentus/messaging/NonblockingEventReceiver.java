@@ -42,11 +42,13 @@ public class NonblockingEventReceiver {
 	 * event buffer when receiving the event parts. All offsets are relative
 	 * to a reserved {@value #RESV_OFFSET} byte offset (i.e. {3, 5, 10} -> {(3 + {@value #RESV_OFFSET}), 
 	 * (5 + {@value #RESV_OFFSET}), (10 + {@value #RESV_OFFSET})}).
+	 * @param socketId the id to write into the header byte of the {@link RingBuffer} entry
 	 * @return whether an event was placed in the buffer. This will return true even
 	 * if the event is corrupt or had an unexpected number of event parts
 	 */
 	public boolean recvIfReady(final ZMQ.Socket socket, 
-			final MessagePartBufferPolicy msgPartOffsets) {
+			final MessagePartBufferPolicy msgPartOffsets,
+			final int socketId) {
 		if (_unpubClaimedSeq == -1 && _incomingBuffer.hasAvailableCapacity(1)) {
 			_unpubClaimedSeq = _incomingBuffer.next();					
 		}	
@@ -54,6 +56,7 @@ public class NonblockingEventReceiver {
 		if (_unpubClaimedSeq != -1) {
 			byte[] incomingBuffer = _incomingBuffer.get(_unpubClaimedSeq);
 			if (doRecv(socket, incomingBuffer, msgPartOffsets)) {
+				MessageBytesUtil.write4BitUInt(incomingBuffer, 0, 4, socketId);
 				publish();
 				return true;
 			}

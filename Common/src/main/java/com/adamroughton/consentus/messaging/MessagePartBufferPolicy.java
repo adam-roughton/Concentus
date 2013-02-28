@@ -71,5 +71,30 @@ public final class MessagePartBufferPolicy {
 	public int getMinReqBufferSize() {
 		return _minReqBufferSize;
 	}
+
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		result = prime * result + _minReqBufferSize;
+		result = prime * result + Arrays.hashCode(_offsets);
+		return result;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		MessagePartBufferPolicy other = (MessagePartBufferPolicy) obj;
+		if (_minReqBufferSize != other._minReqBufferSize)
+			return false;
+		if (!Arrays.equals(_offsets, other._offsets))
+			return false;
+		return true;
+	}
 	
 }

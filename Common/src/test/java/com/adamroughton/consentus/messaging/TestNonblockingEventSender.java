@@ -9,8 +9,6 @@ import org.mockito.*;
 import org.mockito.runners.MockitoJUnitRunner;
 import org.zeromq.ZMQ;
 
-import sun.awt.image.BytePackedRaster;
-
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.RingBuffer;

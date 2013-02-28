@@ -71,21 +71,24 @@ public final class EventListener implements Runnable {
 		
 		try {
 			ZMQ.Socket[] sockets = new ZMQ.Socket[_multiSocketSettings.socketCount()];
-			int[][] multiMessagePartOffsets = new int[_multiSocketSettings.socketCount()][];
+			MessagePartBufferPolicy[] multiMessagePartOffsets = 
+					new MessagePartBufferPolicy[_multiSocketSettings.socketCount()];
+			int[] socketIds = new int[_multiSocketSettings.socketCount()];
 			for (int i = 0; i < _multiSocketSettings.socketCount(); i++) {
 				if (_multiSocketSettings.isSub(i)) {
 					sockets[i] = createSubSocket(_zmqContext, _multiSocketSettings.getSubSocketSettings(i));
 				} else {
 					sockets[i] = createSocket(_zmqContext, _multiSocketSettings.getSocketSettings(i));
 				}
-				multiMessagePartOffsets[i] = _multiSocketSettings.getSocketSettings(i).getMessageOffsets();
+				multiMessagePartOffsets[i] = _multiSocketSettings.getSocketSettings(i).getMessagePartPolicy();
+				socketIds[i] = _multiSocketSettings.getSocketSettings(i).getSocketId();
 			}
 			
 			try {		
 				if (sockets.length == 1) {
-					doRecvSingleSocket(sockets[0], multiMessagePartOffsets[0]);
+					doRecvSingleSocket(sockets[0], multiMessagePartOffsets[0], socketIds[0]);
 				} else {
-					doRecvMultiSocket(sockets, multiMessagePartOffsets);
+					doRecvMultiSocket(sockets, multiMessagePartOffsets, socketIds);
 				}
 			} catch (ZMQException eZmq) {
 				// check that the socket hasn't just been closed
@@ -106,13 +109,17 @@ public final class EventListener implements Runnable {
 		}
 	}
 	
-	private void doRecvSingleSocket(final ZMQ.Socket socket, final int[] messagePartOffsets) throws Exception {
+	private void doRecvSingleSocket(final ZMQ.Socket socket, 
+			final MessagePartBufferPolicy msgPartPolicy,
+			final int socketId) throws Exception {
 		while (!Thread.interrupted()) {
-			nextEvent(socket, messagePartOffsets);
+			nextEvent(socket, msgPartPolicy, socketId);
 		}
 	}
 	
-	private void doRecvMultiSocket(ZMQ.Socket[] sockets, final int[][] multiMessagePartOffsets) throws Exception {
+	private void doRecvMultiSocket(ZMQ.Socket[] sockets, 
+			final MessagePartBufferPolicy[] msgPartPolicies, 
+			final int[] socketIds) throws Exception {
 		ZMQ.Poller poller = _zmqContext.poller(sockets.length);
 		for (int i = 0; i < sockets.length; i++) {
 			poller.register(sockets[i], ZMQ.Poller.POLLIN);
@@ -121,13 +128,13 @@ public final class EventListener implements Runnable {
 			poller.poll();
 			for (int i = 0; i < sockets.length; i++) {
 				if (poller.pollin(i)) {
-					nextEvent(poller.getSocket(i), multiMessagePartOffsets[i]);
+					nextEvent(poller.getSocket(i), msgPartPolicies[i], socketIds[i]);
 				}
 			}
 		}
 	}
 	
-	private void nextEvent(final ZMQ.Socket input, final int[] messagePartOffsets) {
+	private void nextEvent(final ZMQ.Socket input, final MessagePartBufferPolicy msgPartPolicy, final int socketId) {
 		final long seq = _ringBuffer.next();
 		final byte[] array = _ringBuffer.get(seq);
 		try {
@@ -135,12 +142,12 @@ public final class EventListener implements Runnable {
 			// we reserve the first byte of the buffer to communicate
 			// whether the event was received correctly
 			int offset = 1;
-			for (int i = 0; i < messagePartOffsets.length; i++) {
-				offset += messagePartOffsets[i];
+			for (int i = 0; i < msgPartPolicy.partCount(); i++) {
+				offset = msgPartPolicy.getOffset(i) + 1;
 				result = input.recv(array, offset, array.length - offset, 0);
 				if (result == -1)
 					break;
-				if (messagePartOffsets.length > i + 1 &&					
+				if (msgPartPolicy.partCount() > i + 1 &&					
 						!input.hasReceiveMore()) {
 					result = -1;
 					break;
@@ -157,6 +164,7 @@ public final class EventListener implements Runnable {
 			Log.error("An error was raised on receiving a message.", e);
 			throw new RuntimeException(e);
 		} finally {
+			MessageBytesUtil.write4BitUInt(array, 0, 4, socketId);
 			_ringBuffer.publish(seq);
 		}
 	}

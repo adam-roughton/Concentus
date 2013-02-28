@@ -83,12 +83,13 @@ public class RouterSocketReactor implements Runnable {
 		}
 		try {
 			ZMQ.Socket socket = createSocket(_zmqContext, _socketSettings);
-			MessagePartBufferPolicy msgPolicy = new MessagePartBufferPolicy(_socketSettings.getMessageOffsets());
+			MessagePartBufferPolicy msgPolicy = _socketSettings.getMessagePartPolicy();
+			int socketId = _socketSettings.getSocketId();
 			
 			int inactivityCount = 0;
 			while(!Thread.interrupted()) {	
 				boolean wasActivity = false;
-				wasActivity &= _receiver.recvIfReady(socket, msgPolicy);
+				wasActivity &= _receiver.recvIfReady(socket, msgPolicy, socketId);
 				wasActivity &= _sender.sendIfReady(socket, msgPolicy);
 				if (!wasActivity) {
 					inactivityCount--;

@@ -82,7 +82,7 @@ public class TestNonblockingEventReceiver {
 			.thenReturn(true)
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets, 0);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -96,7 +96,7 @@ public class TestNonblockingEventReceiver {
 	public void recvWithNoBufferSpace() {
 		_gatingSeq.set(-1);
 		
-		assertFalse(_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets));
+		assertFalse(_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets, 0));
 		verify(_zmqSocket, never()).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
 		
 		assertEquals(3, _buffer.getCursor());
@@ -111,7 +111,7 @@ public class TestNonblockingEventReceiver {
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets, 0);
 		
 		assertEquals(3, _buffer.getCursor());
 		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
@@ -122,7 +122,7 @@ public class TestNonblockingEventReceiver {
 	public void recvWithNoBufferSpaceThenRecvWithSpace() {
 		_gatingSeq.set(-1);
 		
-		assertFalse(_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets));
+		assertFalse(_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets, 0));
 		verify(_zmqSocket, never()).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
 		assertEquals(3, _buffer.getCursor());
 		
@@ -138,7 +138,7 @@ public class TestNonblockingEventReceiver {
 			.thenReturn(true)
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets, 0);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -157,7 +157,7 @@ public class TestNonblockingEventReceiver {
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets, 0);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -177,7 +177,7 @@ public class TestNonblockingEventReceiver {
 			.thenReturn(true)
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets, 0);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -198,7 +198,7 @@ public class TestNonblockingEventReceiver {
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets, 0);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -228,7 +228,7 @@ public class TestNonblockingEventReceiver {
 			.thenReturn(true)
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets, 0);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -254,7 +254,7 @@ public class TestNonblockingEventReceiver {
 			.thenReturn(true) // second call for same part
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy());
+		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(), 0);
 		
 		assertEquals(4, _buffer.getCursor());
 		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
@@ -273,7 +273,7 @@ public class TestNonblockingEventReceiver {
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy());
+		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(), 0);
 		
 		assertEquals(3, _buffer.getCursor());
 		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
@@ -295,7 +295,7 @@ public class TestNonblockingEventReceiver {
 			.thenReturn(true)
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(EVENT_BUFFER_LENGTH, EVENT_BUFFER_LENGTH + 16));
+		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(EVENT_BUFFER_LENGTH, EVENT_BUFFER_LENGTH + 16), 0);
 		
 		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
 		verify(_zmqSocket).recv(anyInt());
@@ -315,7 +315,7 @@ public class TestNonblockingEventReceiver {
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(EVENT_BUFFER_LENGTH, EVENT_BUFFER_LENGTH + 16));
+		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(EVENT_BUFFER_LENGTH, EVENT_BUFFER_LENGTH + 16), 0);
 		
 		assertEquals(3, _buffer.getCursor());
 		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
@@ -333,7 +333,7 @@ public class TestNonblockingEventReceiver {
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(0));
+		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(0), 0);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -362,7 +362,7 @@ public class TestNonblockingEventReceiver {
 			.thenReturn(true)
 			.thenReturn(false);
 		
-		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(0, 16, 48, 80));
+		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(0, 16, 48, 80), 0);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
