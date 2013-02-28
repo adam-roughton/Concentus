@@ -15,7 +15,11 @@
  */
 package com.adamroughton.consentus;
 
+import org.zeromq.ZMQ;
+
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
+import com.adamroughton.consentus.messaging.SocketSettings;
+import com.adamroughton.consentus.messaging.SubSocketSettings;
 import com.adamroughton.consentus.messaging.events.EventType;
 import com.esotericsoftware.kryo.Kryo;
 
@@ -80,5 +84,30 @@ public class Util {
 		   }
 	   }
 	   return sb.toString();
+	}
+	
+	public static ZMQ.Socket createSocket(final ZMQ.Context context, 
+			final SocketSettings socketSettings) throws Exception {
+		ZMQ.Socket socket = context.socket(socketSettings.getSocketType());
+		long hwm = socketSettings.getHWM();
+		if (hwm != -1) {
+			socket.setHWM(hwm);
+		}
+		for (int port : socketSettings.getPortsToBindTo()) {
+			socket.bind("tcp://*:" + port);
+		}
+		for (String address : socketSettings.getConnectionStrings()) {
+			socket.connect(address);
+		}
+		return socket;
+	}
+	
+	public static ZMQ.Socket createSubSocket(final ZMQ.Context context, 
+			final SubSocketSettings subSocketSettings) throws Exception {
+		ZMQ.Socket socket = createSocket(context, subSocketSettings.getSocketSettings());
+		for (byte[] subId : subSocketSettings.getSubscriptions()) {
+			socket.subscribe(subId);
+		}
+		return socket;
 	}
 }

@@ -1,4 +1,4 @@
-package com.adamroughton.consentus.clienthandler;
+package com.adamroughton.consentus.messaging;
 
 import java.util.UUID;
 
@@ -8,7 +8,9 @@ import org.mockito.*;
 import org.mockito.runners.MockitoJUnitRunner;
 import org.zeromq.ZMQ;
 
+import com.adamroughton.consentus.messaging.NonblockingEventReceiver;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
+import com.adamroughton.consentus.messaging.MessagePartBufferPolicy;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
@@ -18,15 +20,15 @@ import static org.mockito.Mockito.*;
 import static com.adamroughton.consentus.messaging.ZmqTestUtil.*;
 
 @RunWith(MockitoJUnitRunner.class)
-public class TestIncomingEventHandler {
+public class TestNonblockingEventReceiver {
 
 	private static final int EVENT_BUFFER_LENGTH = 512;
-	private static final int RESV = IncomingEventHandler.RESV_OFFSET;
+	private static final int RESV = NonblockingEventReceiver.RESV_OFFSET;
 	
 	private RingBuffer<byte[]> _buffer;
 	private Sequence _gatingSeq = new Sequence(-1);
 	@Mock private ZMQ.Socket _zmqSocket;
-	private IncomingEventHandler _incomingHandler;
+	private NonblockingEventReceiver _receiver;
 	private final MessagePartBufferPolicy _clientMsgOffsets = new MessagePartBufferPolicy(0, 16);
 	
 	@Before
@@ -45,7 +47,7 @@ public class TestIncomingEventHandler {
 		}
 		// gating seq set such that no buffer space is available
 		_gatingSeq.set(-1);
-		_incomingHandler = new IncomingEventHandler(_buffer);
+		_receiver = new NonblockingEventReceiver(_buffer);
 	}
 	
 	private byte[] genContent(int length) {
@@ -80,7 +82,7 @@ public class TestIncomingEventHandler {
 			.thenReturn(true)
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -94,7 +96,7 @@ public class TestIncomingEventHandler {
 	public void recvWithNoBufferSpace() {
 		_gatingSeq.set(-1);
 		
-		assertFalse(_incomingHandler.recvIfReady(_zmqSocket, _clientMsgOffsets));
+		assertFalse(_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets));
 		verify(_zmqSocket, never()).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
 		
 		assertEquals(3, _buffer.getCursor());
@@ -109,7 +111,7 @@ public class TestIncomingEventHandler {
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
 		
 		assertEquals(3, _buffer.getCursor());
 		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
@@ -120,7 +122,7 @@ public class TestIncomingEventHandler {
 	public void recvWithNoBufferSpaceThenRecvWithSpace() {
 		_gatingSeq.set(-1);
 		
-		assertFalse(_incomingHandler.recvIfReady(_zmqSocket, _clientMsgOffsets));
+		assertFalse(_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets));
 		verify(_zmqSocket, never()).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
 		assertEquals(3, _buffer.getCursor());
 		
@@ -136,7 +138,7 @@ public class TestIncomingEventHandler {
 			.thenReturn(true)
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -155,7 +157,7 @@ public class TestIncomingEventHandler {
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -175,7 +177,7 @@ public class TestIncomingEventHandler {
 			.thenReturn(true)
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -196,7 +198,7 @@ public class TestIncomingEventHandler {
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -226,7 +228,7 @@ public class TestIncomingEventHandler {
 			.thenReturn(true)
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, _clientMsgOffsets);
+		_receiver.recvIfReady(_zmqSocket, _clientMsgOffsets);
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -252,7 +254,7 @@ public class TestIncomingEventHandler {
 			.thenReturn(true) // second call for same part
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, new MessagePartBufferPolicy());
+		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy());
 		
 		assertEquals(4, _buffer.getCursor());
 		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
@@ -271,7 +273,7 @@ public class TestIncomingEventHandler {
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, new MessagePartBufferPolicy());
+		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy());
 		
 		assertEquals(3, _buffer.getCursor());
 		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
@@ -293,7 +295,7 @@ public class TestIncomingEventHandler {
 			.thenReturn(true)
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(EVENT_BUFFER_LENGTH, EVENT_BUFFER_LENGTH + 16));
+		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(EVENT_BUFFER_LENGTH, EVENT_BUFFER_LENGTH + 16));
 		
 		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
 		verify(_zmqSocket).recv(anyInt());
@@ -313,7 +315,7 @@ public class TestIncomingEventHandler {
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(EVENT_BUFFER_LENGTH, EVENT_BUFFER_LENGTH + 16));
+		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(EVENT_BUFFER_LENGTH, EVENT_BUFFER_LENGTH + 16));
 		
 		assertEquals(3, _buffer.getCursor());
 		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
@@ -331,7 +333,7 @@ public class TestIncomingEventHandler {
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(0));
+		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(0));
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
@@ -360,7 +362,7 @@ public class TestIncomingEventHandler {
 			.thenReturn(true)
 			.thenReturn(false);
 		
-		_incomingHandler.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(0, 16, 48, 80));
+		_receiver.recvIfReady(_zmqSocket, new MessagePartBufferPolicy(0, 16, 48, 80));
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);

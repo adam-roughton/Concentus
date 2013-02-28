@@ -25,6 +25,8 @@ import com.adamroughton.consentus.FatalExceptionCallback;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.RingBuffer;
 
+import static com.adamroughton.consentus.Util.*;
+
 public final class EventListener implements Runnable {
 	private final AtomicBoolean _isRunning = new AtomicBoolean(false);
 	
@@ -72,9 +74,9 @@ public final class EventListener implements Runnable {
 			int[][] multiMessagePartOffsets = new int[_multiSocketSettings.socketCount()][];
 			for (int i = 0; i < _multiSocketSettings.socketCount(); i++) {
 				if (_multiSocketSettings.isSub(i)) {
-					sockets[i] = createSubSocket(_multiSocketSettings.getSubSocketSettings(i));
+					sockets[i] = createSubSocket(_zmqContext, _multiSocketSettings.getSubSocketSettings(i));
 				} else {
-					sockets[i] = createSocket(_multiSocketSettings.getSocketSettings(i));
+					sockets[i] = createSocket(_zmqContext, _multiSocketSettings.getSocketSettings(i));
 				}
 				multiMessagePartOffsets[i] = _multiSocketSettings.getSocketSettings(i).getMessageOffsets();
 			}
@@ -157,28 +159,5 @@ public final class EventListener implements Runnable {
 		} finally {
 			_ringBuffer.publish(seq);
 		}
-	}
-	
-	private ZMQ.Socket createSocket(SocketSettings socketSettings) throws Exception {
-		ZMQ.Socket socket = _zmqContext.socket(socketSettings.getSocketType());
-		long hwm = socketSettings.getHWM();
-		if (hwm != -1) {
-			socket.setHWM(hwm);
-		}
-		for (int port : socketSettings.getPortsToBindTo()) {
-			socket.bind("tcp://*:" + port);
-		}
-		for (String address : socketSettings.getConnectionStrings()) {
-			socket.connect(address);
-		}
-		return socket;
-	}
-	
-	private ZMQ.Socket createSubSocket(SubSocketSettings subSocketSettings) throws Exception {
-		ZMQ.Socket socket = createSocket(subSocketSettings.getSocketSettings());
-		for (byte[] subId : subSocketSettings.getSubscriptions()) {
-			socket.subscribe(subId);
-		}
-		return socket;
 	}
 }

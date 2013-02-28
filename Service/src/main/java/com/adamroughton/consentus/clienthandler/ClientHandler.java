@@ -18,6 +18,7 @@ package com.adamroughton.consentus.clienthandler;
 import it.unimi.dsi.fastutil.longs.Long2ObjectArrayMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 
+import com.adamroughton.consentus.messaging.MessageBytesUtil;
 import com.lmax.disruptor.EventHandler;
 
 public class ClientHandler implements EventHandler<byte[]> {
@@ -45,6 +46,13 @@ public class ClientHandler implements EventHandler<byte[]> {
 	@Override
 	public void onEvent(byte[] event, long sequence, boolean endOfBatch)
 			throws Exception {
+		int socketId = MessageBytesUtil.read4BitUInt(event, 0, 4);
+		switch (socketId) {
+		
+		}
+		
+		
+		
 		// need to identify message type
 		// need address (lookup client proxy with this) - add security later (e.g. token)
 		
@@ -81,5 +89,11 @@ public class ClientHandler implements EventHandler<byte[]> {
 		
 	}
 
+	private void onDirectEvent(byte[] event, long sequence) {
+		
+	}
 	
+	private void onUpdateEvent(byte[] event, long sequence) {
+		
+	}
 }

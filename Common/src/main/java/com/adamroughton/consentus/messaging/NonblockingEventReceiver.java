@@ -1,20 +1,20 @@
-package com.adamroughton.consentus.clienthandler;
+package com.adamroughton.consentus.messaging;
 
 import java.util.Objects;
 
 import org.zeromq.ZMQ;
 
-import com.adamroughton.consentus.messaging.MessageBytesUtil;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
 
 /**
- * Handles receiving events from passed sockets without blocking.
+ * Handles receiving events from passed sockets into the attached
+ * {@link RingBuffer} without blocking.
  * 
  * @author Adam Roughton
  *
  */
-class IncomingEventHandler {	
+public class NonblockingEventReceiver {	
 	
 	public static final int RESV_OFFSET = 1;
 	
@@ -29,14 +29,14 @@ class IncomingEventHandler {
 	 */
 	private long _unpubClaimedSeq = -1;
 	
-	public IncomingEventHandler(final RingBuffer<byte[]> incomingBuffer) {
+	public NonblockingEventReceiver(final RingBuffer<byte[]> incomingBuffer) {
 		_incomingBuffer = Objects.requireNonNull(incomingBuffer);
 		_sequence = new Sequence(-1);
 	}
 	
 	/**
 	 * Attempts to receive an event if an event is immediately available, and there is
-	 * sufficient buffer space for it.
+	 * space in the ring buffer for it.
 	 * @param socket the socket to receive on
 	 * @param msgPartOffsets the offsets to apply to the incoming 
 	 * event buffer when receiving the event parts. All offsets are relative

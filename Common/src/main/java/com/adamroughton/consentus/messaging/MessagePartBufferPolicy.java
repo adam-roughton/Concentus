@@ -1,4 +1,4 @@
-package com.adamroughton.consentus.clienthandler;
+package com.adamroughton.consentus.messaging;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -18,16 +18,17 @@ public final class MessagePartBufferPolicy {
 	
 	/**
 	 * Creates a new policy from the given offsets. Offsets are processed in order,
-	 * so any offsets that have a smaller value than a preceding offset will share
-	 * the overlap (in cases of writing to the buffer, this will overwrite the overlap;
-	 * in cases of reading, the overlap bytes will be repeated). 
+	 * and each entry must be greater than or equal to the preceding entry.
 	 * @param messagePartOffsets
 	 * @throws IllegalArgumentException if any of the offsets are negative
 	 */
 	public MessagePartBufferPolicy(final int... messagePartOffsets) {
 		int minBuffSize = 0;
+		int lastOffset = 0;
 		for (int offset : messagePartOffsets) {
 			if (offset < 0) throw new IllegalArgumentException("All offsets must be greater than or equal to 0");
+			if (offset < lastOffset) throw new IllegalArgumentException("Each offset must be greater than or equal to the preceding offset.");
+			lastOffset = offset;
 			minBuffSize = (offset + 1 > minBuffSize)? offset + 1 : minBuffSize;
 		}
 		_offsets = messagePartOffsets;

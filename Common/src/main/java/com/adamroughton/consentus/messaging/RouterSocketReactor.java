@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.adamroughton.consentus.clienthandler;
+package com.adamroughton.consentus.messaging;
 
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -21,44 +21,56 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.zeromq.ZMQ;
 
 import com.adamroughton.consentus.FatalExceptionCallback;
-import com.adamroughton.consentus.Util;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.SequenceBarrier;
 
+import static com.adamroughton.consentus.Util.*;
+
 /**
- * Manages a 0MQ Router socket that communicates with all 
- * connected clients for this client handler. As we need 
- * to both send and receive on the same socket, this class 
- * fairly multiplexes send and receive operations.
+ * 0MQ router sockets need to have both send and recv operations
+ * invoked on them - this becomes tricky when trying to gate thread
+ * access to the socket. This class wraps the router socket with
+ * a reactor that accepts events into an incoming {@link RingBuffer}, and sends
+ * events from and outgoing {@link RingBuffer}. This makes the socket
+ * play well with pipeline processing.
  * 
  * @author Adam Roughton
  *
  */
-class EventHandler implements Runnable {
-
-	private final int _clientPort;
+public class RouterSocketReactor implements Runnable {
+	
+	/**
+	 * The threshold for yielding the thread after running the send and recv loop
+	 * with no activity
+	 */
+	private static final int INACTIVITY_THRESHOLD = 10;
+	
 	private final ZMQ.Context _zmqContext;
 	private final AtomicBoolean _hasStarted = new AtomicBoolean(false);
 	
-	private final IncomingClientEventHandler _incomingEventHandler;
-	private final OutgoingClientEventHandler _outgoingEventHandler;
+	private final NonblockingEventReceiver _receiver;
+	private final NonblockingEventSender _sender;
+	
+	private final SocketSettings _socketSettings;
 		
 	private final FatalExceptionCallback _exCallback;
 	
-	public EventHandler(
-			final int clientPort, 
+	public RouterSocketReactor(
+			final SocketSettings socketSettings,
 			final ZMQ.Context zmqContext,
 			final RingBuffer<byte[]> incomingRingBuffer,
 			final RingBuffer<byte[]> outgoingRingBuffer,
 			final SequenceBarrier outgoingBarrier,
 			final FatalExceptionCallback exCallback) {
-		Util.assertPortValid(clientPort);
-		_clientPort = clientPort;
+		_socketSettings = Objects.requireNonNull(socketSettings);
+		if (_socketSettings.getSocketType() != ZMQ.ROUTER) {
+			throw new IllegalArgumentException("Only router sockets are supported by this reactor");
+		}
 		_zmqContext = Objects.requireNonNull(zmqContext);
 		
-		_incomingEventHandler = new IncomingClientEventHandler(incomingRingBuffer);
-		_outgoingEventHandler = new OutgoingClientEventHandler(outgoingRingBuffer, outgoingBarrier);
+		_receiver = new NonblockingEventReceiver(incomingRingBuffer);
+		_sender = new NonblockingEventSender(outgoingRingBuffer, outgoingBarrier);
 		
 		_exCallback = Objects.requireNonNull(exCallback);
 	}
@@ -67,21 +79,21 @@ class EventHandler implements Runnable {
 	public void run() {
 		if (!_hasStarted.compareAndSet(false, true)) {
 			_exCallback.signalFatalException(new RuntimeException(
-					"The client event handler has already been started."));
+					"The router socket reactor has already been started."));
 		}
 		try {
-			ZMQ.Socket socket = _zmqContext.socket(ZMQ.ROUTER);
-			socket.bind(String.format("tcp://*:%d", _clientPort));
+			ZMQ.Socket socket = createSocket(_zmqContext, _socketSettings);
+			MessagePartBufferPolicy msgPolicy = new MessagePartBufferPolicy(_socketSettings.getMessageOffsets());
 			
 			int inactivityCount = 0;
 			while(!Thread.interrupted()) {	
 				boolean wasActivity = false;
-				wasActivity &= _incomingEventHandler.recvIfReady(socket);
-				wasActivity &= _outgoingEventHandler.sendIfReady(socket);
+				wasActivity &= _receiver.recvIfReady(socket, msgPolicy);
+				wasActivity &= _sender.sendIfReady(socket, msgPolicy);
 				if (!wasActivity) {
 					inactivityCount--;
 				}
-				if (inactivityCount >= 10) {
+				if (inactivityCount >= INACTIVITY_THRESHOLD) {
 					Thread.yield();
 					inactivityCount = 0;
 				}
@@ -89,16 +101,16 @@ class EventHandler implements Runnable {
 		} catch (Throwable e) {
 			_exCallback.signalFatalException(e);
 		} finally {
-			_incomingEventHandler.tidyUp();
+			_receiver.tidyUp();
 		}
 	}
 	
 	public Sequence getIncomingSequence() {
-		return _incomingEventHandler.getSequence();
+		return _receiver.getSequence();
 	}
 	
 	public Sequence getOutgoingSequence() {
-		return _outgoingEventHandler.getSequence();
+		return _sender.getSequence();
 	}
 	
 }
