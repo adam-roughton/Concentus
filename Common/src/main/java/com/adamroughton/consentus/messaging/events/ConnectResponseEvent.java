@@ -15,18 +15,27 @@
  */
 package com.adamroughton.consentus.messaging.events;
 
-import java.nio.ByteBuffer;
-
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
 import com.adamroughton.consentus.model.ClientId;
 
-public class ClientInputEvent extends ByteArrayBackedEvent {
+public class ConnectResponseEvent extends ByteArrayBackedEvent {
 	
-	private static final int CLIENT_ID_OFFSET = 0;
-	private static final int INPUT_BUFFER_OFFSET = 8;
+	private static final int RES_CODE_OFFSET = 0;
+	private static final int CLIENT_ID_OFFSET = 4;
+	
+	public static final int RES_OK = 0;
+	public static final int RES_ERROR = 1;
 
-	public ClientInputEvent() {
-		super(EventType.CLIENT_INPUT.getId());
+	public ConnectResponseEvent() {
+		super(EventType.CONNECT_RES.getId());
+	}
+	
+	public int getResponseCode() {
+		return MessageBytesUtil.readInt(getBackingArray(), getOffset(RES_CODE_OFFSET));
+	}
+	
+	public void setResponseCode(final int responseCode) {
+		MessageBytesUtil.writeInt(getBackingArray(), getOffset(RES_CODE_OFFSET), responseCode);
 	}
 	
 	public ClientId getClientId() {
@@ -43,12 +52,6 @@ public class ClientInputEvent extends ByteArrayBackedEvent {
 	
 	public long getClientIdBits() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
-	}
-	
-	public ByteBuffer getInputBuffer() {
-		byte[] backingArray = getBackingArray();
-		int offset = getOffset(INPUT_BUFFER_OFFSET);
-		return ByteBuffer.wrap(backingArray, offset, backingArray.length - offset);
 	}
 	
 }

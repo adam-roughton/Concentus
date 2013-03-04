@@ -1,4 +1,22 @@
+/*
+ * Copyright 2013 Adam Roughton
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.adamroughton.consentus.messaging;
+
+import it.unimi.dsi.fastutil.objects.Object2IntArrayMap;
+import it.unimi.dsi.fastutil.objects.Object2IntMap;
 
 import java.util.Arrays;
 import java.util.Objects;
@@ -15,6 +33,7 @@ public final class MessagePartBufferPolicy {
 
 	private final int[] _offsets;
 	private final int _minReqBufferSize;
+	private final Object2IntMap<String> _labelLookup;
 	
 	/**
 	 * Creates a new policy from the given offsets. Offsets are processed in order,
@@ -33,6 +52,7 @@ public final class MessagePartBufferPolicy {
 		}
 		_offsets = messagePartOffsets;
 		_minReqBufferSize = minBuffSize;
+		_labelLookup = new Object2IntArrayMap<>(messagePartOffsets.length);
 	}
 	
 	/**
@@ -43,6 +63,25 @@ public final class MessagePartBufferPolicy {
 		Objects.requireNonNull(policyToClone);
 		_offsets = Arrays.copyOf(policyToClone._offsets, policyToClone._offsets.length);
 		_minReqBufferSize = policyToClone._minReqBufferSize;
+		_labelLookup = new Object2IntArrayMap<>(policyToClone._labelLookup);
+	}
+	
+	public void addLabel(final String label, final int partIndex) {
+		if (partIndex < _offsets.length) {
+		_labelLookup.put(label, partIndex);
+		} else {
+			throw new IllegalArgumentException(
+					String.format("The part index was larger than the max: %d > %d", 
+							partIndex, _offsets.length - 1));
+		}
+	}
+	
+	public void removeLabel(String label) {
+		_labelLookup.remove(label);
+	}
+	
+	public int getPartIndex(String label) {
+		return _labelLookup.getInt(label);
 	}
 	
 	/**
@@ -54,6 +93,34 @@ public final class MessagePartBufferPolicy {
 	 */
 	public int getOffset(int partIndex) {
 		return _offsets[partIndex];
+	}
+	
+	/**
+	 * The final message part is given the label
+	 * {@literal content}. This method returns the
+	 * offset of this message part. 
+	 * @return the offset of the last message part
+	 */
+	public int getContentOffset() {
+		if (_offsets.length > 0) {
+			return _offsets[_offsets.length - 1];
+		} else {
+			return 0;
+		}
+	}
+	
+	public int getPartLength(int partIndex, int bufferLength) {
+		if (_offsets.length == 0) {
+			return bufferLength;
+		} else if (partIndex < _offsets.length - 1) {
+			return _offsets[partIndex + 1] - _offsets[partIndex];
+		} else {
+			return bufferLength - _offsets[partIndex];
+		}
+	}
+	
+	public int getPartLength(int partIndex, byte[] buffer) {
+		return getPartLength(partIndex, buffer.length);
 	}
 	
 	/**

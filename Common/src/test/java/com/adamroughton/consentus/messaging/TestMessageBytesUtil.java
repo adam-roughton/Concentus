@@ -19,6 +19,9 @@ import java.nio.ByteBuffer;
 import java.util.UUID;
 
 import org.junit.*;
+
+import com.adamroughton.consentus.model.ClientId;
+
 import static org.junit.Assert.*;
 
 public class TestMessageBytesUtil {
@@ -336,6 +339,66 @@ public class TestMessageBytesUtil {
 		ByteBuffer bb = ByteBuffer.wrap(array);
 		assertEquals(expected.getMostSignificantBits(), bb.getLong(1));
 		assertEquals(expected.getLeastSignificantBits(), bb.getLong(9));
+	}
+	
+	@Test
+	public void testReadClientId() {
+		ByteBuffer bb = ByteBuffer.allocate(8);
+		
+		ClientId expected = new ClientId(101, 888);
+		long clientIdBits = 0x0065000000000378L;
+		bb.putLong(clientIdBits);
+		
+		ClientId actual = MessageBytesUtil.readClientId(bb.array(), 0);
+		assertEquals(expected.getNamespaceId(), actual.getNamespaceId());
+		assertEquals(expected.getClientId(), actual.getClientId());
+	}
+	
+	@Test
+	public void testReadMaxClientId() {
+		ByteBuffer bb = ByteBuffer.allocate(8);
+		
+		ClientId expected = new ClientId(65535, 281474976710655L);
+		long clientIdBits = 0xFFFFFFFFFFFFFFFFL;
+		bb.putLong(clientIdBits);
+		
+		ClientId actual = MessageBytesUtil.readClientId(bb.array(), 0);
+		assertEquals(expected.getNamespaceId(), actual.getNamespaceId());
+		assertEquals(expected.getClientId(), actual.getClientId());
+	}
+	
+	@Test
+	public void testReadClientId_NonZeroOffset() {
+		ByteBuffer bb = ByteBuffer.allocate(16);
+		
+		ClientId expected = new ClientId(101, 888);
+		long clientIdBits = 0x0065000000000378L;
+		bb.putLong(1, clientIdBits);
+		assertEquals(expected, MessageBytesUtil.readClientId(bb.array(), 1));
+	}
+	
+	@Test
+	public void testWriteClientId() {
+		byte[] array = new byte[8];
+		ClientId expected = new ClientId(255, 100 * 1000 * 1000);
+		
+		MessageBytesUtil.writeClientId(array, 0, expected);
+		ByteBuffer bb = ByteBuffer.wrap(array);
+
+		long expectedBits = 0x00FF000005F5E100L;
+		assertEquals(expectedBits, bb.getLong());
+	}
+	
+	@Test
+	public void testWriteClientId_NonZeroOffset() {
+		byte[] array = new byte[16];
+		ClientId expected = new ClientId(255, 100 * 1000 * 1000);
+		
+		MessageBytesUtil.writeClientId(array, 1, expected);
+		ByteBuffer bb = ByteBuffer.wrap(array);
+		
+		long expectedBits = 0x00FF000005F5E100L;
+		assertEquals(expectedBits, bb.getLong(1));
 	}
 	
 	@Test

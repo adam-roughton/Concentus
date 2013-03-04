@@ -1,3 +1,18 @@
+/*
+ * Copyright 2013 Adam Roughton
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.adamroughton.consentus.messaging;
 
 import java.util.Objects;
@@ -16,10 +31,10 @@ import com.lmax.disruptor.Sequence;
  */
 public class NonblockingEventReceiver {	
 	
-	public static final int RESV_OFFSET = 1;
-	
+	private final EventReceiver _eventReceiver;
 	private final RingBuffer<byte[]> _incomingBuffer;
 	private final Sequence _sequence;
+	private final EventProcessingHeader _header;
 	
 	/**
 	 * As we might not recv a message during a {@link recvIfReady} call,
@@ -29,9 +44,12 @@ public class NonblockingEventReceiver {
 	 */
 	private long _unpubClaimedSeq = -1;
 	
-	public NonblockingEventReceiver(final RingBuffer<byte[]> incomingBuffer) {
+	public NonblockingEventReceiver(final RingBuffer<byte[]> incomingBuffer, 
+			final EventProcessingHeader processingHeader) {
+		_eventReceiver = new EventReceiver(processingHeader, true);
 		_incomingBuffer = Objects.requireNonNull(incomingBuffer);
 		_sequence = new Sequence(-1);
+		_header = Objects.requireNonNull(processingHeader);
 	}
 	
 	/**
@@ -55,76 +73,13 @@ public class NonblockingEventReceiver {
 		// only recv if slots are available
 		if (_unpubClaimedSeq != -1) {
 			byte[] incomingBuffer = _incomingBuffer.get(_unpubClaimedSeq);
-			if (doRecv(socket, incomingBuffer, msgPartOffsets)) {
+			if (_eventReceiver.recv(socket, incomingBuffer, msgPartOffsets)) {
 				MessageBytesUtil.write4BitUInt(incomingBuffer, 0, 4, socketId);
 				publish();
 				return true;
 			}
 		}
 		return false;
-	}
-	
-	/**
-	 * Makes a non blocking call to receive an event.
-	 * @param socket the socket to receive on
-	 * @param eventBuffer the buffer to place the event in
-	 * @param msgPartOffsets the offsets to apply
-	 * @return whether an event was placed in the buffer
-	 * @see #recvIfReady(org.zeromq.ZMQ.Socket, int[])
-	 */
-	private boolean doRecv(final ZMQ.Socket socket, 
-			final byte[] eventBuffer, 
-			final MessagePartBufferPolicy msgPartOffsets) {
-		int msgOffsetIndex = 0;
-		int expMsgParts = msgPartOffsets.partCount();
-		int offset;
-		boolean isValid = true;
-		
-		// get the first offset, or use a default if the policy is not valid
-		if (msgPartOffsets.getMinReqBufferSize() > eventBuffer.length - RESV_OFFSET) {
-			offset = RESV_OFFSET;
-			isValid = false;
-		} else if (expMsgParts == 0) {
-			offset = RESV_OFFSET;
-		} else {
-			offset = RESV_OFFSET + msgPartOffsets.getOffset(0);
-		}
-		
-		// check if we have any messages waiting
-		int recvdAmount = socket.recv(eventBuffer, offset, eventBuffer.length - offset, ZMQ.NOBLOCK);
-		if (recvdAmount == 0) {
-			return false;
-		} else {
-			// now we act on the validity of the message
-			if (recvdAmount == -1) {
-				isValid = false;
-			}
-			
-			while(isValid && socket.hasReceiveMore() && ++msgOffsetIndex < expMsgParts) {
-				offset = RESV_OFFSET + msgPartOffsets.getOffset(msgOffsetIndex);
-				recvdAmount = socket.recv(eventBuffer, offset, eventBuffer.length - offset, ZMQ.NOBLOCK);
-				if (recvdAmount == -1) {
-					isValid = false;
-				}
-			}
-			
-			if (msgOffsetIndex < expMsgParts - 1) {
-				isValid = false;
-			}
-			
-			// capture any additional message parts
-			while (socket.hasReceiveMore()) {
-				socket.recv(0);
-			}
-			
-			if (isValid) {
-				MessageBytesUtil.writeFlagToByte(eventBuffer, 0, 0, false); // indicate valid
-			} else {
-				MessageBytesUtil.writeFlagToByte(eventBuffer, 0, 0, true); // indicate error
-			}
-			
-			return true;
-		}
 	}
 	
 	private void publish() {
@@ -136,7 +91,7 @@ public class NonblockingEventReceiver {
 	public void tidyUp() {
 		if (_unpubClaimedSeq != -1) {
 			byte[] incomingBuffer = _incomingBuffer.get(_unpubClaimedSeq);
-			MessageBytesUtil.writeFlagToByte(incomingBuffer, 0, 0, true);
+			_header.setIsValid(false, incomingBuffer);
 			publish();
 		}
 	}

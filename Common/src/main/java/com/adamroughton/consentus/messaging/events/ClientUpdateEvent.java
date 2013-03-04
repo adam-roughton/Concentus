@@ -19,13 +19,13 @@ import java.nio.ByteBuffer;
 
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
 
-public class StateUpdateEvent extends ByteArrayBackedEvent {
+public class ClientUpdateEvent extends ByteArrayBackedEvent {
 
 	private static final int UPDATE_ID_OFFSET = 0;
 	private static final int SIM_TIME_OFFSET = 8;
 	private static final int UPDATE_BUFFER_OFFSET = 16;
 	
-	public StateUpdateEvent() {
+	public ClientUpdateEvent() {
 		super(EventType.STATE_UPDATE.getId());
 	}
 	
@@ -51,10 +51,24 @@ public class StateUpdateEvent extends ByteArrayBackedEvent {
 		return ByteBuffer.wrap(backingArray, offset, backingArray.length - offset);
 	}
 	
-	public void copyUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
+	public int getUpdateOffset() {
+		return getOffset(UPDATE_BUFFER_OFFSET);
+	}
+	
+	public int getUpdateLength() {
 		byte[] backingArray = getBackingArray();
-		int updateLength = backingArray.length - UPDATE_BUFFER_OFFSET;
+		return backingArray.length - getOffset(UPDATE_BUFFER_OFFSET);
+	}
+	
+	public void copyFromUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
+		int updateLength = getUpdateLength();
 		System.arraycopy(getBackingArray(), UPDATE_BUFFER_OFFSET, exBuffer, 0, 
+				length < updateLength? length : updateLength);
+	}
+	
+	public void copyToUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
+		int updateLength = getUpdateLength();
+		System.arraycopy(exBuffer, offset, getBackingArray(), UPDATE_BUFFER_OFFSET, 
 				length < updateLength? length : updateLength);
 	}
 	

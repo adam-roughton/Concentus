@@ -47,7 +47,7 @@ public class UpdateProcessor implements EventHandler<byte[]>, LifecycleAware {
 		_updateEvent.getUpdateId();
 		
 		
-		_updateEvent.clear();
+		_updateEvent.releaseBackingArray();
 	}
 
 	@Override

@@ -47,6 +47,7 @@ public class ConsentusProcess implements ConsentusProcessCallback {
 		_conf.setWorkingDir(".");
 		_conf.setCanonicalSubPort("9000");
 		_conf.setCanonicalStatePubPort("9001");
+		_conf.setClientHandlerListenPort("10000");
 		
 		Runtime.getRuntime().addShutdownHook(new Thread() {
 			@Override

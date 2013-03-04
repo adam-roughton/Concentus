@@ -20,7 +20,9 @@ public enum EventType {
 	STATE_INPUT(2, StateInputEvent.class),
 	STATE_UPDATE(3, StateUpdateEvent.class),
 	STATE_METRIC(4, StateMetricEvent.class),
-	STATE_INFO(5, StateUpdateInfoEvent.class)
+	STATE_INFO(5, StateUpdateInfoEvent.class),
+	CLIENT_CONNECT(6, ClientConnectEvent.class),
+	CONNECT_RES(7, ConnectResponseEvent.class)
 	;
 	private final int _id;
 	private final Class<?> _clazz;

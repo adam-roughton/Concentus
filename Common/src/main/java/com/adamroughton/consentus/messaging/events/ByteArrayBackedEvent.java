@@ -57,7 +57,7 @@ public abstract class ByteArrayBackedEvent {
 		return _offset + internalFieldOffset;
 	}
 	
-	public void clear() {
+	public void releaseBackingArray() {
 		_backingArray = null;
 		_offset = 0;
 	}

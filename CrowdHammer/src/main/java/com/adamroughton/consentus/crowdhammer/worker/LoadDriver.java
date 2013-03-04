@@ -111,7 +111,7 @@ public class LoadDriver implements Runnable {
 			throw new RuntimeException(e);
 		} finally {
 			_publishRingBuffer.publish(seq);
-			_stateInput.clear();
+			_stateInput.releaseBackingArray();
 		}
 	}
 

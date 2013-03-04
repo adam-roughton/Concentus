@@ -15,6 +15,8 @@
  */
 package com.adamroughton.consentus;
 
+import java.util.UUID;
+
 public final class Constants {
 
 	/**
@@ -29,4 +31,11 @@ public final class Constants {
 	 */
 	public static final int CLIENT_ID_LENGTH = 16;
 	
+	/**
+	 * 
+	 */
+	public static final UUID INTERNAL_SENDER_ID = UUID.fromString("97b26470-81e9-11e2-9e96-0800200c9a66");
+	
+	public static final int MSG_BUFFER_LENGTH = 512;
+			
 }

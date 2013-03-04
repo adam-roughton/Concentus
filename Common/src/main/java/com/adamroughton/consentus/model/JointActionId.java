@@ -13,21 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.adamroughton.consentus.messaging;
+package com.adamroughton.consentus.model;
 
-import org.mockito.ArgumentMatcher;
+public final class JointActionId {
 
-public class ArrayLengthMatcher<T> extends ArgumentMatcher<T> {
+	private final int _clientHandlerId;
+	private final long _actionId;
 
-	private final int _expectedLength;
-	
-	public ArrayLengthMatcher(final int expectedLength) {
-		_expectedLength = expectedLength;
+	public JointActionId(final int clientHandlerId, final long actionId) {
+		_clientHandlerId = clientHandlerId;
+		_actionId = actionId;
 	}
 	
-	@Override
-	public boolean matches(Object argument) {
-		int length = java.lang.reflect.Array.getLength(argument);
-		return length == _expectedLength;
+	public int getClientHandlerId() {
+		return _clientHandlerId;
+	}
+
+	public long getActionId() {
+		return _actionId;
 	}
 }

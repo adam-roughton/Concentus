@@ -195,7 +195,7 @@ public class StateProcessor implements EventProcessor {
 			throw new RuntimeException(e);
 		} finally {
 			_publishRingBuffer.publish(seq);
-			_updateEvent.clear();
+			_updateEvent.releaseBackingArray();
 		}
 	}
 	
@@ -209,7 +209,7 @@ public class StateProcessor implements EventProcessor {
 		_metricEvent.setEventErrorCount(_eventErrorCount);
 		MessageBytesUtil.writeFlagToByte(outputBytes, 0, 0, false); // is valid
 		_publishRingBuffer.publish(seq);
-		_metricEvent.clear();
+		_metricEvent.releaseBackingArray();
 	}
 	
 	private void sendClientHandlerEvents(long updateId) {
@@ -241,6 +241,6 @@ public class StateProcessor implements EventProcessor {
 			_updateInfoEvent.setEntryCount(nextIndex);
 			_publishRingBuffer.publish(seq);
 		}
-		_updateInfoEvent.clear();
+		_updateInfoEvent.releaseBackingArray();
 	}
 }

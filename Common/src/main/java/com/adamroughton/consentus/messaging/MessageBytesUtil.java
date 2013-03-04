@@ -18,6 +18,8 @@ package com.adamroughton.consentus.messaging;
 import java.lang.reflect.Field;
 import java.util.UUID;
 
+import com.adamroughton.consentus.model.ClientId;
+
 import sun.misc.Unsafe;
 
 /**
@@ -188,6 +190,23 @@ public final class MessageBytesUtil {
 		long lsb = value.getLeastSignificantBits();
 		writeLong(array, offset, msb);
 		writeLong(array, offset + 8, lsb);
+	}
+	
+	private static final long CLIENT_ID_NAMESPACE_MASK = (0xFFFFL << 48);
+	
+	public static ClientId readClientId(byte[] array, long offset) {
+		long clientIdBits = readLong(array, offset);
+		int namespaceId = (int)((clientIdBits & CLIENT_ID_NAMESPACE_MASK) >>> 48);
+		long clientId = clientIdBits & (~CLIENT_ID_NAMESPACE_MASK);
+		return new ClientId(namespaceId, clientId);
+	}
+	
+	public static void writeClientId(byte[] array, long offset, final ClientId clientId) {
+		long clientIdBits = clientId.getNamespaceId();
+		clientIdBits <<= 48;
+		clientIdBits &= CLIENT_ID_NAMESPACE_MASK;
+		clientIdBits |= (clientId.getClientId() & (~CLIENT_ID_NAMESPACE_MASK));
+		writeLong(array, offset, clientIdBits);
 	}
 	
 	/*public static int[] readIntArray(byte[] array, long offset) {

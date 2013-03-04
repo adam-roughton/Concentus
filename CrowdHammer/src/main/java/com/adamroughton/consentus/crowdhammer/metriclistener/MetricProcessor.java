@@ -66,7 +66,7 @@ public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 						_histogram.getFourNinesUpperBound()
 						));*/
 			}
-			_metricEvent.clear();
+			_metricEvent.releaseBackingArray();
 		}
 	}
 

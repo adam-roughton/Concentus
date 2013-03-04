@@ -22,6 +22,7 @@ import com.adamroughton.consentus.messaging.SocketSettings;
 import com.adamroughton.consentus.messaging.SubSocketSettings;
 import com.adamroughton.consentus.messaging.events.EventType;
 import com.esotericsoftware.kryo.Kryo;
+import com.lmax.disruptor.EventFactory;
 
 public class Util {
 	
@@ -52,6 +53,14 @@ public class Util {
 		byte[] subId = new byte[4];
 		MessageBytesUtil.writeInt(subId, 0, eventType.getId());
 		return subId;
+	}
+	
+	public static EventFactory<byte[]> msgBufferFactory(final int msgBufferSize) {
+		return new EventFactory<byte[]>() {
+			public byte[] newInstance() {
+				return new byte[msgBufferSize];
+			}
+		};
 	}
 	
 	public static String toHexString(byte[] array) {

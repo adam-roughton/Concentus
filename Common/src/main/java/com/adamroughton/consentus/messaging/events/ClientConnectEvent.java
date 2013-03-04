@@ -13,21 +13,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.adamroughton.consentus.messaging;
+package com.adamroughton.consentus.messaging.events;
 
-import org.mockito.ArgumentMatcher;
-
-public class ArrayLengthMatcher<T> extends ArgumentMatcher<T> {
-
-	private final int _expectedLength;
+public class ClientConnectEvent extends ByteArrayBackedEvent {
 	
-	public ArrayLengthMatcher(final int expectedLength) {
-		_expectedLength = expectedLength;
+	/**
+	 * Brushing over security details for now
+	 */
+	//private static final int AUTH_TOKEN_OFFSET = 0;
+
+	public ClientConnectEvent() {
+		super(EventType.CLIENT_CONNECT.getId());
 	}
 	
-	@Override
-	public boolean matches(Object argument) {
-		int length = java.lang.reflect.Array.getLength(argument);
-		return length == _expectedLength;
+	public void getAuthToken(byte[] buffer, int offset) {
 	}
+
+	public void setAuthToken(byte[] buffer, int offset) {
+	}
+	
 }

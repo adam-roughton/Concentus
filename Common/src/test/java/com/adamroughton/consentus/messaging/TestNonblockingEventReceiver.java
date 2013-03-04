@@ -1,3 +1,18 @@
+/*
+ * Copyright 2013 Adam Roughton
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.adamroughton.consentus.messaging;
 
 import java.util.UUID;
@@ -23,7 +38,8 @@ import static com.adamroughton.consentus.messaging.ZmqTestUtil.*;
 public class TestNonblockingEventReceiver {
 
 	private static final int EVENT_BUFFER_LENGTH = 512;
-	private static final int RESV = NonblockingEventReceiver.RESV_OFFSET;
+	private final EventProcessingHeader _processingHeader = new EventProcessingHeader(0, 1);
+	private final int _msgOffset = _processingHeader.getEventOffset();
 	
 	private RingBuffer<byte[]> _buffer;
 	private Sequence _gatingSeq = new Sequence(-1);
@@ -47,7 +63,7 @@ public class TestNonblockingEventReceiver {
 		}
 		// gating seq set such that no buffer space is available
 		_gatingSeq.set(-1);
-		_receiver = new NonblockingEventReceiver(_buffer);
+		_receiver = new NonblockingEventReceiver(_buffer, _processingHeader);
 	}
 	
 	private byte[] genContent(int length) {
@@ -87,9 +103,9 @@ public class TestNonblockingEventReceiver {
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
 		
-		assertFalse(MessageBytesUtil.readFlagFromByte(incomingEvent, 0, 0));
-		assertRangeEqual(expectedIdBytes, incomingEvent, RESV, expectedIdBytes.length);
-		assertRangeEqual(content, incomingEvent, RESV + 16, content.length);
+		assertTrue(_processingHeader.isValid(incomingEvent));
+		assertRangeEqual(expectedIdBytes, incomingEvent, _msgOffset, expectedIdBytes.length);
+		assertRangeEqual(content, incomingEvent, _msgOffset + 16, content.length);
 	}
 	
 	@Test
@@ -143,9 +159,9 @@ public class TestNonblockingEventReceiver {
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
 		
-		assertFalse(MessageBytesUtil.readFlagFromByte(incomingEvent, 0, 0));
-		assertRangeEqual(expectedIdBytes, incomingEvent, RESV, expectedIdBytes.length);
-		assertRangeEqual(content, incomingEvent, RESV + 16, content.length);
+		assertTrue(_processingHeader.isValid(incomingEvent));
+		assertRangeEqual(expectedIdBytes, incomingEvent, _msgOffset, expectedIdBytes.length);
+		assertRangeEqual(content, incomingEvent, _msgOffset + 16, content.length);
 	}
 	
 	@Test
@@ -161,7 +177,7 @@ public class TestNonblockingEventReceiver {
 		
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
-		assertTrue(MessageBytesUtil.readFlagFromByte(incomingEvent, 0, 0));
+		assertFalse(_processingHeader.isValid(incomingEvent));
 	}
 	
 	@Test
@@ -182,9 +198,9 @@ public class TestNonblockingEventReceiver {
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
 		
-		assertTrue(MessageBytesUtil.readFlagFromByte(incomingEvent, 0, 0));
-		assertRangeEqual(expectedIdBytes, incomingEvent, RESV, expectedIdBytes.length);
-		assertRangeEqual(new byte[256], incomingEvent, RESV + 16, 256);
+		assertFalse(_processingHeader.isValid(incomingEvent));
+		assertRangeEqual(expectedIdBytes, incomingEvent, _msgOffset, expectedIdBytes.length);
+		assertRangeEqual(new byte[256], incomingEvent, _msgOffset + 16, 256);
 	}
 	
 	@Test
@@ -203,7 +219,7 @@ public class TestNonblockingEventReceiver {
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
 		
-		assertTrue(MessageBytesUtil.readFlagFromByte(incomingEvent, 0, 0));
+		assertFalse(_processingHeader.isValid(incomingEvent));
 	}
 	
 	@Test
@@ -233,9 +249,9 @@ public class TestNonblockingEventReceiver {
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
 		
-		assertFalse(MessageBytesUtil.readFlagFromByte(incomingEvent, 0, 0));
-		assertRangeEqual(expectedIdBytes, incomingEvent, RESV, expectedIdBytes.length);
-		assertRangeEqual(content1, incomingEvent, RESV + 16, content1.length);
+		assertTrue(_processingHeader.isValid(incomingEvent));
+		assertRangeEqual(expectedIdBytes, incomingEvent, _msgOffset, expectedIdBytes.length);
+		assertRangeEqual(content1, incomingEvent, _msgOffset + 16, content1.length);
 	}
 	
 	@Test
@@ -261,7 +277,7 @@ public class TestNonblockingEventReceiver {
 		verify(_zmqSocket).recv(anyInt());
 		
 		byte[] incomingEvent = _buffer.get(0);
-		assertFalse(MessageBytesUtil.readFlagFromByte(incomingEvent, 0, 0));
+		assertTrue(_processingHeader.isValid(incomingEvent));
 	}
 	
 	@Test
@@ -303,7 +319,7 @@ public class TestNonblockingEventReceiver {
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
 		
-		assertTrue(MessageBytesUtil.readFlagFromByte(incomingEvent, 0, 0));
+		assertFalse(_processingHeader.isValid(incomingEvent));
 	}
 	
 	@Test
@@ -338,8 +354,8 @@ public class TestNonblockingEventReceiver {
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
 		
-		assertFalse(MessageBytesUtil.readFlagFromByte(incomingEvent, 0, 0));
-		assertRangeEqual(content, incomingEvent, RESV, content.length);
+		assertTrue(_processingHeader.isValid(incomingEvent));
+		assertRangeEqual(content, incomingEvent, _msgOffset, content.length);
 	}
 	
 	@Test
@@ -367,10 +383,10 @@ public class TestNonblockingEventReceiver {
 		assertEquals(4, _buffer.getCursor());
 		byte[] incomingEvent = _buffer.get(0);
 		
-		assertFalse(MessageBytesUtil.readFlagFromByte(incomingEvent, 0, 0));
-		assertRangeEqual(expectedIdBytes, incomingEvent, RESV, expectedIdBytes.length);
-		assertRangeEqual(content1, incomingEvent, RESV + 16, content1.length);
-		assertRangeEqual(content2, incomingEvent, RESV + 48, content2.length);
-		assertRangeEqual(content3, incomingEvent, RESV + 80, content3.length);
+		assertTrue(_processingHeader.isValid(incomingEvent));
+		assertRangeEqual(expectedIdBytes, incomingEvent, _msgOffset, expectedIdBytes.length);
+		assertRangeEqual(content1, incomingEvent, _msgOffset + 16, content1.length);
+		assertRangeEqual(content2, incomingEvent, _msgOffset + 48, content2.length);
+		assertRangeEqual(content3, incomingEvent, _msgOffset + 80, content3.length);
 	}
 }

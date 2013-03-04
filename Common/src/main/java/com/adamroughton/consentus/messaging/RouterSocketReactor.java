@@ -62,6 +62,7 @@ public class RouterSocketReactor implements Runnable {
 			final RingBuffer<byte[]> incomingRingBuffer,
 			final RingBuffer<byte[]> outgoingRingBuffer,
 			final SequenceBarrier outgoingBarrier,
+			final EventProcessingHeader processingHeader,
 			final FatalExceptionCallback exCallback) {
 		_socketSettings = Objects.requireNonNull(socketSettings);
 		if (_socketSettings.getSocketType() != ZMQ.ROUTER) {
@@ -69,8 +70,8 @@ public class RouterSocketReactor implements Runnable {
 		}
 		_zmqContext = Objects.requireNonNull(zmqContext);
 		
-		_receiver = new NonblockingEventReceiver(incomingRingBuffer);
-		_sender = new NonblockingEventSender(outgoingRingBuffer, outgoingBarrier);
+		_receiver = new NonblockingEventReceiver(incomingRingBuffer, processingHeader);
+		_sender = new NonblockingEventSender(outgoingRingBuffer, outgoingBarrier, processingHeader);
 		
 		_exCallback = Objects.requireNonNull(exCallback);
 	}
@@ -83,14 +84,14 @@ public class RouterSocketReactor implements Runnable {
 		}
 		try {
 			ZMQ.Socket socket = createSocket(_zmqContext, _socketSettings);
-			MessagePartBufferPolicy msgPolicy = _socketSettings.getMessagePartPolicy();
+			MessagePartBufferPolicy msgPartPolicy = _socketSettings.getMessagePartPolicy();
 			int socketId = _socketSettings.getSocketId();
 			
 			int inactivityCount = 0;
 			while(!Thread.interrupted()) {	
 				boolean wasActivity = false;
-				wasActivity &= _receiver.recvIfReady(socket, msgPolicy, socketId);
-				wasActivity &= _sender.sendIfReady(socket, msgPolicy);
+				wasActivity &= _receiver.recvIfReady(socket, msgPartPolicy, socketId);
+				wasActivity &= _sender.sendIfReady(socket, msgPartPolicy);
 				if (!wasActivity) {
 					inactivityCount--;
 				}

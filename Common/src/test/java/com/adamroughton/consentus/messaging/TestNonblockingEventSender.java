@@ -1,3 +1,18 @@
+/*
+ * Copyright 2013 Adam Roughton
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.adamroughton.consentus.messaging;
 
 import java.util.List;
@@ -26,7 +41,10 @@ public class TestNonblockingEventSender {
 	private RingBuffer<byte[]> _buffer;
 	@Mock private ZMQ.Socket _zmqSocket;
 	private NonblockingEventSender _sender;
+	private final EventProcessingHeader _processingHeader = new EventProcessingHeader(0, 1);
 	private final MessagePartBufferPolicy _clientMsgOffsets = new MessagePartBufferPolicy(0, 16);
+	
+	private final int _msgOffset = _processingHeader.getEventOffset();
 	
 	@Before
 	public void setUp() {
@@ -35,7 +53,7 @@ public class TestNonblockingEventSender {
 				return new byte[BUFFER_SIZE];
 			}
 		}, 4);
-		_sender = new NonblockingEventSender(_buffer, _buffer.newBarrier());
+		_sender = new NonblockingEventSender(_buffer, _buffer.newBarrier(), _processingHeader);
 		_buffer.setGatingSequences(_sender.getSequence());
 	}
 	
@@ -50,12 +68,12 @@ public class TestNonblockingEventSender {
 		
 		// write the ID
 		UUID expectedId = UUID.fromString("abababab-abab-abab-abab-abababababab");
-		MessageBytesUtil.writeUUID(outgoingBuffer, 1, expectedId);
+		MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, expectedId);
 		
 		for (int i = 0; i < 256; i += 4) {
-			MessageBytesUtil.writeInt(outgoingBuffer, i + 17, i / 4);
+			MessageBytesUtil.writeInt(outgoingBuffer, i + _msgOffset + 16, i / 4);
 		}
-		MessageBytesUtil.writeFlagToByte(outgoingBuffer, 0, 0, false);
+		_processingHeader.setIsValid(true, outgoingBuffer);
 		_buffer.publish(seq);
 		
 		assertTrue(_sender.sendIfReady(_zmqSocket, _clientMsgOffsets));
@@ -124,8 +142,9 @@ public class TestNonblockingEventSender {
 		for (int i = 0; i < 3; i++) {
 			long seq = _buffer.next();
 			byte[] outgoingBuffer = _buffer.get(seq);
-			MessageBytesUtil.writeUUID(outgoingBuffer, 1, ids[i]);
-			System.arraycopy(contents[i], 0, outgoingBuffer, 17, contents[i].length);
+			MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, ids[i]);
+			System.arraycopy(contents[i], 0, outgoingBuffer, _msgOffset + 16, contents[i].length);
+			_processingHeader.setIsValid(true, outgoingBuffer);
 			_buffer.publish(seq);
 		}
 		
@@ -167,13 +186,13 @@ public class TestNonblockingEventSender {
 		// write the ID
 		byte[] expectedIdBytes = new byte[16];
 		UUID expectedId = UUID.fromString("abababab-abab-abab-abab-abababababab");
-		MessageBytesUtil.writeUUID(outgoingBuffer, 1, expectedId);
+		MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, expectedId);
 		MessageBytesUtil.writeUUID(expectedIdBytes, 0, expectedId);
 		
 		for (int i = 0; i < 256; i += 4) {
-			MessageBytesUtil.writeInt(outgoingBuffer, i + 17, i / 4);
+			MessageBytesUtil.writeInt(outgoingBuffer, i + _msgOffset + 16, i / 4);
 		}
-		MessageBytesUtil.writeFlagToByte(outgoingBuffer, 0, 0, false);
+		_processingHeader.setIsValid(true, outgoingBuffer);
 		_buffer.publish(seq);
 		
 		assertFalse(_sender.sendIfReady(_zmqSocket, _clientMsgOffsets));
@@ -200,15 +219,15 @@ public class TestNonblockingEventSender {
 		// write the ID
 		byte[] expectedIdBytes = new byte[16];
 		UUID expectedId = UUID.fromString("abababab-abab-abab-abab-abababababab");
-		MessageBytesUtil.writeUUID(outgoingBuffer, 1, expectedId);
+		MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, expectedId);
 		MessageBytesUtil.writeUUID(expectedIdBytes, 0, expectedId);
 		
 		byte[] content = new byte[256];
 		for (int i = 0; i < 256; i += 4) {
-			MessageBytesUtil.writeInt(outgoingBuffer, i + 17, i / 4);
+			MessageBytesUtil.writeInt(outgoingBuffer, i + _msgOffset + 16, i / 4);
 			MessageBytesUtil.writeInt(content, i, i / 4);
 		}
-		MessageBytesUtil.writeFlagToByte(outgoingBuffer, 0, 0, false);
+		_processingHeader.setIsValid(true, outgoingBuffer);
 		_buffer.publish(seq);
 		
 		assertFalse(_sender.sendIfReady(_zmqSocket, _clientMsgOffsets));
@@ -255,15 +274,15 @@ public class TestNonblockingEventSender {
 		// write the ID
 		byte[] expectedIdBytes = new byte[16];
 		UUID expectedId = UUID.fromString("abababab-abab-abab-abab-abababababab");
-		MessageBytesUtil.writeUUID(outgoingBuffer, 1, expectedId);
+		MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, expectedId);
 		MessageBytesUtil.writeUUID(expectedIdBytes, 0, expectedId);
 		
 		byte[] content = new byte[256];
 		for (int i = 0; i < 256; i += 4) {
-			MessageBytesUtil.writeInt(outgoingBuffer, i + 17, i / 4);
+			MessageBytesUtil.writeInt(outgoingBuffer, i + _msgOffset + 16, i / 4);
 			MessageBytesUtil.writeInt(content, i, i / 4);
 		}
-		MessageBytesUtil.writeFlagToByte(outgoingBuffer, 0, 0, false);
+		_processingHeader.setIsValid(true, outgoingBuffer);
 		_buffer.publish(seq);
 		
 		_sender.sendIfReady(_zmqSocket, _clientMsgOffsets);
@@ -294,13 +313,13 @@ public class TestNonblockingEventSender {
 		// write the ID
 		byte[] expectedIdBytes = new byte[16];
 		UUID expectedId = UUID.fromString("abababab-abab-abab-abab-abababababab");
-		MessageBytesUtil.writeUUID(outgoingBuffer, 1, expectedId);
+		MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, expectedId);
 		MessageBytesUtil.writeUUID(expectedIdBytes, 0, expectedId);
 		
 		for (int i = 0; i < 256; i += 4) {
-			MessageBytesUtil.writeInt(outgoingBuffer, i + 17, i / 4);
+			MessageBytesUtil.writeInt(outgoingBuffer, i + _msgOffset + 16, i / 4);
 		}
-		MessageBytesUtil.writeFlagToByte(outgoingBuffer, 0, 0, false);
+		_processingHeader.setIsValid(true, outgoingBuffer);
 		_buffer.publish(seq);
 		
 		assertFalse(_sender.sendIfReady(_zmqSocket, _clientMsgOffsets));
@@ -319,13 +338,13 @@ public class TestNonblockingEventSender {
 		// write the ID
 		byte[] expectedIdBytes = new byte[16];
 		UUID expectedId = UUID.fromString("abababab-abab-abab-abab-abababababab");
-		MessageBytesUtil.writeUUID(outgoingBuffer, 1, expectedId);
+		MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, expectedId);
 		MessageBytesUtil.writeUUID(expectedIdBytes, 0, expectedId);
 		
 		for (int i = 0; i < 256; i += 4) {
-			MessageBytesUtil.writeInt(outgoingBuffer, i + 17, i / 4);
+			MessageBytesUtil.writeInt(outgoingBuffer, i + _msgOffset + 16, i / 4);
 		}
-		MessageBytesUtil.writeFlagToByte(outgoingBuffer, 0, 0, false);
+		_processingHeader.setIsValid(true, outgoingBuffer);
 		_buffer.publish(seq);
 		
 		_sender.sendIfReady(_zmqSocket, new MessagePartBufferPolicy(BUFFER_SIZE));
