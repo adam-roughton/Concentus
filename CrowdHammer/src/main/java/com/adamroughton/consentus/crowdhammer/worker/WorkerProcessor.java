@@ -16,6 +16,8 @@
 package com.adamroughton.consentus.crowdhammer.worker;
 
 import java.util.Objects;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
 
 import org.zeromq.ZMQ;
 
@@ -23,19 +25,27 @@ import com.lmax.disruptor.FatalExceptionHandler;
 
 import uk.co.real_logic.intrinsics.StructuredArray;
 
+import static com.adamroughton.consentus.Util.*;
+
 public final class WorkerProcessor {
 
 	private final ZMQ.Context _zmqContext;
 	private final StructuredArray<Client> _clients;
+	
+	// we allocate to the next power of 2 to make the wrapping around operation faster
+	private final int _maxClients;
 	private final String[] _clientHandlerConnStrings;
 	private final FatalExceptionHandler _exHandler;
+	
+	private final Executor _executor = Executors.newCachedThreadPool();
 	
 	public WorkerProcessor(final int clientCount, 
 			final ZMQ.Context zmqContext, 
 			final String[] clientHandlerConnStrings,
 			final FatalExceptionHandler exHandler) {
 		_zmqContext = Objects.requireNonNull(zmqContext);
-		_clients = StructuredArray.newInstance(clientCount, Client.class, new Class[] {ZMQ.Context.class}, zmqContext);
+		_maxClients = clientCount;
+		_clients = StructuredArray.newInstance(nextPowerOf2(clientCount), Client.class, new Class[] {ZMQ.Context.class}, zmqContext);
 		_clientHandlerConnStrings = Objects.requireNonNull(clientHandlerConnStrings);
 		if (_clientHandlerConnStrings.length == 0) 
 			throw new IllegalArgumentException("At least one client handler connection string must be specified.");
@@ -43,6 +53,12 @@ public final class WorkerProcessor {
 	}
 	
 	public void init(final int clientCountForTest) {
+		if (clientCountForTest > _maxClients)
+			throw new IllegalArgumentException(
+					String.format("The client count was too large: %d > %d", 
+							clientCountForTest, 
+							_maxClients));
+		
 		int nextConnString = 0;
 		Client client;
 		for (int i = 0; i < _clients.getLength(); i++) {
@@ -64,6 +80,20 @@ public final class WorkerProcessor {
 	}
 	
 	public void runTest() {
+		_executor.execute(new Runnable() {
+
+			private volatile boolean isRunning = false;
+			
+			@Override
+			public void run() {
+				while (isRunning) {
+					
+				}
+			}
+			
+		});
+		
+		
 		// late metric
 	
 	}

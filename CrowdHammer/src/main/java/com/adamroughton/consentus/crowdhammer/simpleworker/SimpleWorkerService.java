@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.adamroughton.consentus.crowdhammer.worker;
+package com.adamroughton.consentus.crowdhammer.simpleworker;
 
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -35,12 +35,12 @@ import com.lmax.disruptor.dsl.Disruptor;
 
 import org.zeromq.*;
 
-public class WorkerService implements ConsentusService {
-	
-	// send queue? need access to each client before we can send on the socket
-	
-	// receive on each socket before sending out events? 
-	// reactor pattern on each socket
+/**
+ * Simple worker for testing out the canonical state service.
+ * @author Adam Roughton
+ *
+ */
+public class SimpleWorkerService implements ConsentusService {
 	
 	private ExecutorService _executor;
 	private Disruptor<byte[]> _updateDisruptor;
@@ -122,7 +122,7 @@ public class WorkerService implements ConsentusService {
 
 	@Override
 	public String name() {
-		return "CrowdHammer Worker Service";
+		return "Simple CrowdHammer Worker Service";
 	}
 	
 }
