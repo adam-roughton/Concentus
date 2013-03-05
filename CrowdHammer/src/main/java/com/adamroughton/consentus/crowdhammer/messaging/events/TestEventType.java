@@ -23,6 +23,8 @@ public enum TestEventType {
 	STATE_UPDATE(EventType.STATE_UPDATE.getId(), EventType.STATE_UPDATE.getEventClass()),
 	STATE_METRIC(EventType.STATE_METRIC.getId(), EventType.STATE_METRIC.getEventClass()),
 	STATE_INFO(EventType.STATE_INFO.getId(), EventType.STATE_INFO.getEventClass()),
+	CLIENT_CONNECT(EventType.CLIENT_CONNECT.getId(), EventType.CLIENT_CONNECT.getEventClass()),
+	CONNECT_RES(EventType.CONNECT_RES.getId(), EventType.CONNECT_RES.getEventClass()),
 	LOAD_METRIC(100, LoadMetricEvent.class)
 	;
 	private final int _id;

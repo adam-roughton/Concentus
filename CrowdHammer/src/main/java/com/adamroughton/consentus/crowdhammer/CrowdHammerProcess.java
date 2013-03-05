@@ -49,7 +49,8 @@ public class CrowdHammerProcess implements ConsentusProcessCallback {
 		_conf.setWorkingDir(".");
 		_conf.setCanonicalSubPort("9000");
 		_conf.setCanonicalStatePubPort("9001");
-		_conf.setTestMetricSubPort("10000");
+		_conf.setClientHandlerListenPort("10000");
+		_conf.setTestMetricSubPort("12000");
 		_conf.setTestClass("com.adamroughton.consentus.");
 		
 		Runtime.getRuntime().addShutdownHook(new Thread() {
