@@ -15,22 +15,29 @@
  */
 package com.adamroughton.consentus.clienthandler;
 
+import java.net.InetAddress;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.zeromq.ZMQ;
 
-import com.adamroughton.consentus.Config;
 import com.adamroughton.consentus.ConsentusProcessCallback;
 import com.adamroughton.consentus.ConsentusService;
+import com.adamroughton.consentus.ConsentusServiceState;
+import com.adamroughton.consentus.canonicalstate.CanonicalStateService;
+import com.adamroughton.consentus.cluster.worker.Cluster;
+import com.adamroughton.consentus.config.Configuration;
 import com.adamroughton.consentus.messaging.EventListener;
 import com.adamroughton.consentus.messaging.EventProcessingHeader;
-import com.adamroughton.consentus.messaging.MessagePartBufferPolicy;
+import com.adamroughton.consentus.messaging.MessageBytesUtil;
+import com.adamroughton.consentus.messaging.MessagePartBufferPolicy.NamedOffset;
+import com.adamroughton.consentus.messaging.NonblockingEventReceiver;
+import com.adamroughton.consentus.messaging.NonblockingEventSender;
 import com.adamroughton.consentus.messaging.Publisher;
 import com.adamroughton.consentus.messaging.RouterSocketReactor;
+import com.adamroughton.consentus.messaging.SocketPackage;
 import com.adamroughton.consentus.messaging.SocketSettings;
-import com.adamroughton.consentus.messaging.SubSocketSettings;
 import com.adamroughton.consentus.messaging.events.EventType;
 import com.lmax.disruptor.MultiThreadedClaimStrategy;
 import com.lmax.disruptor.SequenceBarrier;
@@ -43,23 +50,76 @@ import static com.adamroughton.consentus.Constants.*;
 
 public class ClientHandlerService implements ConsentusService {
 	
+	public final static String SERVICE_TYPE = "ClientHandler";
+	
+	private Configuration _config;
+	private ConsentusProcessCallback _exHandler;
+	private InetAddress _networkAddress;
+	
 	private ExecutorService _executor;
 	private Disruptor<byte[]> _recvDisruptor;
 	private Disruptor<byte[]> _directSendDisruptor;
 	private Disruptor<byte[]> _pubSendDisruptor;
 	
-	private EventListener _updateListener;
-	private RouterSocketReactor _directRecvReactor;
+	private EventListener _subListener;
+	private RouterSocketReactor _routerReactor;
 	private ClientHandlerProcessor _processor;
 	private Publisher _publisher;
+	
+	private SocketSettings _subSocketSetting;
+	private SocketSettings _routerSocketSetting;
+	
+	private ZMQ.Socket _subSocket;
+	private ZMQ.Socket _routerSocket;
+	private ZMQ.Socket _pubSocket;
 	
 	private ZMQ.Context _zmqContext;
 	
 	private int _clientHandlerId;
-	
-	@SuppressWarnings("unchecked")
+
 	@Override
-	public void start(final Config config, final ConsentusProcessCallback exHandler) {
+	public String name() {
+		return String.format("Client Handler %d", _clientHandlerId);
+	}
+
+	@Override
+	public void onStateChanged(ConsentusServiceState newClusterState,
+			Cluster cluster) throws Exception {
+		switch (newClusterState) {
+			case INIT:
+				init(cluster);
+				break;
+			case BIND:
+				bind(cluster);
+				break;
+			case CONNECT:
+				connect(cluster);
+				break;
+			case START:
+				start(cluster);
+				break;
+			case SHUTDOWN:
+				shutdown(cluster);
+				break;
+		}
+		cluster.signalReady();
+	}
+
+	@Override
+	public Class<ConsentusServiceState> getStateValueClass() {
+		return ConsentusServiceState.class;
+	}
+
+	@Override
+	public void configure(Configuration config,
+			ConsentusProcessCallback exHandler, 
+			InetAddress networkAddress) {
+		_config = config;
+		_exHandler = exHandler;
+		_networkAddress = networkAddress;
+	}
+	
+	private void init(Cluster cluster) throws Exception {
 		_executor = Executors.newCachedThreadPool();
 		_zmqContext = ZMQ.context(1);
 		
@@ -76,68 +136,98 @@ public class ClientHandlerService implements ConsentusService {
 				new SingleThreadedClaimStrategy(2048), 
 				new YieldingWaitStrategy());
 		
-		//TODO do some lookup
-		_clientHandlerId = 0;
+		// Request a client handler ID
+		byte[] clientHandlerAssignmentReq = new byte[16];
+		MessageBytesUtil.writeUUID(clientHandlerAssignmentReq, 0, cluster.getMyId());
+		cluster.requestAssignment(SERVICE_TYPE, clientHandlerAssignmentReq);
+	}
+	
+	@SuppressWarnings("unchecked")
+	private void bind(Cluster cluster) throws Exception {
+		// get client handler ID
+		byte[] assignment = cluster.getAssignment(SERVICE_TYPE);
+		if (assignment.length != 4) 
+			throw new RuntimeException(String.format("Expected the assignment to be an Int, " +
+					"instead had length %d", assignment.length));
+		_clientHandlerId = MessageBytesUtil.readInt(assignment, 0);
 		
-		EventProcessingHeader header = new EventProcessingHeader(0, 1);
+		_pubSocket = _zmqContext.socket(ZMQ.PUB);
+		_subSocket = _zmqContext.socket(ZMQ.SUB);
+		_routerSocket = _zmqContext.socket(ZMQ.ROUTER);
 		
-		SocketSettings routerSocketSetting = SocketSettings.create(ZMQ.ROUTER)
-				.bindToPort(getPort(config.getClientHandlerListenPort()))
-				.setMessageOffsets(0, 16);
-		MessagePartBufferPolicy routerPolicy = routerSocketSetting.getMessagePartPolicy();
-		routerPolicy.addLabel(ClientHandlerProcessor.SOCKET_ID_LABEL, 0);
-		routerPolicy.addLabel(ClientHandlerProcessor.CONTENT_LABEL, 1);
+		int routerPort = _config.getServices().get(SERVICE_TYPE).getPorts().get("input");
 		
-		SocketSettings updateSocketSetting = SocketSettings.create(ZMQ.SUB)
-				.connectToAddress(String.format("tcp://127.0.0.1:%s", config.getCanonicalStatePubPort()))
-				.setSocketId(ClientHandlerProcessor.SUB_RECV_SOCKET_ID)
-				.setMessageOffsets(0, 0);
-		MessagePartBufferPolicy updatePolicy = updateSocketSetting.getMessagePartPolicy();
-		updatePolicy.addLabel(ClientHandlerProcessor.SUB_ID_LABEL, 0);
-		updatePolicy.addLabel(ClientHandlerProcessor.CONTENT_LABEL, 1);
-		SubSocketSettings updateSubSocketSetting = SubSocketSettings.create(updateSocketSetting)
+		_routerSocketSetting = SocketSettings.create()
+				.bindToPort(routerPort);
+		SocketPackage routerSocketPackage = SocketPackage.create(_routerSocket)
+				.setMessageOffsets(new NamedOffset(0, ClientHandlerProcessor.SOCKET_ID_LABEL), 
+								   new NamedOffset(16, ClientHandlerProcessor.CONTENT_LABEL));
+		
+		_subSocketSetting = SocketSettings.create()
 				.subscribeTo(EventType.STATE_UPDATE);
-		
-		SocketSettings pubSocketSetting = SocketSettings.create(ZMQ.PUB)
-				.connectToAddress(String.format("tcp://127.0.0.1:%s", config.getCanonicalSubPort()))
-				.setMessageOffsets(0, 0);
-		MessagePartBufferPolicy pubPolicy = pubSocketSetting.getMessagePartPolicy();
+		SocketPackage subSocketPackage = SocketPackage.create(_subSocket)
+				.setSocketId(ClientHandlerProcessor.SUB_RECV_SOCKET_ID)
+				.setMessageOffsets(new NamedOffset(0, ClientHandlerProcessor.SUB_ID_LABEL), // i.e. overwrite
+								   new NamedOffset(0, ClientHandlerProcessor.CONTENT_LABEL));
+
+		SocketPackage pubSocketPackage = SocketPackage.create(_pubSocket)
+				.setMessageOffsets(0, 0); // send empty first frame
 		
 		SequenceBarrier directSendBarrier = _directSendDisruptor.getRingBuffer().newBarrier();
+		EventProcessingHeader header = new EventProcessingHeader(0, 1);
 		
-		_updateListener = new EventListener(updateSubSocketSetting, 
+		_subListener = new EventListener(subSocketPackage, 
 				_recvDisruptor.getRingBuffer(), 
-				_zmqContext, exHandler);
-		_directRecvReactor = new RouterSocketReactor(routerSocketSetting, 
 				_zmqContext, 
-				_recvDisruptor.getRingBuffer(), 
-				_directSendDisruptor.getRingBuffer(), 
-				directSendBarrier, 
-				header, 
-				exHandler);
+				_exHandler);
+		_routerReactor = new RouterSocketReactor(routerSocketPackage,
+				new NonblockingEventReceiver(_recvDisruptor.getRingBuffer(), header),
+				new NonblockingEventSender(_directSendDisruptor.getRingBuffer(), directSendBarrier, header), 
+				_exHandler);
 		_processor = new ClientHandlerProcessor(_clientHandlerId, 
 				_directSendDisruptor.getRingBuffer(), 
 				_pubSendDisruptor.getRingBuffer(), 
 				header, 
 				header, 
 				header, 
-				routerPolicy, 
-				updatePolicy, 
-				pubPolicy);
-		_publisher = new Publisher(_zmqContext, pubSocketSetting, header);
+				routerSocketPackage.getMessagePartPolicy(), 
+				subSocketPackage.getMessagePartPolicy(), 
+				pubSocketPackage.getMessagePartPolicy());
+		_publisher = new Publisher(pubSocketPackage, header);
 		
 		_recvDisruptor.handleEventsWith(_processor);
 		_pubSendDisruptor.handleEventsWith(_publisher);
 		
+		_routerSocketSetting.configureSocket(_routerSocket);
+		_subSocketSetting.configureSocket(_subSocket);
+		
+		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _networkAddress.getHostAddress()));
+	}
+	
+	private void connect(Cluster cluster) throws Exception {
+		String[] canonicalStateAddresses = cluster.getAllServices(CanonicalStateService.SERVICE_TYPE);
+		if (canonicalStateAddresses.length < 1) {
+			throw new RuntimeException("No canonical state services registered!");
+		}
+
+		// assuming only one publishes at any given time (i.e. the slave publishes to null)
+		int canonicalPubPort = _config.getServices().get(CanonicalStateService.SERVICE_TYPE).getPorts().get("pub");
+		int canonicalSubPort = _config.getServices().get(CanonicalStateService.SERVICE_TYPE).getPorts().get("sub");
+		for (String canonicalStateAddress : canonicalStateAddresses) {
+			_subSocket.connect(String.format("%s:%d", canonicalStateAddress, canonicalPubPort));
+			_pubSocket.connect(String.format("%s:%d", canonicalStateAddress, canonicalSubPort));
+		}
+	}
+	
+	private void start(Cluster cluster) throws Exception {
 		_recvDisruptor.start();
 		_pubSendDisruptor.start();
 		
-		_executor.submit(_updateListener);
-		_executor.submit(_directRecvReactor);
+		_executor.submit(_subListener);
+		_executor.submit(_routerReactor);
 	}
-
-	@Override
-	public void shutdown() {
+	
+	private void shutdown(Cluster cluster) throws Exception {
 		_zmqContext.term();
 		_executor.shutdownNow();
 		try {
@@ -145,11 +235,6 @@ public class ClientHandlerService implements ConsentusService {
 		} catch (InterruptedException eInterrupted) {
 			// ignore
 		}
-	}
-
-	@Override
-	public String name() {
-		return String.format("Client Handler %d", _clientHandlerId);
 	}
 	
 }

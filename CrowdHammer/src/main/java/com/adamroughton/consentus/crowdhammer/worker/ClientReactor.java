@@ -1,17 +1,20 @@
 package com.adamroughton.consentus.crowdhammer.worker;
 
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 
 import org.zeromq.ZMQ;
 
+import com.adamroughton.consentus.Util;
 import com.adamroughton.consentus.messaging.EventProcessingHeader;
 import com.adamroughton.consentus.messaging.EventReceiver;
 import com.adamroughton.consentus.messaging.EventSender;
 import com.adamroughton.consentus.messaging.MessagePartBufferPolicy;
 import com.adamroughton.consentus.messaging.events.ClientInputEvent;
 import com.adamroughton.consentus.messaging.events.ClientUpdateEvent;
+import com.adamroughton.consentus.messaging.events.EventType;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.SequenceBarrier;
 import uk.co.real_logic.intrinsics.StructuredArray;
@@ -20,13 +23,18 @@ import static com.adamroughton.consentus.Constants.*;
 
 public class ClientReactor implements Runnable {
 
+	private final static long METRIC_TICK_NS = TimeUnit.MILLISECONDS.toNanos(METRIC_TICK);
+	
 	private final AtomicBoolean _instanceActive = new AtomicBoolean(false);
 	private final StructuredArray<Client> _clients;
-	private volatile boolean _isRunning = false;
 	private final long _clientLengthMask;
+	
+	private volatile boolean _isRunning = false;
+	private volatile boolean _isSendingInput = false;
 	
 	private final RingBuffer<byte[]> _metricSendQueue;
 	private final SequenceBarrier _metricSendBarrier;
+	
 	private final EventSender _sender;
 	private final EventReceiver _receiver;
 	
@@ -36,7 +44,6 @@ public class ClientReactor implements Runnable {
 	public ClientReactor(final StructuredArray<Client> clients, 
 			final RingBuffer<byte[]> metricSendQueue,
 			final SequenceBarrier metricSendBarrier) {
-		
 		_clients = Objects.requireNonNull(clients);
 		long clientsLength = _clients.getLength();
 		if (Long.bitCount(clientsLength) != 1) 
@@ -51,36 +58,57 @@ public class ClientReactor implements Runnable {
 		_receiver = new EventReceiver(header, true);
 	}
 	
+	public void halt() {
+		_isRunning = false;
+	}
+	
+	public void stopSendingInput() {
+		_isSendingInput = false;
+	}
+	
 	@Override
 	public void run() {
 		if (_instanceActive.getAndSet(true)) {
 			throw new IllegalArgumentException(
 					"Only one instance of the client reactor should be started.");
 		}
+		_isRunning = true;
+		_isSendingInput = true;
 		
 		byte[] messageBuffer = new byte[MSG_BUFFER_LENGTH];
 		MessagePartBufferPolicy msgPartPolicy = new MessagePartBufferPolicy(0, 4);
+		long nextMetricTime = 0;
 		
 		long currentClientIndex = 0;
+		long now;
 		while(_isRunning) {
-//			if (isMetricPubTime) {
-//				createMetricEvent;
-//			}
+			now = System.nanoTime();
+			if (System.nanoTime() >= nextMetricTime) {
+				sendMetricEvent();
+				nextMetricTime = now + METRIC_TICK_NS;
+			}
+			
+			// measure whether we have entered death spiral with latency - check that
+			// the processing time for all clients is less than the tick time
 			
 			// get next client
 			Client client = _clients.get(currentClientIndex++ & _clientLengthMask);
-			long nextSendTime = client.getNextSendTimeInNanos();
-			
-			// recv events
-			ZMQ.Socket socket = client.getSocket();
-			while(_receiver.recv(socket, messageBuffer, msgPartPolicy)) {
-				processClientUpdate(messageBuffer);
+			if (client.isActive()) {
+				long nextSendTime = client.getNextSendTimeInNanos();
+				
+				// recv events
+				ZMQ.Socket socket = client.getSocket();
+				while(_receiver.recv(socket, msgPartPolicy, 0, messageBuffer)) {
+					processClientUpdate(messageBuffer);
+				}
+				
+				// send outgoing event
+				if (_isSendingInput) {
+					LockSupport.parkNanos(getWaitTime(nextSendTime));
+					createClientEvent(client, messageBuffer);
+					_sender.send(socket, msgPartPolicy, messageBuffer);
+				}
 			}
-			
-			// send outgoing event
-			LockSupport.parkNanos(getWaitTime(nextSendTime));
-			createClientEvent(client, messageBuffer);
-			_sender.send(socket, messageBuffer, msgPartPolicy);
 		}
 	}
 	
@@ -91,17 +119,18 @@ public class ClientReactor implements Runnable {
 	private void createClientEvent(final Client client, final byte[] outgoingBuffer) {
 		long sendTime = System.nanoTime();
 		long actionId = client.addSentAction(sendTime);
-		_inputEvent.setBackingArray(outgoingBuffer, 0);
+		Util.writeSubscriptionBytes(EventType.CLIENT_INPUT, outgoingBuffer, 0);
+		_inputEvent.setBackingArray(outgoingBuffer, 4);
 		try {
 			_inputEvent.setClientId(client.getClientId());
-			
+			_inputEvent.setClientActionId(actionId);			
 		} finally {
 			_inputEvent.releaseBackingArray();
 		}
 	}
 	
-	public void stop() {
-		_isRunning = false;
+	private void sendMetricEvent() {
+		
 	}
 	
 	private long getWaitTime(long nextSendTime) {

@@ -42,7 +42,7 @@ public class TestNonblockingEventSender {
 	@Mock private ZMQ.Socket _zmqSocket;
 	private NonblockingEventSender _sender;
 	private final EventProcessingHeader _processingHeader = new EventProcessingHeader(0, 1);
-	private final MessagePartBufferPolicy _clientMsgOffsets = new MessagePartBufferPolicy(0, 16);
+	private SocketPackage _socketPackage;
 	
 	private final int _msgOffset = _processingHeader.getEventOffset();
 	
@@ -55,6 +55,10 @@ public class TestNonblockingEventSender {
 		}, 4);
 		_sender = new NonblockingEventSender(_buffer, _buffer.newBarrier(), _processingHeader);
 		_buffer.setGatingSequences(_sender.getSequence());
+		
+		_socketPackage = SocketPackage.create(_zmqSocket)
+				.setMessageOffsets(0, 16)
+				.setSocketId(0);
 	}
 	
 	@Test
@@ -76,7 +80,7 @@ public class TestNonblockingEventSender {
 		_processingHeader.setIsValid(true, outgoingBuffer);
 		_buffer.publish(seq);
 		
-		assertTrue(_sender.sendIfReady(_zmqSocket, _clientMsgOffsets));
+		assertTrue(_sender.sendIfReady(_socketPackage));
 		
 		ArgumentCaptor<byte[]> eBytesCaptor = ArgumentCaptor.forClass(byte[].class);
 		ArgumentCaptor<Integer> eOffsetCaptor = ArgumentCaptor.forClass(Integer.class);
@@ -149,7 +153,7 @@ public class TestNonblockingEventSender {
 		}
 		
 		for (int i = 0; i < 3; i++) {
-			assertTrue(_sender.sendIfReady(_zmqSocket, _clientMsgOffsets));
+			assertTrue(_sender.sendIfReady(_socketPackage));
 		}
 		
 		verify(_zmqSocket, times(3)).send(any(byte[].class), anyInt(), eq(ZMQ.SNDMORE | ZMQ.NOBLOCK));
@@ -195,7 +199,7 @@ public class TestNonblockingEventSender {
 		_processingHeader.setIsValid(true, outgoingBuffer);
 		_buffer.publish(seq);
 		
-		assertFalse(_sender.sendIfReady(_zmqSocket, _clientMsgOffsets));
+		assertFalse(_sender.sendIfReady(_socketPackage));
 		verify(_zmqSocket, only()).send(any(byte[].class), anyInt(), eq(ZMQ.SNDMORE | ZMQ.NOBLOCK));
 		
 		assertRangeEqual(expectedIdBytes, eventPartCaptor.getValue(), eOffsetCaptor.getValue(), expectedIdBytes.length);
@@ -230,10 +234,10 @@ public class TestNonblockingEventSender {
 		_processingHeader.setIsValid(true, outgoingBuffer);
 		_buffer.publish(seq);
 		
-		assertFalse(_sender.sendIfReady(_zmqSocket, _clientMsgOffsets));
+		assertFalse(_sender.sendIfReady(_socketPackage));
 		assertEquals(-1, _sender.getSequence().get());
 		
-		assertTrue(_sender.sendIfReady(_zmqSocket, _clientMsgOffsets));
+		assertTrue(_sender.sendIfReady(_socketPackage));
 		verify(_zmqSocket, times(2)).send(any(byte[].class), anyInt(), eq(ZMQ.SNDMORE | ZMQ.NOBLOCK));
 		verify(_zmqSocket).send(any(byte[].class), anyInt(), eq(ZMQ.NOBLOCK));
 		
@@ -252,7 +256,7 @@ public class TestNonblockingEventSender {
 	
 	@Test
 	public void sendWithNoPendingEvents() {
-		_sender.sendIfReady(_zmqSocket, _clientMsgOffsets);
+		_sender.sendIfReady(_socketPackage);
 		assertEquals(-1, _sender.getSequence().get());
 		verifyZeroInteractions(_zmqSocket);
 	}
@@ -266,7 +270,7 @@ public class TestNonblockingEventSender {
 			.thenReturn(true)
 			.thenReturn(true);
 		
-		_sender.sendIfReady(_zmqSocket, _clientMsgOffsets);
+		_sender.sendIfReady(_socketPackage);
 		
 		long seq = _buffer.next();
 		byte[] outgoingBuffer = _buffer.get(seq);
@@ -285,7 +289,7 @@ public class TestNonblockingEventSender {
 		_processingHeader.setIsValid(true, outgoingBuffer);
 		_buffer.publish(seq);
 		
-		_sender.sendIfReady(_zmqSocket, _clientMsgOffsets);
+		_sender.sendIfReady(_socketPackage);
 		
 		verify(_zmqSocket).send(any(byte[].class), anyInt(), eq(ZMQ.SNDMORE | ZMQ.NOBLOCK));
 		verify(_zmqSocket).send(any(byte[].class), anyInt(), eq(ZMQ.NOBLOCK));
@@ -322,7 +326,7 @@ public class TestNonblockingEventSender {
 		_processingHeader.setIsValid(true, outgoingBuffer);
 		_buffer.publish(seq);
 		
-		assertFalse(_sender.sendIfReady(_zmqSocket, _clientMsgOffsets));
+		assertFalse(_sender.sendIfReady(_socketPackage));
 		verify(_zmqSocket).send(any(byte[].class), anyInt(), eq(ZMQ.SNDMORE | ZMQ.NOBLOCK));
 		verify(_zmqSocket).send(any(byte[].class), anyInt(), eq(ZMQ.NOBLOCK));
 		assertEquals(-1, _sender.getSequence().get());	
@@ -347,7 +351,11 @@ public class TestNonblockingEventSender {
 		_processingHeader.setIsValid(true, outgoingBuffer);
 		_buffer.publish(seq);
 		
-		_sender.sendIfReady(_zmqSocket, new MessagePartBufferPolicy(BUFFER_SIZE));
+		SocketPackage socketPackage = SocketPackage.create(_zmqSocket)
+				.setMessageOffsets(BUFFER_SIZE)
+				.setSocketId(0);
+		
+		_sender.sendIfReady(socketPackage);
 	}
 	
 	private String getUnmatchedOffsetMessage(int expectedValue, int offset, byte[] actual) {

@@ -49,9 +49,20 @@ public class NonblockingEventSender {
 	/**
 	 * Attempts to send a pending event from the outgoing buffer, succeeding
 	 * only if both the event is ready and the socket is able to send the event.
+	 * @param socketPackage the socket (plus additional settings) to send the event on
+	 * @return whether an event was sent from the buffer.
+	 * @see equivalent to NonblockingEventSender#sendIfReady(org.zeromq.ZMQ.Socket, MessagePartBufferPolicy)
+	 */
+	public boolean sendIfReady(final SocketPackage socketPackage) {
+		return sendIfReady(socketPackage.getSocket(), 
+				socketPackage.getMessagePartPolicy());
+	}
+	
+	/**
+	 * Attempts to send a pending event from the outgoing buffer, succeeding
+	 * only if both the event is ready and the socket is able to send the event.
 	 * @param socket the socket to send the event on
-	 * @param msgPartPolicy the policy used to construct message parts from the
-	 * ring buffer entry
+	 * @param msgPartPolicy the message part policy to apply when sending messages
 	 * @return whether an event was sent from the buffer.
 	 */
 	public boolean sendIfReady(final ZMQ.Socket socket,
@@ -62,7 +73,7 @@ public class NonblockingEventSender {
 		}
 		if (nextSeq <= _availableSeq) {
 			byte[] outgoingBuffer = _outgoingBuffer.get(nextSeq);
-			if (_eventSender.send(socket, outgoingBuffer, msgPartPolicy)) {
+			if (_eventSender.send(socket, msgPartPolicy, outgoingBuffer)) {
 				_sequence.addAndGet(1);
 				return true;
 			}

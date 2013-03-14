@@ -1,0 +1,24 @@
+# Configuration file for Consentus
+
+WorkingDir: /tmp/consentus
+
+ZooKeeper:
+  AppRoot: /consentus
+    
+Services:
+  CanonicalState:
+    Ports:
+      pub: 9000
+      sub: 9001
+    
+  ClientHandler:
+    Ports:
+      input: 10000
+            
+  MetricListener:
+    Ports:
+      input: 11000
+            
+CrowdHammer:
+  # the amount of time to test during each test execution phase
+  TestRunDurationInSeconds: 30

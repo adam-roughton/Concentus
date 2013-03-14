@@ -15,102 +15,177 @@
  */
 package com.adamroughton.consentus.crowdhammer.worker;
 
+import java.net.InetAddress;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
-import com.adamroughton.consentus.ConsentusService;
-import com.adamroughton.consentus.Config;
+import org.zeromq.ZMQ;
+
 import com.adamroughton.consentus.ConsentusProcessCallback;
+import com.adamroughton.consentus.Constants;
+import com.adamroughton.consentus.FatalExceptionCallback;
 import com.adamroughton.consentus.Util;
-import com.adamroughton.consentus.crowdhammer.TestConfig;
-import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
-import com.adamroughton.consentus.messaging.EventListener;
-import com.adamroughton.consentus.messaging.SocketSettings;
-import com.adamroughton.consentus.messaging.SubSocketSettings;
-import com.lmax.disruptor.EventFactory;
+import com.adamroughton.consentus.clienthandler.ClientHandlerService;
+import com.adamroughton.consentus.cluster.worker.Cluster;
+import com.adamroughton.consentus.crowdhammer.CrowdHammerService;
+import com.adamroughton.consentus.crowdhammer.CrowdHammerServiceState;
+import com.adamroughton.consentus.crowdhammer.config.CrowdHammerConfiguration;
+import com.adamroughton.consentus.messaging.MessageBytesUtil;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 import com.lmax.disruptor.dsl.Disruptor;
 
-import org.zeromq.*;
+import uk.co.real_logic.intrinsics.StructuredArray;
 
-public class WorkerService implements ConsentusService {
-	
-	// send queue? need access to each client before we can send on the socket
-	
-	// receive on each socket before sending out events? 
-	// reactor pattern on each socket
-	
-	private ExecutorService _executor;
-	private Disruptor<byte[]> _updateDisruptor;
-	private Disruptor<byte[]> _outputDisruptor;
-	
-	private EventListener _updateListener;
-	private LoadDriver _loadDriver;
-	private UpdateProcessor _updateProcessor;
-	private InputEventPublisher _inputEventPublisher;	
-	private MetricPublisher _metricPublisher;
-	
-	private ZMQ.Context _zmqContext;
+import static com.adamroughton.consentus.Util.*;
 
-	@SuppressWarnings("unchecked")
-	@Override
-	public void start(Config config, ConsentusProcessCallback exHandler) {
-		_executor = Executors.newCachedThreadPool();
+public final class WorkerService implements CrowdHammerService {
+
+	public static final String SERVICE_TYPE = "CrowdHammerWorker";
+	
+	private final ZMQ.Context _zmqContext;
+	private final ExecutorService _executor = Executors.newCachedThreadPool();
+	private final Disruptor<byte[]> _metricSendQueue;
+	
+	// we allocate to the next power of 2 to make the wrapping around operation faster
+	private int _maxClients;
+	private int _clientCountForTest;
+	private StructuredArray<Client> _clients;
+	private ClientReactor _clientReactor;
+	
+	private CrowdHammerConfiguration _config;
+	private FatalExceptionCallback _exHandler;
+	private InetAddress _networkAddress;
+	
+	private Future<?> _runningTest = null;
+	
+	public WorkerService() {
+		_metricSendQueue = new Disruptor<>(
+				Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), 
+				_executor, 
+				new SingleThreadedClaimStrategy(2048), 
+				new YieldingWaitStrategy());
+		
 		_zmqContext = ZMQ.context(1);
-		
-		_updateDisruptor = new Disruptor<>(new EventFactory<byte[]>() {
+	}
 
-			@Override
-			public byte[] newInstance() {
-				return new byte[256];
-			}
-			
-		}, _executor, new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
-		_updateDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Input Disruptor", exHandler));
+	@Override
+	public void onStateChanged(CrowdHammerServiceState newClusterState,
+			Cluster cluster) throws Exception {
+		if (newClusterState == CrowdHammerServiceState.INIT) {
+			init(cluster);
+		} else if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
+			initTest(cluster);
+		} else if (newClusterState == CrowdHammerServiceState.SET_UP_TEST) {
+			setUpTest(cluster);
+		} else if (newClusterState == CrowdHammerServiceState.START_SUT) {
+			startSUT(cluster);
+		} else if (newClusterState == CrowdHammerServiceState.EXEC_TEST) {
+			executeTest(cluster);
+		} else if (newClusterState == CrowdHammerServiceState.STOP_SENDING_EVENTS) {
+			stopSendingInputEvents(cluster);
+		} else if (newClusterState == CrowdHammerServiceState.TEAR_DOWN) {
+			teardown(cluster);
+		} else if (newClusterState == CrowdHammerServiceState.SHUTDOWN) {
+			shutdown(cluster);
+		}
 		
-		_outputDisruptor = new Disruptor<>(new EventFactory<byte[]>() {
+		cluster.signalReady();
+	}
 
-			@Override
-			public byte[] newInstance() {
-				return new byte[256];
-			}
-			
-		}, _executor, new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());	
-		_outputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Output Disruptor", exHandler));
-		
-		_inputEventPublisher = new InputEventPublisher(_zmqContext, config);
-		_outputDisruptor.handleEventsWith(_inputEventPublisher);
-		
-		_updateProcessor = new UpdateProcessor(_outputDisruptor.getRingBuffer());
-		_metricPublisher = new MetricPublisher(_zmqContext, (TestConfig)config);
-		_updateDisruptor.handleEventsWith(_updateProcessor)
-						.then(_metricPublisher);
-		
-		_outputDisruptor.start();
-		_updateDisruptor.start();
-		
-		// update listener
-		int updatePort = Util.getPort(config.getCanonicalStatePubPort());
-		String updateAddress = String.format("tcp://127.0.0.1:%d", updatePort);
-		
-		SocketSettings socketSettings = SocketSettings.create(ZMQ.SUB)
-				.connectToAddress(updateAddress)
-				.setMessageOffsets(0, 0);
-		
-		SubSocketSettings subSocketSettings = SubSocketSettings.create(socketSettings)
-				.subscribeToAll();
-		
-		_updateListener = new EventListener(subSocketSettings, _updateDisruptor.getRingBuffer(), _zmqContext, exHandler);
-		_executor.submit(_updateListener);
-		
-		_loadDriver = new LoadDriver(_outputDisruptor.getRingBuffer(), exHandler, config);
-		_executor.submit(_loadDriver);
+	@Override
+	public Class<CrowdHammerServiceState> getStateValueClass() {
+		return CrowdHammerServiceState.class;
 	}
 	
 	@Override
-	public void shutdown() {
+	public void configure(CrowdHammerConfiguration config,
+			ConsentusProcessCallback exHandler, 
+			InetAddress networkAddress) {
+		_config = config;
+		_exHandler = Objects.requireNonNull(exHandler);
+		_networkAddress = networkAddress;
+	}
+	
+	public void setMaxClientCount(final int maxClientCount) {
+		_maxClients = maxClientCount;
+	}
+	
+	private void init(Cluster cluster) throws Exception {
+		_clients = StructuredArray.newInstance(nextPowerOf2(_maxClients), Client.class, new Class[] {ZMQ.Context.class}, _zmqContext);
+		_clientReactor = new ClientReactor(_clients, _metricSendQueue.getRingBuffer(), _metricSendQueue.getRingBuffer().newBarrier());
+	}
+	
+	private void initTest(Cluster cluster) throws Exception {
+		// request client allocation
+		byte[] reqBytes = new byte[4];
+		MessageBytesUtil.writeInt(reqBytes, 0, _maxClients);
+		cluster.requestAssignment(SERVICE_TYPE, reqBytes);
+	}
+
+	private void setUpTest(Cluster cluster) throws Exception {
+		// read in the number of clients to test with
+		byte[] res = cluster.getAssignment(SERVICE_TYPE);
+		if (res.length != 4) throw new RuntimeException("Expected an integer value");
+		int _clientCountForTest = MessageBytesUtil.readInt(res, 0);
+		
+		if (_clientCountForTest > _maxClients)
+			throw new IllegalArgumentException(
+					String.format("The client count was too large: %d > %d", 
+							_clientCountForTest, 
+							_maxClients));
+	}
+	
+	private void startSUT(Cluster cluster) throws Exception {
+		String[] clientHandlerConnStrings = cluster.getAllServices(ClientHandlerService.SERVICE_TYPE);
+		int clientHandlerPort = _config.getServices().get(ClientHandlerService.SERVICE_TYPE).getPorts().get("input");
+		
+		int nextConnString = 0;
+		Client client;
+		for (int i = 0; i < _clients.getLength(); i++) {
+			client = _clients.get(i);
+			if (i < _clientCountForTest) {
+				ZMQ.Socket clientSocket = client.getSocket();
+				String connString = String.format("%s:%d", 
+						clientHandlerConnStrings[nextConnString++ % clientHandlerConnStrings.length],
+						clientHandlerPort);
+				client.setClientHandlerConnString(connString);
+				clientSocket.connect(connString);
+				client.setIsActive(true);
+				try {
+					Thread.sleep(10);
+				} catch (InterruptedException eInterrupt) {
+				}
+			} else {
+				client.setIsActive(false);
+			}
+		}
+	}
+	
+	private void executeTest(Cluster cluster) throws Exception {
+		_runningTest = _executor.submit(_clientReactor);
+	}
+	
+	private void stopSendingInputEvents(Cluster cluster) throws Exception {
+		_clientReactor.stopSendingInput();
+	}
+	
+	private void teardown(Cluster cluster) throws Exception {
+		_clientReactor.halt();
+		Client client;
+		for (int i = 0; i < _clients.getLength(); i++) {
+			client = _clients.get(i);
+			if (client.isActive()) {
+				String connString = _clients.get(i).getClientHandlerConnString();
+				_clients.get(i).getSocket().disconnect(connString);
+			}
+		}
+	}
+	
+	private void shutdown(Cluster cluster) throws Exception {
 		_zmqContext.term();
 		_executor.shutdownNow();
 		try {
@@ -122,7 +197,7 @@ public class WorkerService implements ConsentusService {
 
 	@Override
 	public String name() {
-		return "CrowdHammer Worker Service";
+		return "CrowdHammer Worker";
 	}
 	
 }

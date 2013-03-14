@@ -15,11 +15,31 @@
  */
 package com.adamroughton.consentus;
 
-import org.zeromq.ZMQ;
+import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Paths;
+import java.nio.file.StandardOpenOption;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.List;
+import java.util.ListIterator;
+import java.util.Map;
+import java.util.Map.Entry;
+import java.util.UUID;
+import java.util.regex.Pattern;
 
+import org.apache.commons.cli.CommandLine;
+import org.apache.commons.cli.CommandLineParser;
+import org.apache.commons.cli.GnuParser;
+import org.apache.commons.cli.HelpFormatter;
+import org.apache.commons.cli.Option;
+import org.apache.commons.cli.Options;
+import org.apache.commons.cli.ParseException;
+import org.yaml.snakeyaml.Yaml;
+
+import com.adamroughton.consentus.config.Configuration;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
-import com.adamroughton.consentus.messaging.SocketSettings;
-import com.adamroughton.consentus.messaging.SubSocketSettings;
 import com.adamroughton.consentus.messaging.events.EventType;
 import com.esotericsoftware.kryo.Kryo;
 import com.lmax.disruptor.EventFactory;
@@ -55,6 +75,10 @@ public class Util {
 		return subId;
 	}
 	
+	public static void writeSubscriptionBytes(EventType eventType, byte[] buffer, int offset) {
+		MessageBytesUtil.writeInt(buffer, offset, eventType.getId());
+	}
+	
 	public static EventFactory<byte[]> msgBufferFactory(final int msgBufferSize) {
 		return new EventFactory<byte[]>() {
 			public byte[] newInstance() {
@@ -73,6 +97,10 @@ public class Util {
 		   sb.append(String.format("%02x", array[i] & 0xff));
 	   }
 	   return sb.toString();
+	}
+	
+	public static String toHexString(UUID uuid) {
+		return uuid.toString().replace("-", "");
 	}
 	
 	public static String toHexStringSegment(byte[] array, int offset, int range) {
@@ -95,31 +123,6 @@ public class Util {
 	   return sb.toString();
 	}
 	
-	public static ZMQ.Socket createSocket(final ZMQ.Context context, 
-			final SocketSettings socketSettings) throws Exception {
-		ZMQ.Socket socket = context.socket(socketSettings.getSocketType());
-		long hwm = socketSettings.getHWM();
-		if (hwm != -1) {
-			socket.setHWM(hwm);
-		}
-		for (int port : socketSettings.getPortsToBindTo()) {
-			socket.bind("tcp://*:" + port);
-		}
-		for (String address : socketSettings.getConnectionStrings()) {
-			socket.connect(address);
-		}
-		return socket;
-	}
-	
-	public static ZMQ.Socket createSubSocket(final ZMQ.Context context, 
-			final SubSocketSettings subSocketSettings) throws Exception {
-		ZMQ.Socket socket = createSocket(context, subSocketSettings.getSocketSettings());
-		for (byte[] subId : subSocketSettings.getSubscriptions()) {
-			socket.subscribe(subId);
-		}
-		return socket;
-	}
-	
 	/**
 	 * Gets the next power of 2 for v.
 	 * Used from http://graphics.stanford.edu/~seander/bithacks.html#RoundUpPowerOf2.
@@ -137,4 +140,78 @@ public class Util {
 		v++;
 		return v;
 	}
+	
+	private static final Pattern ZK_ROOT_PATTERN = Pattern.compile("^(/|(/[A-Za-z0-9]+)+)$");
+	private static final Pattern ZK_PATH_PATTERN = Pattern.compile("^(/[A-Za-z0-9]+)+$");
+	
+	public static boolean isValidZKRoot(String path) {
+		return ZK_ROOT_PATTERN.matcher(path).matches();
+	}
+	
+	public static boolean isValidZKPath(String path) {
+		return ZK_PATH_PATTERN.matcher(path).matches();
+	}
+	
+	public static <Config extends Configuration> Config readConfig(Class<Config> configClass, String path) {
+		Yaml yaml = new Yaml();
+		try (InputStream configStream = Files.newInputStream(Paths.get(path), StandardOpenOption.READ)) {
+			Config config = yaml.loadAs(configStream, configClass);
+			return config;
+		} catch (Exception e) {
+			throw new RuntimeException("Error reading configuration file", e);
+		}
+	}
+	
+	public static <T> Map<String, String> parseCommandLine(String processName, CommandLineConfiguration<T> configHandler, String[] args) {
+		return parseCommandLine(processName, configHandler.getCommandLineOptions(), args, true);
+	}
+	
+	public static Map<String, String> parseCommandLine(String processName, Iterable<Option> options, String[] args, boolean ignoreUnknownOptions) {
+		Map<String, String> parsedCommandLine = new HashMap<>();
+		Options cliOptions = new Options();
+		for (Option option : options) {
+			cliOptions.addOption(option);
+			parsedCommandLine.put(option.getOpt(), null);
+		}
+		CommandLineParser parser = new TolerantParser(ignoreUnknownOptions);
+		try {
+			CommandLine commandLine = parser.parse(cliOptions, args);
+			for (Entry<String, String> entry : new HashSet<>(parsedCommandLine.entrySet())) {
+				parsedCommandLine.put(entry.getKey(), commandLine.getOptionValue(entry.getKey()));
+			}
+		} catch (ParseException eParse) {
+			HelpFormatter helpFormatter = new HelpFormatter();
+			helpFormatter.printHelp(String.format("%s [options]", processName), cliOptions);
+			System.exit(1);
+		}
+		return parsedCommandLine;
+	}
+	
+	@SafeVarargs
+	public static <T> Iterable<T> newIterable(Iterable<T> existingIterable, T... entries) {
+		List<T> entriesList = Arrays.asList(entries);
+		for (T existingEntry : existingIterable) {
+			entriesList.add(existingEntry);
+		}
+		return entriesList;
+	}
+	
+	private static class TolerantParser extends GnuParser {
+
+		private final boolean _ignoreUnrecognisedOptions;
+		
+		public TolerantParser(boolean ignoreUnrecognisedOptions) {
+			_ignoreUnrecognisedOptions = ignoreUnrecognisedOptions;
+		}
+
+		@SuppressWarnings("rawtypes")
+		@Override
+		protected void processOption(String arg, ListIterator iter)
+				throws ParseException {
+			if (getOptions().hasOption(arg) || !_ignoreUnrecognisedOptions) {
+				super.processOption(arg, iter);
+			}
+		}
+	}
+		
 }

@@ -20,7 +20,6 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 
-import com.adamroughton.consentus.Config;
 import com.adamroughton.consentus.FatalExceptionCallback;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
 import com.adamroughton.consentus.messaging.events.StateInputEvent;
@@ -43,8 +42,7 @@ public class LoadDriver implements Runnable {
 	
 	public LoadDriver(
 			RingBuffer<byte[]> publishRingBuffer, 
-			FatalExceptionCallback exceptionCallback,
-			Config conf) {
+			FatalExceptionCallback exceptionCallback) {
 		_publishRingBuffer = Objects.requireNonNull(publishRingBuffer);
 		_exCallback = Objects.requireNonNull(exceptionCallback);
 	}

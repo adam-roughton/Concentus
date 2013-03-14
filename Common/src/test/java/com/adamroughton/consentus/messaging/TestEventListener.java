@@ -30,7 +30,6 @@ import com.adamroughton.consentus.FatalExceptionCallback;
 import com.adamroughton.consentus.Util;
 import com.adamroughton.consentus.messaging.EventListener;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
-import com.adamroughton.consentus.messaging.SocketSettings;
 import com.adamroughton.consentus.messaging.events.EventType;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.RingBuffer;
@@ -64,13 +63,10 @@ public class TestEventListener {
 			}
 		}, BUFFER_SIZE);
 		_disruptor.setGatingSequences(new Sequence(BUFFER_SIZE - 1));
-		when(_zmqContext.socket(ZMQ.SUB)).thenReturn(_zmqSocket);
 		
-		SocketSettings socketSetting = SocketSettings.create(ZMQ.SUB)
-				.bindToPort(9000)
-				.setMessageOffsets(0, 0)
-				.setHWM(100);
-		_eventListener = new EventListener(socketSetting, _disruptor, _zmqContext, new FatalExceptionCallback() {
+		SocketPackage socketPackage = SocketPackage.create(_zmqSocket)
+				.setMessageOffsets(0, 0);
+		_eventListener = new EventListener(socketPackage, _disruptor, _zmqContext, new FatalExceptionCallback() {
 			
 			@Override
 			public void signalFatalException(Throwable exception) {

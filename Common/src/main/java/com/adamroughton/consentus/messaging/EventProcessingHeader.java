@@ -44,6 +44,14 @@ public final class EventProcessingHeader {
 		MessageBytesUtil.writeFlagToByte(event, _startOffset, 0, isValid);
 	}
 	
+	public int getSocketId(byte[] event) {
+		return MessageBytesUtil.read4BitUInt(event, 0, 4);
+	}
+	
+	public void setSocketId(int socketId, byte[] event) {
+		MessageBytesUtil.write4BitUInt(event, 0, 4, socketId);
+	}
+	
 	public int getEventOffset() {
 		return _startOffset + _length;
 	}

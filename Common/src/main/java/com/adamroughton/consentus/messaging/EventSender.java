@@ -44,15 +44,28 @@ public class EventSender {
 	/**
 	 * Attempts to send a pending event from the outgoing buffer, succeeding
 	 * only if the socket is ready.
-	 * @param socket the socket to send the event on
+	 * @param socketPackage the socket (plus additional settings) to send the event on
 	 * @param outgoingBuffer the buffer to send from
-	 * @param msgPartOffsets the policy used to construct message parts from the
-	 * ring buffer entry
 	 * @return whether an event was sent.
 	 */
-	public boolean send(final ZMQ.Socket socket, 
-			byte[] outgoingBuffer,
-			final MessagePartBufferPolicy msgPartOffsets) {	
+	public boolean send(final SocketPackage socketPackage, 
+			byte[] outgoingBuffer) {
+		return send(socketPackage.getSocket(),
+				socketPackage.getMessagePartPolicy(),
+				outgoingBuffer);
+	}
+	
+	/**
+	 * Attempts to send a pending event from the outgoing buffer, succeeding
+	 * only if the socket is ready.
+	 * @param socket the socket to send the event on
+	 * @param msgPartOffsets the message part policy to apply for sending the message
+	 * @param outgoingBuffer the buffer to send from
+	 * @return whether an event was sent.
+	 */
+	public boolean send(final ZMQ.Socket socket,
+			MessagePartBufferPolicy msgPartOffsets,
+			byte[] outgoingBuffer) {
 		if (msgPartOffsets.getMinReqBufferSize() > outgoingBuffer.length - _msgOffset) {
 			throw new IllegalArgumentException(String.format(
 					"The message part buffer policy requires a buffer size (%d) greater than" +

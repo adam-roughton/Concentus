@@ -15,13 +15,9 @@
  */
 package com.adamroughton.consentus.crowdhammer.worker;
 
-import java.util.Objects;
-
 import org.zeromq.ZMQ;
 import org.zeromq.ZMQException;
 
-import com.adamroughton.consentus.Config;
-import com.adamroughton.consentus.Util;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventHandler;
@@ -29,36 +25,25 @@ import com.lmax.disruptor.LifecycleAware;
 
 class InputEventPublisher implements EventHandler<byte[]>, LifecycleAware {
 
-	private final ZMQ.Context _zmqContext;
-	private final int _canonicalStatePort;
-
-	private ZMQ.Socket _pub;
+	private final ZMQ.Socket _pub;
 	
-	public InputEventPublisher(ZMQ.Context zmqContext,
-			Config conf) {
-		_zmqContext = Objects.requireNonNull(zmqContext);
-		
-		_canonicalStatePort = Integer.parseInt(conf.getCanonicalSubPort());
-		Util.assertPortValid(_canonicalStatePort);
+	public InputEventPublisher(ZMQ.Socket pubSocket) {
+		_pub = pubSocket;
 	}
 	
 	@Override
 	public void onStart() {
-		_pub = _zmqContext.socket(ZMQ.PUB);
-		_pub.setHWM(100);
-		_pub.connect("tcp://127.0.0.1:" + _canonicalStatePort);
-		Log.info(String.format("Publishing on port %d", _canonicalStatePort));
+//		_pub = _zmqContext.socket(ZMQ.PUB);
+//		_pub.setHWM(100);
+//		_pub.connect("tcp://127.0.0.1:" + _canonicalStatePort);
 	}
 
 	@Override
 	public void onShutdown() {
-		if (_pub != null) {
-			try {
-				_pub.close();
-			} catch (Exception eClose) {
-				Log.warn("Exception thrown when closing ZMQ socket.", eClose);
-			}
-			_pub = null;
+		try {
+			_pub.close();
+		} catch (Exception eClose) {
+			Log.warn("Exception thrown when closing ZMQ socket.", eClose);
 		}
 	}
 

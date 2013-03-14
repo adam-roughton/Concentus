@@ -25,8 +25,6 @@ import com.adamroughton.consentus.FatalExceptionCallback;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.RingBuffer;
 
-import static com.adamroughton.consentus.Util.*;
-
 public final class EventListener implements Runnable {
 	private final AtomicBoolean _isRunning = new AtomicBoolean(false);
 	
@@ -34,33 +32,25 @@ public final class EventListener implements Runnable {
 	private final RingBuffer<byte[]> _ringBuffer;
 	private final FatalExceptionCallback _exCallback;
 	
-	private final MultiSocketSettings _multiSocketSettings;
+	private final SocketPackage[] _socketPackages;
 	
 	public EventListener(
-			final SubSocketSettings subSocketSettings,
+			final SocketPackage socketPackage,
 			final RingBuffer<byte[]> ringBuffer, 
 			final ZMQ.Context zmqContext,
 			final FatalExceptionCallback exCallback) {
-		this(MultiSocketSettings.beginWith(subSocketSettings), ringBuffer, zmqContext, exCallback);
+		this(new SocketPackage[] {socketPackage}, ringBuffer, zmqContext, exCallback);
 	}
 	
 	public EventListener(
-			final SocketSettings socketSettings,
-			final RingBuffer<byte[]> ringBuffer, 
-			final ZMQ.Context zmqContext,
-			final FatalExceptionCallback exCallback) {
-		this(MultiSocketSettings.beginWith(socketSettings), ringBuffer, zmqContext, exCallback);
-	}
-	
-	public EventListener(
-			final MultiSocketSettings multiSocketSettings,
+			final SocketPackage[] socketPackages,
 			final RingBuffer<byte[]> ringBuffer, 
 			final ZMQ.Context zmqContext,
 			final FatalExceptionCallback exCallback) {
 		_ringBuffer = Objects.requireNonNull(ringBuffer);
 		_zmqContext = Objects.requireNonNull(zmqContext);
 		_exCallback = Objects.requireNonNull(exCallback);
-		_multiSocketSettings = Objects.requireNonNull(multiSocketSettings);
+		_socketPackages = Objects.requireNonNull(socketPackages);
 	}
 
 	@Override
@@ -70,25 +60,11 @@ public final class EventListener implements Runnable {
 		}
 		
 		try {
-			ZMQ.Socket[] sockets = new ZMQ.Socket[_multiSocketSettings.socketCount()];
-			MessagePartBufferPolicy[] multiMessagePartOffsets = 
-					new MessagePartBufferPolicy[_multiSocketSettings.socketCount()];
-			int[] socketIds = new int[_multiSocketSettings.socketCount()];
-			for (int i = 0; i < _multiSocketSettings.socketCount(); i++) {
-				if (_multiSocketSettings.isSub(i)) {
-					sockets[i] = createSubSocket(_zmqContext, _multiSocketSettings.getSubSocketSettings(i));
-				} else {
-					sockets[i] = createSocket(_zmqContext, _multiSocketSettings.getSocketSettings(i));
-				}
-				multiMessagePartOffsets[i] = _multiSocketSettings.getSocketSettings(i).getMessagePartPolicy();
-				socketIds[i] = _multiSocketSettings.getSocketSettings(i).getSocketId();
-			}
-			
 			try {		
-				if (sockets.length == 1) {
-					doRecvSingleSocket(sockets[0], multiMessagePartOffsets[0], socketIds[0]);
+				if (_socketPackages.length == 1) {
+					doRecvSingleSocket(_socketPackages[0]);
 				} else {
-					doRecvMultiSocket(sockets, multiMessagePartOffsets, socketIds);
+					doRecvMultiSocket(_socketPackages);
 				}
 			} catch (ZMQException eZmq) {
 				// check that the socket hasn't just been closed
@@ -97,8 +73,8 @@ public final class EventListener implements Runnable {
 				}
 			} finally {
 				try {
-					for (int i = 0; i < sockets.length; i++) {
-						sockets[i].close();
+					for (int i = 0; i < _socketPackages.length; i++) {
+						_socketPackages[i].getSocket().close();
 					}
 				} catch (Exception eClose) {
 					Log.warn("Exception thrown when closing ZMQ socket.", eClose);
@@ -109,26 +85,26 @@ public final class EventListener implements Runnable {
 		}
 	}
 	
-	private void doRecvSingleSocket(final ZMQ.Socket socket, 
-			final MessagePartBufferPolicy msgPartPolicy,
-			final int socketId) throws Exception {
+	private void doRecvSingleSocket(final SocketPackage socketPackage) throws Exception {
 		while (!Thread.interrupted()) {
-			nextEvent(socket, msgPartPolicy, socketId);
+			nextEvent(socketPackage.getSocket(), 
+					socketPackage.getMessagePartPolicy(), 
+					socketPackage.getSocketId());
 		}
 	}
 	
-	private void doRecvMultiSocket(ZMQ.Socket[] sockets, 
-			final MessagePartBufferPolicy[] msgPartPolicies, 
-			final int[] socketIds) throws Exception {
-		ZMQ.Poller poller = _zmqContext.poller(sockets.length);
-		for (int i = 0; i < sockets.length; i++) {
-			poller.register(sockets[i], ZMQ.Poller.POLLIN);
+	private void doRecvMultiSocket(SocketPackage[] socketPackages) throws Exception {
+		ZMQ.Poller poller = _zmqContext.poller(socketPackages.length);
+		for (int i = 0; i < socketPackages.length; i++) {
+			poller.register(socketPackages[i].getSocket(), ZMQ.Poller.POLLIN);
 		}
 		while (!Thread.interrupted()) {
 			poller.poll();
-			for (int i = 0; i < sockets.length; i++) {
+			for (int i = 0; i < socketPackages.length; i++) {
 				if (poller.pollin(i)) {
-					nextEvent(poller.getSocket(i), msgPartPolicies[i], socketIds[i]);
+					nextEvent(poller.getSocket(i), 
+							socketPackages[i].getMessagePartPolicy(), 
+							socketPackages[i].getSocketId());
 				}
 			}
 		}

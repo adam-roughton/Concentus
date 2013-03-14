@@ -55,6 +55,14 @@ public final class MessagePartBufferPolicy {
 		_labelLookup = new Object2IntArrayMap<>(messagePartOffsets.length);
 	}
 	
+	public MessagePartBufferPolicy(final NamedOffset... messagePartOffsets) {
+		this(getOffsets(messagePartOffsets));
+		String[] labels = getLabels(messagePartOffsets);
+		for (int i = 0; i < labels.length; i++) {
+			_labelLookup.put(labels[i], _offsets[i]);
+		}
+	}
+	
 	/**
 	 * Instantiates this policy with the properties of the given policy
 	 * @param policyToClone
@@ -162,6 +170,40 @@ public final class MessagePartBufferPolicy {
 		if (!Arrays.equals(_offsets, other._offsets))
 			return false;
 		return true;
+	}
+	
+	private static int[] getOffsets(NamedOffset... namedOffsets) {
+		int[] offsets = new int[namedOffsets.length];
+		for (int i = 0; i < namedOffsets.length; i++) {
+			offsets[i] = namedOffsets[i].getOffset();
+		}
+		return offsets;
+	}
+	
+	private static String[] getLabels(NamedOffset... namedOffsets) {
+		String[] labels = new String[namedOffsets.length];
+		for (int i = 0; i < namedOffsets.length; i++) {
+			labels[i] = namedOffsets[i].getLabel();
+		}
+		return labels;
+	}
+	
+	public static class NamedOffset {
+		private final int _offset;
+		private final String _label;
+		
+		public NamedOffset(final int offset, final String label) {
+			_offset = offset;
+			_label = label;
+		}
+		
+		public int getOffset() {
+			return _offset;
+		}
+		
+		public String getLabel() {
+			return _label;
+		}
 	}
 	
 }

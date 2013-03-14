@@ -16,63 +16,29 @@
 package com.adamroughton.consentus.messaging;
 
 import java.util.Objects;
-
 import org.zeromq.ZMQ;
-
-import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventHandler;
-import com.lmax.disruptor.LifecycleAware;
 
-public class Publisher implements EventHandler<byte[]>, LifecycleAware {
+public class Publisher implements EventHandler<byte[]> {
 
-	private final ZMQ.Context _zmqContext;
-	private final SocketSettings _socketSetting;
+	private final SocketPackage _socketPackage;
 	private final EventSender _eventSender;
-	private final MessagePartBufferPolicy _msgPartPolicy;
-
-	private ZMQ.Socket _pub;
 	
-	public Publisher(final ZMQ.Context zmqContext,
-			final SocketSettings socketSetting,
+	public Publisher(final SocketPackage socketPackage,
 			final EventProcessingHeader processingHeader) {
-		if (socketSetting.getSocketType() != ZMQ.PUB && socketSetting.getSocketType() != ZMQ.XPUB) {
+		_socketPackage = Objects.requireNonNull(socketPackage);
+		ZMQ.Socket socket = socketPackage.getSocket();
+		if (socket.getType() != ZMQ.PUB && socket.getType() != ZMQ.XPUB) {
 			throw new IllegalArgumentException(String.format("The socket type was %d, not PUB or XPUB", 
-					socketSetting.getSocketType()));
+					socket.getType()));
 		}
-		_zmqContext = Objects.requireNonNull(zmqContext);
-		_socketSetting = Objects.requireNonNull(socketSetting);
 		_eventSender = new EventSender(processingHeader, false);
-		_msgPartPolicy = _socketSetting.getMessagePartPolicy();
-	}
-	
-	@Override
-	public void onStart() {
-		_pub = _zmqContext.socket(_socketSetting.getSocketType());
-		_pub.setHWM(_socketSetting.getHWM());
-		for (int bindPort : _socketSetting.getPortsToBindTo()) {
-			_pub.bind(String.format("tcp://*:%d", bindPort));
-		}
-		for (String connString : _socketSetting.getConnectionStrings()) {
-			_pub.connect(connString);
-		}		
-	}
-
-	@Override
-	public void onShutdown() {
-		if (_pub != null) {
-			try {
-				_pub.close();
-			} catch (Exception eClose) {
-				Log.warn("Exception thrown when closing ZMQ socket.", eClose);
-			}
-			_pub = null;
-		}
 	}
 
 	@Override
 	public void onEvent(byte[] event, long sequence, boolean endOfBatch)
 			throws Exception {
-		_eventSender.send(_pub, event, _msgPartPolicy);
+		_eventSender.send(_socketPackage, event);
 	}
 
 }

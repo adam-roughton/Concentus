@@ -23,9 +23,6 @@ import org.zeromq.ZMQ;
 import com.adamroughton.consentus.FatalExceptionCallback;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
-import com.lmax.disruptor.SequenceBarrier;
-
-import static com.adamroughton.consentus.Util.*;
 
 /**
  * 0MQ router sockets need to have both send and recv operations
@@ -46,32 +43,26 @@ public class RouterSocketReactor implements Runnable {
 	 */
 	private static final int INACTIVITY_THRESHOLD = 10;
 	
-	private final ZMQ.Context _zmqContext;
 	private final AtomicBoolean _hasStarted = new AtomicBoolean(false);
 	
+	private final SocketPackage _socketPackage;		
 	private final NonblockingEventReceiver _receiver;
 	private final NonblockingEventSender _sender;
-	
-	private final SocketSettings _socketSettings;
-		
 	private final FatalExceptionCallback _exCallback;
 	
 	public RouterSocketReactor(
-			final SocketSettings socketSettings,
-			final ZMQ.Context zmqContext,
-			final RingBuffer<byte[]> incomingRingBuffer,
-			final RingBuffer<byte[]> outgoingRingBuffer,
-			final SequenceBarrier outgoingBarrier,
-			final EventProcessingHeader processingHeader,
+			final SocketPackage socketPackage,
+			final NonblockingEventReceiver receiver,
+			final NonblockingEventSender sender,
 			final FatalExceptionCallback exCallback) {
-		_socketSettings = Objects.requireNonNull(socketSettings);
-		if (_socketSettings.getSocketType() != ZMQ.ROUTER) {
+		_socketPackage = Objects.requireNonNull(socketPackage);
+		ZMQ.Socket socket = _socketPackage.getSocket();
+		if (socket.getType() != ZMQ.ROUTER) {
 			throw new IllegalArgumentException("Only router sockets are supported by this reactor");
 		}
-		_zmqContext = Objects.requireNonNull(zmqContext);
 		
-		_receiver = new NonblockingEventReceiver(incomingRingBuffer, processingHeader);
-		_sender = new NonblockingEventSender(outgoingRingBuffer, outgoingBarrier, processingHeader);
+		_receiver = Objects.requireNonNull(receiver);
+		_sender = Objects.requireNonNull(sender);
 		
 		_exCallback = Objects.requireNonNull(exCallback);
 	}
@@ -83,15 +74,11 @@ public class RouterSocketReactor implements Runnable {
 					"The router socket reactor has already been started."));
 		}
 		try {
-			ZMQ.Socket socket = createSocket(_zmqContext, _socketSettings);
-			MessagePartBufferPolicy msgPartPolicy = _socketSettings.getMessagePartPolicy();
-			int socketId = _socketSettings.getSocketId();
-			
 			int inactivityCount = 0;
 			while(!Thread.interrupted()) {	
 				boolean wasActivity = false;
-				wasActivity &= _receiver.recvIfReady(socket, msgPartPolicy, socketId);
-				wasActivity &= _sender.sendIfReady(socket, msgPartPolicy);
+				wasActivity &= _receiver.recvIfReady(_socketPackage);
+				wasActivity &= _sender.sendIfReady(_socketPackage);
 				if (!wasActivity) {
 					inactivityCount--;
 				}

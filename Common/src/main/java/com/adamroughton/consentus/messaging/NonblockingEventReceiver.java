@@ -55,17 +55,28 @@ public class NonblockingEventReceiver {
 	/**
 	 * Attempts to receive an event if an event is immediately available, and there is
 	 * space in the ring buffer for it.
+	 * @param socketPackage the socket to receive on
+	 * @return whether an event was placed in the buffer. This will return true even
+	 * if the event is corrupt or had an unexpected number of event parts
+	 * @see equivalent to NonblockingEventReceiver#recvIfReady(org.zeromq.ZMQ.Socket, MessagePartBufferPolicy, int)
+	 */
+	public boolean recvIfReady(final SocketPackage socketPackage) {
+		return recvIfReady(socketPackage.getSocket(), 
+				socketPackage.getMessagePartPolicy(), 
+				socketPackage.getSocketId());
+	}
+	
+	/**
+	 * Attempts to receive an event if an event is immediately available, and there is
+	 * space in the ring buffer for it.
 	 * @param socket the socket to receive on
-	 * @param msgPartOffsets the offsets to apply to the incoming 
-	 * event buffer when receiving the event parts. All offsets are relative
-	 * to a reserved {@value #RESV_OFFSET} byte offset (i.e. {3, 5, 10} -> {(3 + {@value #RESV_OFFSET}), 
-	 * (5 + {@value #RESV_OFFSET}), (10 + {@value #RESV_OFFSET})}).
-	 * @param socketId the id to write into the header byte of the {@link RingBuffer} entry
+	 * @param msgPartPolicy the policy to apply to received messages
+	 * @param socketId the ID to put in the header of received messages
 	 * @return whether an event was placed in the buffer. This will return true even
 	 * if the event is corrupt or had an unexpected number of event parts
 	 */
-	public boolean recvIfReady(final ZMQ.Socket socket, 
-			final MessagePartBufferPolicy msgPartOffsets,
+	public boolean recvIfReady(final ZMQ.Socket socket,
+			final MessagePartBufferPolicy msgPartPolicy,
 			final int socketId) {
 		if (_unpubClaimedSeq == -1 && _incomingBuffer.hasAvailableCapacity(1)) {
 			_unpubClaimedSeq = _incomingBuffer.next();					
@@ -73,8 +84,7 @@ public class NonblockingEventReceiver {
 		// only recv if slots are available
 		if (_unpubClaimedSeq != -1) {
 			byte[] incomingBuffer = _incomingBuffer.get(_unpubClaimedSeq);
-			if (_eventReceiver.recv(socket, incomingBuffer, msgPartOffsets)) {
-				MessageBytesUtil.write4BitUInt(incomingBuffer, 0, 4, socketId);
+			if (_eventReceiver.recv(socket, msgPartPolicy, socketId, incomingBuffer)) {
 				publish();
 				return true;
 			}

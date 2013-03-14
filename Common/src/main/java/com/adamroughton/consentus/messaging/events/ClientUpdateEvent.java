@@ -25,6 +25,8 @@ public class ClientUpdateEvent extends ByteArrayBackedEvent {
 	private static final int SIM_TIME_OFFSET = 8;
 	private static final int UPDATE_BUFFER_OFFSET = 16;
 	
+	// 2 bytes for last client action Id, 2 bytes for preceding 16 updates (flag based)
+	
 	public ClientUpdateEvent() {
 		super(EventType.STATE_UPDATE.getId());
 	}

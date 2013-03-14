@@ -40,14 +40,31 @@ public class EventReceiver {
 	/**
 	 * Receives an event on the given socket, filling the given
 	 * event buffer as per the given message parts policy.
-	 * @param socket the socket to receive on
+	 * @param socketPackage the socket (plus additional settings) to receive on
 	 * @param eventBuffer the buffer to place the event in
-	 * @param msgPartPolicy the offsets policy to apply
 	 * @return whether an event was placed in the buffer
 	 */
-	public boolean recv(final ZMQ.Socket socket, 
-			final byte[] eventBuffer, 
-			final MessagePartBufferPolicy msgPartPolicy) {
+	public boolean recv(final SocketPackage socketPackage, 
+			final byte[] eventBuffer) {
+		return recv(socketPackage.getSocket(), 
+				socketPackage.getMessagePartPolicy(), 
+				socketPackage.getSocketId(), 
+				eventBuffer);
+	}
+	
+	/**
+	 * Receives an event on the given socket, filling the given
+	 * event buffer as per the given message parts policy.
+	 * @param socket the socket to receive on
+	 * @param msgPartPolicy the message part policy to apply to incoming messages
+	 * @param socketId the socket ID to write into the header of incoming messages
+	 * @param eventBuffer the buffer to place the event in
+	 * @return whether an event was placed in the buffer
+	 */
+	public boolean recv(final ZMQ.Socket socket,
+			MessagePartBufferPolicy msgPartPolicy,
+			int socketId,
+			final byte[] eventBuffer) {		
 		int msgOffsetIndex = 0;
 		int expMsgParts = msgPartPolicy.partCount();
 		int offset;
@@ -91,6 +108,7 @@ public class EventReceiver {
 			}
 			
 			_header.setIsValid(isValid, eventBuffer);
+			_header.setSocketId(socketId, eventBuffer);
 			return true;
 		}
 	}

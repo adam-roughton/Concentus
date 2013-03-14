@@ -22,7 +22,6 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import com.adamroughton.consentus.Config;
 import com.adamroughton.consentus.Constants;
 import com.adamroughton.consentus.FatalExceptionCallback;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
@@ -69,8 +68,7 @@ public class StateProcessor implements EventProcessor {
 			RingBuffer<byte[]> inputRingBuffer,
 			RingBuffer<byte[]> publishRingBuffer, 
 			SequenceBarrier barrier,
-			FatalExceptionCallback exceptionCallback,
-			Config conf) {
+			FatalExceptionCallback exceptionCallback) {
 		_stateLogic = Objects.requireNonNull(stateLogic);
 		_inputRingBuffer = Objects.requireNonNull(inputRingBuffer);
 		_publishRingBuffer = Objects.requireNonNull(publishRingBuffer);

@@ -23,7 +23,8 @@ import com.adamroughton.consentus.model.ClientId;
 public class ClientInputEvent extends ByteArrayBackedEvent {
 	
 	private static final int CLIENT_ID_OFFSET = 0;
-	private static final int INPUT_BUFFER_OFFSET = 8;
+	private static final int CLIENT_ACTION_ID_OFFSET = 8;
+	private static final int INPUT_BUFFER_OFFSET = 16;
 
 	public ClientInputEvent() {
 		super(EventType.CLIENT_INPUT.getId());
@@ -33,16 +34,24 @@ public class ClientInputEvent extends ByteArrayBackedEvent {
 		return MessageBytesUtil.readClientId(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
 	}
 
-	public void setClientId(ClientId clientId) {
+	public void setClientId(final ClientId clientId) {
 		MessageBytesUtil.writeClientId(getBackingArray(), getOffset(CLIENT_ID_OFFSET), clientId);
 	}
 	
-	public void setClientId(long clientIdBits) {
+	public void setClientId(final long clientIdBits) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET), clientIdBits);
 	}
 	
 	public long getClientIdBits() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
+	}
+	
+	public long getClientActionId() {
+		return MessageBytesUtil.readLong(getBackingArray(), getOffset(CLIENT_ACTION_ID_OFFSET));
+	}
+	
+	public void setClientActionId(final long clientActionId) {
+		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CLIENT_ACTION_ID_OFFSET), clientActionId);
 	}
 	
 	public ByteBuffer getInputBuffer() {
