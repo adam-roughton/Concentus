@@ -121,9 +121,6 @@ public class CanonicalStateService implements ConsentusService {
 				_outputDisruptor.getRingBuffer(), stateProcBarrier, exHandler);
 		_inputDisruptor.handleEventsWith(_stateProcessor);
 		
-		SocketPackage pubSocketPackage = SocketPackage.create(_pubSocket)
-				.setMessageOffsets(0, 4);
-		
 		_subSocket = _zmqContext.socket(ZMQ.SUB);
 		_pubSocket = _zmqContext.socket(ZMQ.PUB);
 		
@@ -140,6 +137,9 @@ public class CanonicalStateService implements ConsentusService {
 		
 		SocketPackage subSocketPackage = SocketPackage.create(_subSocket)
 				.setMessageOffsets(0, 0);
+		
+		SocketPackage pubSocketPackage = SocketPackage.create(_pubSocket)
+				.setMessageOffsets(0, 4);
 
 		_publisher = new Publisher(pubSocketPackage, new EventProcessingHeader(0, 1));
 		_outputDisruptor.handleEventsWith(_publisher);
