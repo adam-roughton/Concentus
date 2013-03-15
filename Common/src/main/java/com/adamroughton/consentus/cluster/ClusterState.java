@@ -39,5 +39,30 @@ public class ClusterState {
 		MessageBytesUtil.writeInt(stateBytes, 4, state.getStateCode());
 		return stateBytes;
 	}
+
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = 1;
+		result = prime * result + _stateCode;
+		result = prime * result + _stateDomain;
+		return result;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (obj == null)
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		ClusterState other = (ClusterState) obj;
+		if (_stateCode != other._stateCode)
+			return false;
+		if (_stateDomain != other._stateDomain)
+			return false;
+		return true;
+	}
 	
 }

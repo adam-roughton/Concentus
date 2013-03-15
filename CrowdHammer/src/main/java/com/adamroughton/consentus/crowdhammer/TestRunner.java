@@ -9,6 +9,8 @@ public final class TestRunner implements Runnable {
 	private final ClusterCoordinator _cluster;
 	private final int _testRunDuration;
 	
+	private long _testCheck;
+	
 	public TestRunner(ClusterCoordinator cluster, int testRunDuration, int[] testClientCounts) {
 		_cluster = cluster;
 		_testRunDuration = testRunDuration;

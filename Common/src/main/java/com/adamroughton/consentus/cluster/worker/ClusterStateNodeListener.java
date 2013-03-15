@@ -7,6 +7,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.adamroughton.consentus.FatalExceptionCallback;
 import com.lmax.disruptor.EventTranslator;
+import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.recipes.cache.ChildData;
@@ -18,6 +19,8 @@ class ClusterStateNodeListener implements NodeCacheListener, Closeable {
 	private final AtomicInteger _lastSeenVersion = new AtomicInteger(-1);
 	private final Disruptor<byte[]> _stateUpdateDisruptor;
 	private final NodeCache _clusterStateNode;
+	private final CuratorFramework _client;
+	private final String _statePath;
 	
 	public ClusterStateNodeListener(
 			final CuratorFramework client, 
@@ -25,7 +28,10 @@ class ClusterStateNodeListener implements NodeCacheListener, Closeable {
 			final Disruptor<byte[]> stateUpdateDisruptor,
 			final FatalExceptionCallback exHandler) {
 		_clusterStateNode = new NodeCache(client, statePath);
+		_clusterStateNode.getListenable().addListener(this);
 		_stateUpdateDisruptor = Objects.requireNonNull(stateUpdateDisruptor);
+		_client = Objects.requireNonNull(client);
+		_statePath = Objects.requireNonNull(statePath);
 	}
 
 	@Override
@@ -34,19 +40,8 @@ class ClusterStateNodeListener implements NodeCacheListener, Closeable {
 		if (node != null) {
 			int newVersion = node.getStat().getVersion();
 			final byte[] data = node.getData();
-			boolean retry = false;
-			boolean isLatest = false;
-			do {
-				int currentVersion = _lastSeenVersion.get();
-				if (newVersion > currentVersion) {
-					retry = _lastSeenVersion.compareAndSet(currentVersion, newVersion);
-					isLatest = true;
-				} else {
-					retry = false;
-				}
-			} while (retry);
-
-			if (isLatest) {
+			
+			if (data != null && tryClaimLatestVersion(newVersion)) {
 				_stateUpdateDisruptor.publishEvent(new EventTranslator<byte[]>() {
 					public void translateTo(byte[] event, long sequence) {
 						System.arraycopy(data, 0, event, 0, data.length);
@@ -56,8 +51,32 @@ class ClusterStateNodeListener implements NodeCacheListener, Closeable {
 		}		
 	}
 	
+	private boolean tryClaimLatestVersion(int newVersion) {
+		boolean retry = false;
+		boolean isLatest = false;
+		do {
+			int currentVersion = _lastSeenVersion.get();
+			if (newVersion > currentVersion) {
+				retry = _lastSeenVersion.compareAndSet(currentVersion, newVersion);
+				isLatest = true;
+			} else {
+				retry = false;
+			}
+		} while (retry);
+		return isLatest;
+	}
+	
 	public void start() throws Exception {
-		_clusterStateNode.start(true);
+		/*
+		 * while the docs for NodeCache report that giving
+		 * start the true flag argument calls buildInitial,
+		 * it actually calls internalBuildInitial. The difference
+		 * between the two is that buildInitial fires a nodeChanged
+		 * event on first loading data, while internalBuildInitial
+		 * suppresses this event. We want the first state to be processed,
+		 * so pass false instead.
+		 */
+		_clusterStateNode.start(false);
 	}
 
 	@Override

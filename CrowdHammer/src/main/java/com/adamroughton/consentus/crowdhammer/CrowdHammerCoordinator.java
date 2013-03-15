@@ -35,6 +35,11 @@ public final class CrowdHammerCoordinator implements ConsentusProcess<ClusterCoo
 	public void startRun(int... simClientCounts) {
 		clearExisting();
 		int testExecDur = _config.getCrowdHammer().getTestRunDurationInSeconds();
+		
+		// collect the service IDs of all participating nodes, print out a statement about participants
+		
+		
+		
 		TestRunner runner = new TestRunner(_cluster, testExecDur, simClientCounts);
 		_executor.execute(runner);
 	}

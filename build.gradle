@@ -45,6 +45,7 @@ project(':Common') {
 		compile 'com.netflix.curator:curator-recipes:1.3.2' // pulls in zookeeper as well
 		compile 'com.netflix.curator:curator-test:1.3.2'
 		compile 'commons-cli:commons-cli:1.2'
+		compile 'commons-io:commons-io:2.4'
 		compile 'it.unimi.dsi:fastutil:6.5.1'
 		compile 'org.yaml:snakeyaml:1.11'
 		compile files(getLocalLib('asg.cliche-020310.jar')) // simple interactive shell

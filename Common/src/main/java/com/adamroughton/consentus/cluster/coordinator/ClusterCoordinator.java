@@ -49,8 +49,6 @@ public final class ClusterCoordinator extends ClusterParticipant implements Clus
 
 	@Override
 	public void setState(int state) {
-		// clear all assignment nodes
-		
 		
 		
 	}
@@ -66,6 +64,12 @@ public final class ClusterCoordinator extends ClusterParticipant implements Clus
 			throws InterruptedException {
 		// TODO Auto-generated method stub
 		
+	}
+
+	@Override
+	public List<UUID> getWaitingServiceIDs() {
+		// TODO Auto-generated method stub
+		return null;
 	}
 	
 }

@@ -12,6 +12,8 @@ public interface Cluster {
 	
 	void setState(int state);
 	
+	List<UUID> getWaitingServiceIDs();
+	
 	void waitForReady() throws InterruptedException;
 	
 	void waitForReady(long time, TimeUnit unit) throws InterruptedException;

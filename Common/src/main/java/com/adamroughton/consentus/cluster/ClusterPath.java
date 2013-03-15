@@ -19,7 +19,7 @@ public enum ClusterPath {
 	}
 	
 	private ClusterPath(ClusterPath basePath, String relativePath) {
-		_relativePathToRoot = String.format("%s/%s", basePath.getRelativePath(), "assignments/req");
+		_relativePathToRoot = String.format("%s/%s", basePath.getRelativePath(), relativePath);
 	}
 	
 	public String getRelativePath() {
