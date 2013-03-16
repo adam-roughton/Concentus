@@ -160,15 +160,14 @@ public class TestClusterStateNodeListener extends TestClusterBase {
 	
 	private static class StateChangeHandler implements EventHandler<byte[]> {
 		
-		private final List<ClusterState> _stateList = new ArrayList<>();
+		private final ValueCollector<ClusterState> _valueCollector = new ValueCollector<>();
 		private Exception _thrownException = null;
 		
 		@Override
 		public synchronized void onEvent(byte[] event, long sequence, boolean endOfBatch)
 				throws Exception {
 			try {
-				_stateList.add(ClusterState.fromBytes(event));
-				this.notifyAll();
+				_valueCollector.addValue(ClusterState.fromBytes(event));
 			} catch (Exception e) {
 				if (_thrownException == null) {
 					_thrownException = e;
@@ -178,19 +177,11 @@ public class TestClusterStateNodeListener extends TestClusterBase {
 		
 		public synchronized List<ClusterState> getChanges() throws Exception {
 			if (_thrownException != null) throw _thrownException;
-			return new ArrayList<>(_stateList);
+			return _valueCollector.getValues();
 		}
 		
-		public synchronized void waitForCount(int count, long timeout, TimeUnit unit) throws InterruptedException {
-			long remainingTime = unit.toNanos(timeout);
-			long startTime = System.nanoTime();
-			while (_stateList.size() < count) {
-				long elapsedTime = System.nanoTime() - startTime;
-				remainingTime -= elapsedTime;
-				if (remainingTime > 0) {
-					this.wait(remainingTime / (1000 * 1000), (int) (remainingTime % (1000 * 1000)));
-				} else return;
-			}
+		public void waitForCount(int count, long timeout, TimeUnit unit) throws InterruptedException {
+			_valueCollector.waitForCount(count, timeout, unit);
 		}
 	}
 	

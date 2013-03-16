@@ -1,6 +1,8 @@
 package com.adamroughton.consentus.cluster;
 
 
+import java.util.UUID;
+
 import org.apache.zookeeper.CreateMode;
 import org.junit.After;
 import org.junit.Before;
@@ -110,9 +112,12 @@ public class TestClusterParticipant extends TestClusterBase {
 	}
 	
 	private static class ClusterParticipantAccessWrapper extends ClusterParticipant {
+		
+		private final static UUID PARTICIPANT_ID = UUID.fromString("abababab-abab-abab-abab-abababababab");
+		
 		public ClusterParticipantAccessWrapper(String zooKeeperAddress, String root,
 				FatalExceptionCallback exHandler) {
-			super(zooKeeperAddress, root, exHandler);
+			super(zooKeeperAddress, root, PARTICIPANT_ID, exHandler);
 		}
 
 		@Override

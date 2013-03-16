@@ -1,33 +1,31 @@
 package com.adamroughton.consentus.cluster.worker;
 
-import java.util.ArrayList;
-import java.util.List;
 import java.util.Objects;
 
 public class ClusterListenerStateCapturer<T extends Enum<T> & ClusterStateValue> 
 		implements ClusterListener<T> {
 
 	private final Class<T> _stateType;
-	private final List<T> _stateChanges;
+	private final ValueCollector<T> _valueCollector;
 	
 	public ClusterListenerStateCapturer(final Class<T> stateType) {
 		_stateType = Objects.requireNonNull(stateType);
-		_stateChanges = new ArrayList<>();
+		_valueCollector = new ValueCollector<>();
 	}
 	
 	@Override
-	public synchronized void onStateChanged(T newClusterState, Cluster cluster)
+	public void onStateChanged(T newClusterState, Cluster cluster)
 			throws Exception {
-		_stateChanges.add(newClusterState);
+		_valueCollector.addValue(newClusterState);
+	}
+	
+	public ValueCollector<T> getValueCollector() {
+		return _valueCollector;
 	}
 
 	@Override
 	public Class<T> getStateValueClass() {
 		return _stateType;
-	}
-	
-	public synchronized List<T> getCapturedStates() {
-		return new ArrayList<>(_stateChanges);
 	}
 	
 }

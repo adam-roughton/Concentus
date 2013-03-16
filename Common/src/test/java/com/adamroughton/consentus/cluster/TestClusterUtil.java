@@ -32,4 +32,11 @@ public class TestClusterUtil extends TestClusterBase {
 		assertTrue(getTestClient().checkExists().forPath(path) != null);
 	}
 	
+	@Test
+	public void ensurePathCreatedAlreadyExists() throws Exception {
+		String path = ClusterPath.READY.getPath("/Consentus");
+		ClusterUtil.ensurePathCreated(_client, path);
+		ClusterUtil.ensurePathCreated(_client, path);
+		assertTrue(getTestClient().checkExists().forPath(path) != null);
+	}
 }

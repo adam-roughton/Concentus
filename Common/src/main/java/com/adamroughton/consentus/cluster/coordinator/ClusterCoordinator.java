@@ -17,7 +17,12 @@ public final class ClusterCoordinator extends ClusterParticipant implements Clus
 
 	public ClusterCoordinator(String zooKeeperAddress, String root,
 			FatalExceptionCallback exHandler) {
-		super(zooKeeperAddress, root, exHandler);
+		this(zooKeeperAddress, root, UUID.randomUUID(), exHandler);
+	}
+	
+	public ClusterCoordinator(String zooKeeperAddress, String root, UUID clusterId,
+			FatalExceptionCallback exHandler) {
+		super(zooKeeperAddress, root, clusterId, exHandler);
 	}
 
 	@Override

@@ -23,7 +23,7 @@ public class ClusterUtil {
 			final String path) throws Exception {
 		if (client.checkExists().forPath(path) == null) {
 			try {
-				client.create().creatingParentsIfNeeded().forPath(path);
+				client.create().creatingParentsIfNeeded().forPath(path, null);
 			} catch (KeeperException eKeeper) {
 				if (eKeeper.code() != KeeperException.Code.NODEEXISTS) {
 					throw eKeeper;

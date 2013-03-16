@@ -7,7 +7,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.adamroughton.consentus.FatalExceptionCallback;
 import com.lmax.disruptor.EventTranslator;
-import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.recipes.cache.ChildData;
@@ -19,8 +18,6 @@ class ClusterStateNodeListener implements NodeCacheListener, Closeable {
 	private final AtomicInteger _lastSeenVersion = new AtomicInteger(-1);
 	private final Disruptor<byte[]> _stateUpdateDisruptor;
 	private final NodeCache _clusterStateNode;
-	private final CuratorFramework _client;
-	private final String _statePath;
 	
 	public ClusterStateNodeListener(
 			final CuratorFramework client, 
@@ -30,8 +27,6 @@ class ClusterStateNodeListener implements NodeCacheListener, Closeable {
 		_clusterStateNode = new NodeCache(client, statePath);
 		_clusterStateNode.getListenable().addListener(this);
 		_stateUpdateDisruptor = Objects.requireNonNull(stateUpdateDisruptor);
-		_client = Objects.requireNonNull(client);
-		_statePath = Objects.requireNonNull(statePath);
 	}
 
 	@Override

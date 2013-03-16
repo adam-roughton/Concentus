@@ -24,10 +24,11 @@ public abstract class ClusterParticipant implements Closeable {
 	public ClusterParticipant(
 			final String zooKeeperAddress, 
 			final String root,
+			final UUID clusterId,
 			final FatalExceptionCallback exHandler) {
 		_exHandler = Objects.requireNonNull(exHandler);
 		_client = CuratorFrameworkFactory.newClient(zooKeeperAddress, new ExponentialBackoffRetry(1000, 3));
-		_clusterParticipantId = UUID.randomUUID();
+		_clusterParticipantId = Objects.requireNonNull(clusterId);
 		_root = Objects.requireNonNull(root);
 		if (!Util.isValidZKRoot(root)) {
 			throw new IllegalArgumentException(String.format("The root %s is not a valid ZooKeeper root.", root));
@@ -39,7 +40,7 @@ public abstract class ClusterParticipant implements Closeable {
 	}
 	
 	public String getMyIdString() {
-		return String.format("%u", _clusterParticipantId);
+		return _clusterParticipantId.toString();
 	}
 	
 	protected String getPath(ClusterPath pathType) {

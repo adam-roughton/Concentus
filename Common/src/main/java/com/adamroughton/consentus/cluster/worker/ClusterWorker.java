@@ -5,6 +5,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 
 import org.apache.zookeeper.KeeperException;
@@ -25,14 +26,24 @@ public final class ClusterWorker extends ClusterParticipant implements Cluster, 
 	private final ClusterStateNodeListener _clusterStateNodeListener;
 	private final ExecutorService _executor;
 	
-	@SuppressWarnings("unchecked")
 	public <S extends Enum<S> & ClusterStateValue> ClusterWorker(
 			final String zooKeeperAddress, 
 			final String root, 
 			final ClusterListener<S> clusterListener,
 			final ExecutorService executor,
 			final FatalExceptionCallback exHandler) {
-		super(zooKeeperAddress, root, exHandler);
+		this(zooKeeperAddress, root, UUID.randomUUID(), clusterListener, executor, exHandler);
+	}
+	
+	@SuppressWarnings("unchecked")
+	public <S extends Enum<S> & ClusterStateValue> ClusterWorker(
+			final String zooKeeperAddress, 
+			final String root, 
+			final UUID clusterId,
+			final ClusterListener<S> clusterListener,
+			final ExecutorService executor,
+			final FatalExceptionCallback exHandler) {
+		super(zooKeeperAddress, root, clusterId, exHandler);
 		_hostedServices = new ArrayList<>(1);
 		_executor = Objects.requireNonNull(executor);
 		
@@ -76,13 +87,10 @@ public final class ClusterWorker extends ClusterParticipant implements Cluster, 
 	public String getServiceAtRandom(final String serviceType) {
 		String service = null;
 		try {
-			String serviceTypePath = ZKPaths.makePath(getPath(SERVICES), serviceType);
-			ensurePathCreated(serviceTypePath);
-			List<String> serviceNodes = getClient().getChildren().forPath(serviceTypePath);
+			List<String> serviceNodes = getAvailableServiceIds(serviceType);
 			if (!serviceNodes.isEmpty()) {
 				int index = (int) Math.round(Math.random() * (serviceNodes.size() - 1));
-				String servicePath = serviceNodes.get(index);
-				service = new String(getClient().getData().forPath(servicePath));
+				service = getServiceAddress(serviceType, serviceNodes.get(index));
 			}
 		} catch (Exception e) {
 			getExHandler().signalFatalException(e);
@@ -93,18 +101,27 @@ public final class ClusterWorker extends ClusterParticipant implements Cluster, 
 	public String[] getAllServices(final String serviceType) {
 		String[] services = null;
 		try {
-			String serviceTypePath = ZKPaths.makePath(getPath(SERVICES), serviceType);
-			ensurePathCreated(serviceTypePath);
-			List<String> serviceNodes = getClient().getChildren().forPath(serviceTypePath);
+			List<String> serviceNodes = getAvailableServiceIds(serviceType);
 			services = new String[serviceNodes.size()];
 			for (int i = 0; i < serviceNodes.size(); i++) {
-				services[i] = new String(getClient().getData().forPath(serviceNodes.get(i)));
+				services[i] = getServiceAddress(serviceType, serviceNodes.get(i));
 			}
-			
 		} catch (Exception e) {
 			getExHandler().signalFatalException(e);
 		}
 		return services;
+	}
+	
+	private List<String> getAvailableServiceIds(final String serviceType) throws Exception {
+		String serviceTypePath = ZKPaths.makePath(getPath(SERVICES), serviceType);
+		ensurePathCreated(serviceTypePath);
+		return getClient().getChildren().forPath(serviceTypePath);
+	}
+	
+	private String getServiceAddress(final String serviceType, final String serviceId) throws Exception {
+		String serviceTypePath = ZKPaths.makePath(getPath(SERVICES), serviceType);
+		String servicePath = ZKPaths.makePath(serviceTypePath, serviceId);
+		return new String(getClient().getData().forPath(servicePath));
 	}
 	
 	public void requestAssignment(final String serviceType, final byte[] requestBytes) {
