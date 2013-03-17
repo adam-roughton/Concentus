@@ -154,21 +154,9 @@ public class TestClusterWorker extends TestClusterBase {
 		assertEquals(address2, new String(testClient.getData().forPath(servicePath)));
 	}
 
-	// Helpers for getService calls --
+	// Helper for getService calls --
 	
-	private class ServiceInfo {
-		public final String serviceType;
-		public final String address;
-		public final UUID id;
-		
-		public ServiceInfo (final String serviceType, final String address, final UUID id) {
-			this.serviceType = serviceType;
-			this.address = address;
-			this.id = id;
-		}
-	}
-	
-	private ServiceInfo putRandomService(final String serviceType, int index) throws Exception {
+	private String putRandomService(final String serviceType, int index) throws Exception {
 		CuratorFramework testClient = getTestClient();
 		
 		String address = "tcp://34.893.153." + index;
@@ -179,7 +167,7 @@ public class TestClusterWorker extends TestClusterBase {
 		
 		testClient.create().creatingParentsIfNeeded().forPath(servicePath, address.getBytes());
 		
-		return new ServiceInfo(serviceType, address, serviceId);
+		return address;
 	}
 	
 	// end of helpers --
@@ -189,11 +177,11 @@ public class TestClusterWorker extends TestClusterBase {
 		_clusterWorker.start();
 		
 		String serviceType = "TEST";
-		ServiceInfo info = putRandomService(serviceType, 0);
+		String address = putRandomService(serviceType, 0);
 		
 		String discoveredService = _clusterWorker.getServiceAtRandom(serviceType);
 		_exCallback.throwAnyExceptions();
-		assertEquals(info.address, discoveredService);
+		assertEquals(address, discoveredService);
 	}
 	
 	@Test
@@ -201,7 +189,7 @@ public class TestClusterWorker extends TestClusterBase {
 		_clusterWorker.start();
 		
 		String serviceType = "TEST";
-		List<ServiceInfo> possibleServices = new ArrayList<>();
+		List<String> possibleServices = new ArrayList<>();
 		for (int i = 0; i < 6; i++) {
 			possibleServices.add(putRandomService(serviceType, i));
 		}
@@ -210,8 +198,8 @@ public class TestClusterWorker extends TestClusterBase {
 		_exCallback.throwAnyExceptions();
 		
 		boolean matchFound = false;
-		for (ServiceInfo possibleService : possibleServices) {
-			if (possibleService.address.equals(discoveredService)) {
+		for (String possibleService : possibleServices) {
+			if (possibleService.equals(discoveredService)) {
 				matchFound = true;
 				break;
 			}
@@ -236,7 +224,7 @@ public class TestClusterWorker extends TestClusterBase {
 		
 		String serviceType = "TEST";
 		Set<String> possibleServices = new HashSet<>();
-		possibleServices.add(putRandomService(serviceType, 0).address);
+		possibleServices.add(putRandomService(serviceType, 0));
 		
 		String[] discoveredServices = _clusterWorker.getAllServices(serviceType);
 		_exCallback.throwAnyExceptions();
@@ -254,7 +242,7 @@ public class TestClusterWorker extends TestClusterBase {
 		String serviceType = "TEST";
 		Set<String> possibleServices = new HashSet<>();
 		for (int i = 0; i < 6; i++) {
-			possibleServices.add(putRandomService(serviceType, i).address);
+			possibleServices.add(putRandomService(serviceType, i));
 		}
 		
 		String[] discoveredServices = _clusterWorker.getAllServices(serviceType);
@@ -273,7 +261,7 @@ public class TestClusterWorker extends TestClusterBase {
 		String serviceType1 = "TEST1";
 		Set<String> possibleServices = new HashSet<>();
 		for (int i = 0; i < 6; i++) {
-			possibleServices.add(putRandomService(serviceType1, i).address);
+			possibleServices.add(putRandomService(serviceType1, i));
 		}
 		
 		String serviceType2 = "TEST2";

@@ -34,7 +34,7 @@ public final class TestRunner implements Runnable {
 	@Override
 	public void run() {
 		// iterate through client counts
-		List<byte[]> workerReqs = _cluster.getAssignmentRequests("CrowdHammerWorker");
+		
 		// parse for number of available clients, distribute fairly
 	}
 	
