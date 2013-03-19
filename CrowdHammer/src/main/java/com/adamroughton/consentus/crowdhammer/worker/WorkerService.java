@@ -186,13 +186,13 @@ public final class WorkerService implements CrowdHammerService {
 	}
 	
 	private void shutdown(Cluster cluster) throws Exception {
-		_zmqContext.term();
 		_executor.shutdownNow();
 		try {
 			_executor.awaitTermination(5, TimeUnit.SECONDS);
 		} catch (InterruptedException eInterrupted) {
 			// ignore
 		}
+		_zmqContext.term();
 	}
 
 	@Override

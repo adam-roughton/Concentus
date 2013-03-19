@@ -21,8 +21,6 @@ import com.adamroughton.consentus.cluster.worker.ClusterStateValue;
 public enum CrowdHammerServiceState implements ClusterStateValue {
 	/**
 	 * The initial phase when the test bed is brought online.
-	 * Components should register with the coordinator through
-	 * ZooKeeper, requesting assignments etc.
 	 */
 	INIT(0, null),
 	

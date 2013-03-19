@@ -1,22 +1,22 @@
+import org.gradle.api.tasks.Upload;
+
 allprojects {
-	ext.buildType = 'java' // anticipating different languages for client code
-	ext.useCommon = false
-	ext.libDir = rootProject.file('lib')
+	ext {
+		libDir = rootProject.file('lib')
+		targetDir = rootProject.file('target')
+	}
+		
+	defaultTasks 'build'
 	
 	group = 'com.adamroughton'
 	version = '1.0-SNAPSHOT'
 }
 
-def javaProjects() {
-	subprojects.findAll { project -> project.buildType == 'java' }
-}
-
 def getLocalLib(fileName) {
-	new File(rootProject.file('lib').getAbsolutePath(), fileName)
+	new File(libDir.getAbsolutePath(), fileName)
 }
 
-// Common Configuration for Java Projects
-configure(javaProjects()) {
+subprojects {
 	apply plugin: 'java'
 	sourceCompatibility = 1.7
 
@@ -26,16 +26,44 @@ configure(javaProjects()) {
 		mavenCentral()
 	}
 
-	// allow the subprojects to update flags before adding dependencies
-	afterEvaluate {
-		dependencies {
-			if (project.name != 'Common' && useCommon) compile project(':Common')
-			testCompile 'junit:junit:4.5', 'org.mockito:mockito-core:1.9.5'
+	dependencies {
+		testCompile 'junit:junit:4.5', 'org.mockito:mockito-core:1.9.5'
+	}
+	
+	task sourcesJar(type: Jar) {
+		classifier = 'sources'
+		from sourceSets.main.allSource
+	}
+	
+	artifacts {
+		archives sourcesJar
+	}
+	
+	uploadArchives {
+	    repositories {
+			flatDir {
+				name "target"
+				dirs targetDir
+			}
 		}
 	}
+	uploadArchives.dependsOn "makeTargetDir"
+	
+	task makeTargetDir << {
+		if (!targetDir.isDirectory()) {
+			targetDir.mkdirs()
+		}
+	}
+	
+	task removeTargetDir(type: Delete) {
+		if (targetDir.isDirectory()) {
+			delete targetDir
+		}
+	}
+	clean.dependsOn removeTargetDir
 }
 
-project(':Common') {
+project(':Core') {
 	dependencies {
 		compile 'com.googlecode.disruptor:disruptor:2.10.4'
 		compile 'com.google.guava:guava:14.0'
@@ -53,13 +81,12 @@ project(':Common') {
 }
 
 project(':Service') {
-	ext.useCommon = true
-	
-	
+	dependencies {
+		compile project(':Core')
+	}
 }
 
 project(':CrowdHammer') {
-	ext.useCommon = true
 	dependencies {
 		compile project(':Service')
 	}

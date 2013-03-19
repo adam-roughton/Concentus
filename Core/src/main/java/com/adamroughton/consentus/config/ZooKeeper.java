@@ -13,25 +13,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.adamroughton.consentus.crowdhammer.config;
+package com.adamroughton.consentus.config;
 
-public class CrowdHammer {
-
-	private int _testRunDurationInSeconds;
+public class ZooKeeper {
 	
-	public int getTestRunDurationInSeconds() {
-		return _testRunDurationInSeconds;
+	private String _appRoot;
+	
+	public String getAppRoot() {
+		return _appRoot;
 	}
 	
-	public void setTestRunDurationInSeconds(int seconds) {
-		_testRunDurationInSeconds = seconds;
+	public void setAppRoot(String appRoot) {
+		_appRoot = appRoot;
 	}
 
 	@Override
 	public int hashCode() {
 		final int prime = 31;
 		int result = 1;
-		result = prime * result + _testRunDurationInSeconds;
+		result = prime * result
+				+ ((_appRoot == null) ? 0 : _appRoot.hashCode());
 		return result;
 	}
 
@@ -43,10 +44,14 @@ public class CrowdHammer {
 			return false;
 		if (getClass() != obj.getClass())
 			return false;
-		CrowdHammer other = (CrowdHammer) obj;
-		if (_testRunDurationInSeconds != other._testRunDurationInSeconds)
+		ZooKeeper other = (ZooKeeper) obj;
+		if (_appRoot == null) {
+			if (other._appRoot != null)
+				return false;
+		} else if (!_appRoot.equals(other._appRoot))
 			return false;
 		return true;
 	}
+	
 	
 }

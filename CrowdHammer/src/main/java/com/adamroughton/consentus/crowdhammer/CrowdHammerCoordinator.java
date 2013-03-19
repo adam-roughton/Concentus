@@ -15,7 +15,6 @@
  */
 package com.adamroughton.consentus.crowdhammer;
 
-import java.io.IOException;
 import java.net.InetAddress;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
@@ -33,6 +32,7 @@ import com.adamroughton.consentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.esotericsoftware.minlog.Log;
 
 import asg.cliche.Command;
+import asg.cliche.Shell;
 import asg.cliche.ShellFactory;
 
 public final class CrowdHammerCoordinator implements ConsentusProcess<ClusterCoordinator, CrowdHammerConfiguration>, 
@@ -48,15 +48,18 @@ public final class CrowdHammerCoordinator implements ConsentusProcess<ClusterCoo
 
 	@Command(name="start")
 	public void startRun(int... simClientCounts) {
+		System.out.print("Starting test run with client counts: [");
+		for (int i = 0; i < simClientCounts.length; i++) {
+			if (i > 0) System.out.print(", ");
+			System.out.print(simClientCounts[i]);
+		}
+		System.out.print("]\n");
+		
 		clearExisting();
 		int testExecDur = _config.getCrowdHammer().getTestRunDurationInSeconds();
 		
-		// collect the service IDs of all participating nodes, print out a statement about participants
-		
-		
-		
 		TestRunner runner = new TestRunner(_cluster, testExecDur, simClientCounts);
-		_executor.execute(runner);
+		_currentTask = _executor.submit(runner);
 	}
 	
 	@Command(name="stop")
@@ -69,9 +72,15 @@ public final class CrowdHammerCoordinator implements ConsentusProcess<ClusterCoo
 		System.exit(0);
 	}
 	
+	@Command(name="help")
+	public void help() {
+		System.out.println("Type start [counts] to begin a run, stop to cancel any " +
+					"existing runs, and quit to exit.");
+	}
+	
 	private void clearExisting() {
 		if (_currentTask != null) {
-			System.out.println("Stopping current run");
+			System.out.println("Stopping existing run");
 			_currentTask.cancel(true);
 			_currentTask = null;
 		}
@@ -82,6 +91,7 @@ public final class CrowdHammerCoordinator implements ConsentusProcess<ClusterCoo
 			CrowdHammerConfiguration config,
 			ConsentusProcessCallback exHandler, InetAddress networkAddress) {
 		_cluster = cluster;
+		_config = config;
 	}
 
 	@Override
@@ -92,11 +102,15 @@ public final class CrowdHammerCoordinator implements ConsentusProcess<ClusterCoo
 	@Override
 	public void execute() throws InterruptedException {
 		try {
-			ShellFactory.createConsoleShell("Type start [counts] to begin a run, stop to cancel any " +
-					"existing runs, and quit to exit.", "CrowdHammer", this)
-	        	.commandLoop();
-		} catch (IOException eIO) {
-			Log.error("Error creating console shell for " + PROCESS_NAME, eIO);
+			System.out.println("Starting CrowdHammer Coordinator");
+			System.out.println("Connecting to ZooKeeper server");
+			_cluster.start();
+			_cluster.setState(CrowdHammerServiceState.INIT);
+			Shell shell = ShellFactory.createConsoleShell(">", "CrowdHammer", this);
+			help();
+			shell.commandLoop();
+		} catch (Exception e) {
+			Log.error("Error creating console shell for " + PROCESS_NAME, e);
 		}
 	}
 

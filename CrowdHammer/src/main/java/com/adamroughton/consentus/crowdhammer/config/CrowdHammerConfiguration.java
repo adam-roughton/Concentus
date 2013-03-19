@@ -28,5 +28,31 @@ public class CrowdHammerConfiguration extends Configuration {
 	public void setCrowdHammer(CrowdHammer crowdHammer) {
 		_crowdHammer = crowdHammer;
 	}
+
+	@Override
+	public int hashCode() {
+		final int prime = 31;
+		int result = super.hashCode();
+		result = prime * result
+				+ ((_crowdHammer == null) ? 0 : _crowdHammer.hashCode());
+		return result;
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj)
+			return true;
+		if (!super.equals(obj))
+			return false;
+		if (getClass() != obj.getClass())
+			return false;
+		CrowdHammerConfiguration other = (CrowdHammerConfiguration) obj;
+		if (_crowdHammer == null) {
+			if (other._crowdHammer != null)
+				return false;
+		} else if (!_crowdHammer.equals(other._crowdHammer))
+			return false;
+		return true;
+	}
 	
 }

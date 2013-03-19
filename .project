@@ -18,7 +18,7 @@
 	</natures>
 	<filteredResources>
 		<filter>
-			<id>1360544830931</id>
+			<id>1363514665558</id>
 			<name></name>
 			<type>10</type>
 			<matcher>
@@ -30,15 +30,11 @@
 					</matcher>
 					<matcher>
 						<id>org.eclipse.ui.ide.multiFilter</id>
-						<arguments>1.0-projectRelativePath-equals-true-false-Clients</arguments>
-					</matcher>
-					<matcher>
-						<id>org.eclipse.ui.ide.multiFilter</id>
 						<arguments>1.0-projectRelativePath-equals-true-false-CrowdHammer</arguments>
 					</matcher>
 					<matcher>
 						<id>org.eclipse.ui.ide.multiFilter</id>
-						<arguments>1.0-projectRelativePath-equals-true-false-Common</arguments>
+						<arguments>1.0-projectRelativePath-equals-true-false-Core</arguments>
 					</matcher>
 				</arguments>
 			</matcher>

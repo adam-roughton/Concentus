@@ -20,6 +20,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
 
 import com.adamroughton.consentus.ConsentusProcessCallback;
 import com.adamroughton.consentus.canonicalstate.CanonicalStateService;
@@ -42,6 +43,8 @@ import org.zeromq.*;
 public class MetricListenerService implements CrowdHammerService {
 	
 	public static final String SERVICE_TYPE = "MetricListener";
+	
+	private static final Logger LOG = Logger.getLogger(MetricListenerService.class.getName());
 	
 	private ExecutorService _executor;
 	private Disruptor<byte[]> _inputDisruptor;
@@ -67,6 +70,7 @@ public class MetricListenerService implements CrowdHammerService {
 	@Override
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
 			Cluster cluster) throws Exception {
+		LOG.info(String.format("Entering state %s", newClusterState.name()));
 		if (newClusterState == CrowdHammerServiceState.SET_UP_TEST) {
 			setUpTest(cluster);
 		} else if (newClusterState == CrowdHammerServiceState.CONNECT_SUT) {
@@ -76,6 +80,7 @@ public class MetricListenerService implements CrowdHammerService {
 		} else if (newClusterState == CrowdHammerServiceState.SHUTDOWN) {
 			shutdown(cluster);
 		}
+		LOG.info("Signalling ready for next state");
 		cluster.signalReady();
 	}
 
@@ -137,22 +142,20 @@ public class MetricListenerService implements CrowdHammerService {
 	private void tearDown(Cluster cluster) {
 		_eventListenerTask.cancel(true);
 		
-		_subSocket.close();
-		
 		// persist results to file
 		
 		_inputDisruptor.shutdown();
-		
+		_subSocket.close();		
 	}
 	
 	
 	private void shutdown(Cluster cluster) {
-		_zmqContext.term();
 		_executor.shutdownNow();
 		try {
 			_executor.awaitTermination(5, TimeUnit.SECONDS);
 		} catch (InterruptedException eInterrupted) {
 			// ignore
 		}
+		_zmqContext.term();
 	}
 }
