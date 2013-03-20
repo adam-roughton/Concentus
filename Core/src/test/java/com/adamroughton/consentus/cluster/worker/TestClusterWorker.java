@@ -47,7 +47,7 @@ public class TestClusterWorker extends TestClusterBase {
 	private ExecutorService _executor;
 	private ExceptionCallback _exCallback;
 	private ClusterListenerStateCapturer<TestState1> _stateChangeCapturer;
-	private ClusterWorker _clusterWorker;
+	private WorkerClusterHandle _clusterWorker;
 	
 	@Before
 	public void setUp() {
@@ -55,7 +55,7 @@ public class TestClusterWorker extends TestClusterBase {
 		_exCallback = new ExceptionCallback();
 		_stateChangeCapturer = new ClusterListenerStateCapturer<>(TestState1.class);
 		
-		_clusterWorker = new ClusterWorker(getZooKeeperAddress(), ROOT, WORKER_ID, _stateChangeCapturer, _executor, _exCallback);
+		_clusterWorker = new WorkerClusterHandle(getZooKeeperAddress(), ROOT, WORKER_ID, _stateChangeCapturer, _executor, _exCallback);
 	}
 	
 	@After

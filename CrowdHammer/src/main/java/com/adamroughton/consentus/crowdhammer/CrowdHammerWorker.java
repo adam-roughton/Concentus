@@ -38,14 +38,14 @@ import com.adamroughton.consentus.ConsentusProcessConfiguration.ClusterFactory;
 import com.adamroughton.consentus.ConsentusService;
 import com.adamroughton.consentus.DefaultProcessCallback;
 import com.adamroughton.consentus.Util;
-import com.adamroughton.consentus.cluster.worker.ClusterWorker;
+import com.adamroughton.consentus.cluster.worker.WorkerClusterHandle;
 import com.adamroughton.consentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.consentus.crowdhammer.worker.WorkerService;
 import com.adamroughton.consentus.crowdhammer.worker.WorkerServiceConfiguration;
 import com.esotericsoftware.minlog.Log;
 
-public final class CrowdHammerWorker implements ConsentusProcess<ClusterWorker, CrowdHammerConfiguration>, 
-		ClusterFactory<ClusterWorker> {
+public final class CrowdHammerWorker implements ConsentusProcess<WorkerClusterHandle, CrowdHammerConfiguration>, 
+		ClusterFactory<WorkerClusterHandle> {
 
 	public static final String SERVICE_CLASS_OPTION = "s";
 	public static final String PROCESS_NAME = "CrowdHammer Worker";
@@ -53,14 +53,14 @@ public final class CrowdHammerWorker implements ConsentusProcess<ClusterWorker, 
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	private final CrowdHammerService _crowdHammerService;
 	
-	private ClusterWorker _cluster;
+	private WorkerClusterHandle _cluster;
 	
 	public CrowdHammerWorker(final CrowdHammerService service) {
 		_crowdHammerService = Objects.requireNonNull(service);
 	}
 	
 	public void execute() {
-		try (ClusterWorker cluster = _cluster) {
+		try (WorkerClusterHandle cluster = _cluster) {
 			cluster.start();
 			
 			// Wait for exit
@@ -75,7 +75,7 @@ public final class CrowdHammerWorker implements ConsentusProcess<ClusterWorker, 
 	}
 
 	@Override
-	public void configure(ClusterWorker cluster, CrowdHammerConfiguration config,
+	public void configure(WorkerClusterHandle cluster, CrowdHammerConfiguration config,
 			ConsentusProcessCallback exHandler, InetAddress networkAddress) {
 		_cluster = cluster;
 		_crowdHammerService.configure(config, exHandler, networkAddress);		
@@ -87,9 +87,9 @@ public final class CrowdHammerWorker implements ConsentusProcess<ClusterWorker, 
 	}
 	
 	@Override
-	public ClusterWorker createCluster(String zooKeeperAddress,
+	public WorkerClusterHandle createCluster(String zooKeeperAddress,
 			String zooKeeperRoot, ConsentusProcessCallback callback) {
-		return new ClusterWorker(zooKeeperAddress, zooKeeperRoot, _crowdHammerService, _executor, callback);
+		return new WorkerClusterHandle(zooKeeperAddress, zooKeeperRoot, _crowdHammerService, _executor, callback);
 	}
 	
 	/*
@@ -121,8 +121,8 @@ public final class CrowdHammerWorker implements ConsentusProcess<ClusterWorker, 
 					public void doOperation(CommandLineConfiguration<?> config,
 							Map<String, String> configMappings) {
 						@SuppressWarnings("unchecked")
-						ConsentusProcessConfiguration<ClusterWorker, CrowdHammerConfiguration> baseConfig
-							= (ConsentusProcessConfiguration<ClusterWorker, CrowdHammerConfiguration>) config;
+						ConsentusProcessConfiguration<WorkerClusterHandle, CrowdHammerConfiguration> baseConfig
+							= (ConsentusProcessConfiguration<WorkerClusterHandle, CrowdHammerConfiguration>) config;
 						baseConfig.configure(worker, configMappings);
 					}
 					

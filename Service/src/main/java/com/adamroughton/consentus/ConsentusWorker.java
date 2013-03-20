@@ -29,25 +29,25 @@ import com.adamroughton.consentus.ConsentusProcessCallback;
 import com.adamroughton.consentus.ConsentusProcessConfiguration.ClusterFactory;
 import com.adamroughton.consentus.ConsentusService;
 import com.adamroughton.consentus.DefaultProcessCallback;
-import com.adamroughton.consentus.cluster.worker.ClusterWorker;
+import com.adamroughton.consentus.cluster.worker.WorkerClusterHandle;
 import com.adamroughton.consentus.config.Configuration;
 import com.esotericsoftware.minlog.Log;
 
-public final class ConsentusWorker implements ConsentusProcess<ClusterWorker, Configuration>, 
-		ClusterFactory<ClusterWorker> {
+public final class ConsentusWorker implements ConsentusProcess<WorkerClusterHandle, Configuration>, 
+		ClusterFactory<WorkerClusterHandle> {
 
 	public static final String SERVICE_CLASS_OPTION = "s";
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	private ConsentusService _service;
-	private ClusterWorker _cluster;
+	private WorkerClusterHandle _cluster;
 	
 	public ConsentusWorker(final ConsentusService service) {
 		_service = Objects.requireNonNull(service);
 	}
 
 	@Override
-	public void configure(ClusterWorker cluster, Configuration config,
+	public void configure(WorkerClusterHandle cluster, Configuration config,
 			ConsentusProcessCallback exHandler, InetAddress networkAddress) {
 		_cluster = cluster;
 		_service.configure(config, exHandler, networkAddress);
@@ -60,7 +60,7 @@ public final class ConsentusWorker implements ConsentusProcess<ClusterWorker, Co
 
 	@Override
 	public void execute() throws InterruptedException {
-		try (ClusterWorker cluster = _cluster) {
+		try (WorkerClusterHandle cluster = _cluster) {
 			cluster.start();
 			
 			// Wait for exit
@@ -75,9 +75,9 @@ public final class ConsentusWorker implements ConsentusProcess<ClusterWorker, Co
 	}
 	
 	@Override
-	public ClusterWorker createCluster(String zooKeeperAddress,
+	public WorkerClusterHandle createCluster(String zooKeeperAddress,
 			String zooKeeperRoot, ConsentusProcessCallback callback) {
-		return new ClusterWorker(zooKeeperAddress, zooKeeperRoot, _service, _executor, callback);
+		return new WorkerClusterHandle(zooKeeperAddress, zooKeeperRoot, _service, _executor, callback);
 	}
 	
 	public static void main(String[] args) {
@@ -89,7 +89,7 @@ public final class ConsentusWorker implements ConsentusProcess<ClusterWorker, Co
 		
 		ConsentusWorker worker = new ConsentusWorker(service);
 		
-		ConsentusProcessConfiguration<ClusterWorker, Configuration> baseConfig = 
+		ConsentusProcessConfiguration<WorkerClusterHandle, Configuration> baseConfig = 
 				new ConsentusProcessConfiguration<>(worker, Configuration.class, new DefaultProcessCallback());
 		
 		cmdLineValues = Util.parseCommandLine(service.name(), baseConfig, args);

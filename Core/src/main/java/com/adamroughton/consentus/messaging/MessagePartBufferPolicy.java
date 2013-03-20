@@ -59,7 +59,7 @@ public final class MessagePartBufferPolicy {
 		this(getOffsets(messagePartOffsets));
 		String[] labels = getLabels(messagePartOffsets);
 		for (int i = 0; i < labels.length; i++) {
-			_labelLookup.put(labels[i], _offsets[i]);
+			_labelLookup.put(labels[i], i);
 		}
 	}
 	
@@ -117,14 +117,22 @@ public final class MessagePartBufferPolicy {
 		}
 	}
 	
-	public int getPartLength(int partIndex, int bufferLength) {
+	public int getPartLength(int partIndex, int bufferOffset, int bufferLength) {
 		if (_offsets.length == 0) {
-			return bufferLength;
+			return bufferLength - bufferOffset;
 		} else if (partIndex < _offsets.length - 1) {
 			return _offsets[partIndex + 1] - _offsets[partIndex];
 		} else {
-			return bufferLength - _offsets[partIndex];
+			return bufferLength - bufferOffset - _offsets[partIndex];
 		}
+	}
+	
+	public int getPartLength(int partIndex, int bufferLength) {
+		return getPartLength(partIndex, 0, bufferLength);
+	}
+	
+	public int getPartLength(int partIndex, int bufferOffset, byte[] buffer) {
+		return getPartLength(partIndex, bufferOffset, buffer.length);
 	}
 	
 	public int getPartLength(int partIndex, byte[] buffer) {

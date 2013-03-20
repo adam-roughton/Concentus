@@ -26,9 +26,6 @@ import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.zookeeper.WatchedEvent;
-import org.apache.zookeeper.Watcher;
-import org.apache.zookeeper.Watcher.Event;
-import org.apache.zookeeper.Watcher.Event.EventType;
 
 import com.adamroughton.consentus.FatalExceptionCallback;
 import com.adamroughton.consentus.cluster.ClusterParticipant;
@@ -44,14 +41,14 @@ import com.netflix.curator.utils.ZKPaths;
 
 import static com.adamroughton.consentus.cluster.ClusterPath.*;
 
-public final class ClusterCoordinator extends ClusterParticipant implements Cluster, Closeable {
+public final class CoordinatorClusterHandle extends ClusterParticipant implements Cluster, Closeable {
 
-	public ClusterCoordinator(String zooKeeperAddress, String root,
+	public CoordinatorClusterHandle(String zooKeeperAddress, String root,
 			FatalExceptionCallback exHandler) {
 		this(zooKeeperAddress, root, UUID.randomUUID(), exHandler);
 	}
 	
-	public ClusterCoordinator(String zooKeeperAddress, String root, UUID clusterId,
+	public CoordinatorClusterHandle(String zooKeeperAddress, String root, UUID clusterId,
 			FatalExceptionCallback exHandler) {
 		super(zooKeeperAddress, root, clusterId, exHandler);
 	}

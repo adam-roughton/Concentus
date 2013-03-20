@@ -27,7 +27,7 @@ import com.adamroughton.consentus.ConsentusProcessConfiguration;
 import com.adamroughton.consentus.ConsentusProcessConfiguration.ClusterFactory;
 import com.adamroughton.consentus.DefaultProcessCallback;
 import com.adamroughton.consentus.Util;
-import com.adamroughton.consentus.cluster.coordinator.ClusterCoordinator;
+import com.adamroughton.consentus.cluster.coordinator.CoordinatorClusterHandle;
 import com.adamroughton.consentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.esotericsoftware.minlog.Log;
 
@@ -35,8 +35,8 @@ import asg.cliche.Command;
 import asg.cliche.Shell;
 import asg.cliche.ShellFactory;
 
-public final class CrowdHammerCoordinator implements ConsentusProcess<ClusterCoordinator, CrowdHammerConfiguration>, 
-		ClusterFactory<ClusterCoordinator> {
+public final class CrowdHammerCoordinator implements ConsentusProcess<CoordinatorClusterHandle, CrowdHammerConfiguration>, 
+		ClusterFactory<CoordinatorClusterHandle> {
 
 	public static final String PROCESS_NAME = "CrowdHammer Coordinator";
 	
@@ -44,7 +44,7 @@ public final class CrowdHammerCoordinator implements ConsentusProcess<ClusterCoo
 	private Future<?> _currentTask = null;
 	
 	private CrowdHammerConfiguration _config;
-	private ClusterCoordinator _cluster;
+	private CoordinatorClusterHandle _cluster;
 
 	@Command(name="start")
 	public void startRun(int... simClientCounts) {
@@ -87,7 +87,7 @@ public final class CrowdHammerCoordinator implements ConsentusProcess<ClusterCoo
 	}
 
 	@Override
-	public void configure(ClusterCoordinator cluster,
+	public void configure(CoordinatorClusterHandle cluster,
 			CrowdHammerConfiguration config,
 			ConsentusProcessCallback exHandler, InetAddress networkAddress) {
 		_cluster = cluster;
@@ -115,14 +115,14 @@ public final class CrowdHammerCoordinator implements ConsentusProcess<ClusterCoo
 	}
 
 	@Override
-	public ClusterCoordinator createCluster(String zooKeeperAddress,
+	public CoordinatorClusterHandle createCluster(String zooKeeperAddress,
 			String zooKeeperRoot, ConsentusProcessCallback callback) {
-		return new ClusterCoordinator(zooKeeperAddress, zooKeeperRoot, callback);
+		return new CoordinatorClusterHandle(zooKeeperAddress, zooKeeperRoot, callback);
 	}
 	
 	public static void main(String[] args) {
 		CrowdHammerCoordinator coordinator = new CrowdHammerCoordinator();
-		ConsentusProcessConfiguration<ClusterCoordinator, CrowdHammerConfiguration> baseConfig = 
+		ConsentusProcessConfiguration<CoordinatorClusterHandle, CrowdHammerConfiguration> baseConfig = 
 				new ConsentusProcessConfiguration<>(
 						coordinator, 
 						CrowdHammerConfiguration.class, 

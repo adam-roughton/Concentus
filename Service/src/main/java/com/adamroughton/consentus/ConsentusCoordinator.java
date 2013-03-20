@@ -22,19 +22,19 @@ import java.util.Map;
 import com.adamroughton.consentus.ConsentusProcessCallback;
 import com.adamroughton.consentus.ConsentusProcessConfiguration.ClusterFactory;
 import com.adamroughton.consentus.DefaultProcessCallback;
-import com.adamroughton.consentus.cluster.coordinator.ClusterCoordinator;
+import com.adamroughton.consentus.cluster.coordinator.CoordinatorClusterHandle;
 import com.adamroughton.consentus.config.Configuration;
 import com.esotericsoftware.minlog.Log;
 
 import asg.cliche.Command;
 import asg.cliche.ShellFactory;
 
-public final class ConsentusCoordinator implements ConsentusProcess<ClusterCoordinator, Configuration>,
-		ClusterFactory<ClusterCoordinator> {
+public final class ConsentusCoordinator implements ConsentusProcess<CoordinatorClusterHandle, Configuration>,
+		ClusterFactory<CoordinatorClusterHandle> {
 
 	public static final String PROCESS_NAME = "Consentus Coordinator";
 	
-	private ClusterCoordinator _cluster;
+	private CoordinatorClusterHandle _cluster;
 	
 	@Command(name="quit")
 	public void quit() {
@@ -42,7 +42,7 @@ public final class ConsentusCoordinator implements ConsentusProcess<ClusterCoord
 	}
 
 	@Override
-	public void configure(ClusterCoordinator cluster, Configuration config,
+	public void configure(CoordinatorClusterHandle cluster, Configuration config,
 			ConsentusProcessCallback exHandler, InetAddress networkAddress) {
 		_cluster = cluster;
 	}
@@ -67,14 +67,14 @@ public final class ConsentusCoordinator implements ConsentusProcess<ClusterCoord
 	}
 
 	@Override
-	public ClusterCoordinator createCluster(String zooKeeperAddress,
+	public CoordinatorClusterHandle createCluster(String zooKeeperAddress,
 			String zooKeeperRoot, ConsentusProcessCallback callback) {
-		return new ClusterCoordinator(zooKeeperAddress, zooKeeperRoot, callback);
+		return new CoordinatorClusterHandle(zooKeeperAddress, zooKeeperRoot, callback);
 	}
 	
 	public static void main(String[] args) {
 		ConsentusCoordinator coordinator = new ConsentusCoordinator();
-		ConsentusProcessConfiguration<ClusterCoordinator, Configuration> baseConfig = 
+		ConsentusProcessConfiguration<CoordinatorClusterHandle, Configuration> baseConfig = 
 				new ConsentusProcessConfiguration<>(coordinator, Configuration.class, new DefaultProcessCallback());
 		Map<String, String> cmdLineValues = Util.parseCommandLine(PROCESS_NAME, baseConfig, args);
 		baseConfig.configure(coordinator, cmdLineValues);

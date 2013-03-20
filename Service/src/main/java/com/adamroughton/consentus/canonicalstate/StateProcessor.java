@@ -17,6 +17,7 @@ package com.adamroughton.consentus.canonicalstate;
 
 import it.unimi.dsi.fastutil.ints.Int2LongMap;
 import it.unimi.dsi.fastutil.ints.Int2LongOpenHashMap;
+import it.unimi.dsi.fastutil.ints.IntIterator;
 
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
@@ -26,11 +27,13 @@ import com.adamroughton.consentus.Constants;
 import com.adamroughton.consentus.FatalExceptionCallback;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
 import com.adamroughton.consentus.messaging.events.ClientHandlerEntry;
+import com.adamroughton.consentus.messaging.events.EventType;
 import com.adamroughton.consentus.messaging.events.StateInputEvent;
 import com.adamroughton.consentus.messaging.events.StateMetricEvent;
 import com.adamroughton.consentus.messaging.events.StateUpdateEvent;
 import com.adamroughton.consentus.messaging.events.StateUpdateInfoEvent;
-import com.esotericsoftware.minlog.Log;
+import com.adamroughton.consentus.messaging.patterns.EventWriter;
+import com.adamroughton.consentus.messaging.patterns.PubSocketQueue;
 import com.lmax.disruptor.AlertException;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.RingBuffer;
@@ -47,7 +50,7 @@ public class StateProcessor implements EventProcessor {
 	
 	private final StateLogic _stateLogic;
 	private final RingBuffer<byte[]> _inputRingBuffer;
-	private final RingBuffer<byte[]> _publishRingBuffer;
+	private final PubSocketQueue _pubQueue;
 	private final FatalExceptionCallback _exCallback;
 
 	private final Sequence _sequence;
@@ -66,12 +69,12 @@ public class StateProcessor implements EventProcessor {
 	public StateProcessor(
 			StateLogic stateLogic,
 			RingBuffer<byte[]> inputRingBuffer,
-			RingBuffer<byte[]> publishRingBuffer, 
+			PubSocketQueue pubQueue, 
 			SequenceBarrier barrier,
 			FatalExceptionCallback exceptionCallback) {
 		_stateLogic = Objects.requireNonNull(stateLogic);
 		_inputRingBuffer = Objects.requireNonNull(inputRingBuffer);
-		_publishRingBuffer = Objects.requireNonNull(publishRingBuffer);
+		_pubQueue = Objects.requireNonNull(pubQueue);
 		_exCallback = Objects.requireNonNull(exceptionCallback);
 
 		_clientHandlerEventTracker = new Int2LongOpenHashMap(50);
@@ -176,69 +179,62 @@ public class StateProcessor implements EventProcessor {
 		_stateLogic.collectInput(_inputEvent.getInputBuffer());
 	}
 	
-	private void sendUpdateEvent(long updateId, long simTime) {
-		long seq = _publishRingBuffer.next();
-		byte[] outputBytes = _publishRingBuffer.get(seq);
-		try {
-			// we reserve the first byte of the buffer as a header
-			_updateEvent.setBackingArray(outputBytes, 1);
-			_updateEvent.setUpdateId(updateId);
-			_updateEvent.setSimTime(simTime);
-			_stateLogic.createUpdate(_updateEvent.getUpdateBuffer());
-			MessageBytesUtil.writeFlagToByte(outputBytes, 0, 0, false); // is valid
-		} catch (Exception e) {
-			// indicate error condition on the message
-			MessageBytesUtil.writeFlagToByte(outputBytes, 0, 0, true);
-			Log.error("An error was raised on receiving a message.", e);
-			throw new RuntimeException(e);
-		} finally {
-			_publishRingBuffer.publish(seq);
-			_updateEvent.releaseBackingArray();
-		}
-	}
-	
-	private void sendMetricEvent(long updateId, long timeSinceLastInMs) {		
-		long seq = _publishRingBuffer.next();
-		byte[] outputBytes = _publishRingBuffer.get(seq);
-		_metricEvent.setBackingArray(outputBytes, 1);
-		_metricEvent.setUpdateId(updateId);
-		_metricEvent.setInputActionsProcessed(_sequence.get() - _seqStart);
-		_metricEvent.setDurationInMs(timeSinceLastInMs);
-		_metricEvent.setEventErrorCount(_eventErrorCount);
-		MessageBytesUtil.writeFlagToByte(outputBytes, 0, 0, false); // is valid
-		_publishRingBuffer.publish(seq);
-		_metricEvent.releaseBackingArray();
-	}
-	
-	private void sendClientHandlerEvents(long updateId) {
-		int maximumEntries = 0;
-		int nextIndex = 0;
-		long seq = -1;
-		byte[] outputBytes = null;
-		for (int clientHandlerId : _clientHandlerEventTracker.keySet()) {
-			if (nextIndex >= maximumEntries) {
-				if (outputBytes != null) {
-					// publish the last event
-					_updateInfoEvent.setEntryCount(maximumEntries);
-					_publishRingBuffer.publish(seq);
-				}
-				seq = _publishRingBuffer.next();
-				outputBytes = _publishRingBuffer.get(seq);
-				MessageBytesUtil.writeFlagToByte(outputBytes, 0, 0, false); // is valid
-				_updateInfoEvent.setBackingArray(outputBytes, 1);
-				_updateInfoEvent.setUpdateId(updateId);
-				maximumEntries = _updateInfoEvent.getMaximumEntries();
-				nextIndex = 0;
+	private void sendUpdateEvent(final long updateId, final long simTime) {
+		_pubQueue.send(EventType.STATE_UPDATE, _updateEvent, new EventWriter<StateUpdateEvent>() {
+
+			@Override
+			public boolean write(StateUpdateEvent event, long sequence) {
+				event.setUpdateId(updateId);
+				event.setSimTime(simTime);
+				_stateLogic.createUpdate(event.getUpdateBuffer());
+				return true;
 			}
-			long highestSeq = _clientHandlerEventTracker.get(clientHandlerId);
-			ClientHandlerEntry entry = new ClientHandlerEntry(clientHandlerId, highestSeq);
-			_updateInfoEvent.setHandlerEntry(nextIndex++, entry);
-		}
-		if (outputBytes != null) {
-			// publish the last event
-			_updateInfoEvent.setEntryCount(nextIndex);
-			_publishRingBuffer.publish(seq);
-		}
-		_updateInfoEvent.releaseBackingArray();
+			
+		});
 	}
+	
+	private void sendMetricEvent(final long updateId, final long timeSinceLastInMs) {
+		_pubQueue.send(EventType.STATE_METRIC, _metricEvent, new EventWriter<StateMetricEvent>() {
+
+			@Override
+			public boolean write(StateMetricEvent event, long sequence) {
+				event.setUpdateId(updateId);
+				event.setInputActionsProcessed(_sequence.get() - _seqStart);
+				event.setDurationInMs(timeSinceLastInMs);
+				event.setEventErrorCount(_eventErrorCount);
+				return true;
+			}
+			
+		});
+	}
+	
+	private void sendClientHandlerEvents(final long updateId) {	
+		// Iterate through all client handler IDs and create state update info events until
+		// all handler sequence numbers have been published. As we can fit n entries in each
+		// update, we attempt to fill each update with the maximum number of entries.
+		final IntIterator handlerIdIterator = _clientHandlerEventTracker.keySet().iterator();
+		while(handlerIdIterator.hasNext()) {
+			_pubQueue.send(EventType.STATE_INFO, _updateInfoEvent, new EventWriter<StateUpdateInfoEvent>() {
+	
+				@Override
+				public boolean write(StateUpdateInfoEvent event, long sequence) {
+					int maxEntries = event.getMaximumEntries();
+					int currEntryIndex = 0;
+					event.setUpdateId(updateId);
+					while (handlerIdIterator.hasNext() && currEntryIndex < maxEntries) {
+						int handlerId = handlerIdIterator.nextInt();
+						long highestSequence = _clientHandlerEventTracker.get(handlerId);
+						ClientHandlerEntry entry = new ClientHandlerEntry(handlerId, highestSequence);
+						event.setHandlerEntry(currEntryIndex++, entry);
+					}
+					event.setEntryCount(currEntryIndex + 1);
+					
+					return true;
+				}
+				
+			});
+		}
+	}
+	
+	
 }

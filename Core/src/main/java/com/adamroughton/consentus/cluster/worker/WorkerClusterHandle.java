@@ -33,7 +33,7 @@ import com.netflix.curator.utils.ZKPaths;
 
 import static com.adamroughton.consentus.cluster.ClusterPath.*;
 
-public final class ClusterWorker extends ClusterParticipant implements Cluster, Closeable {
+public final class WorkerClusterHandle extends ClusterParticipant implements Cluster, Closeable {
 	
 	private final List<String> _hostedServices;
 	
@@ -41,7 +41,7 @@ public final class ClusterWorker extends ClusterParticipant implements Cluster, 
 	private final ClusterStateNodeListener _clusterStateNodeListener;
 	private final ExecutorService _executor;
 	
-	public <S extends Enum<S> & ClusterStateValue> ClusterWorker(
+	public <S extends Enum<S> & ClusterStateValue> WorkerClusterHandle(
 			final String zooKeeperAddress, 
 			final String root, 
 			final ClusterListener<S> clusterListener,
@@ -51,7 +51,7 @@ public final class ClusterWorker extends ClusterParticipant implements Cluster, 
 	}
 	
 	@SuppressWarnings("unchecked")
-	public <S extends Enum<S> & ClusterStateValue> ClusterWorker(
+	public <S extends Enum<S> & ClusterStateValue> WorkerClusterHandle(
 			final String zooKeeperAddress, 
 			final String root, 
 			final UUID clusterId,

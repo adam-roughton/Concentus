@@ -68,6 +68,10 @@ public final class SocketPackage {
 		return new SocketPackage(_socket, messagePartPolicy, _socketId);
 	}
 	
+	public SocketPackage setMessageOffsets(final MessagePartBufferPolicy offsetPolicy) {
+		return new SocketPackage(_socket, offsetPolicy, _socketId);
+	}
+	
 	/**
 	 * An optional identifier that will be written in to an attached
 	 * buffer as part of a header.

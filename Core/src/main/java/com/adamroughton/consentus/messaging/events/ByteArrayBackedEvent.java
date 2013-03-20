@@ -48,6 +48,10 @@ public abstract class ByteArrayBackedEvent {
 		}
 	}
 	
+	public int getEventTypeId() {
+		return _id;
+	}
+	
 	/**
 	 * Calculates the absolute offset of the field on the backing byte array.
 	 * @param internalFieldOffset the byte offset of the field relative to the other fields in the event

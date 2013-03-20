@@ -21,21 +21,23 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.Map.Entry;
+import java.util.concurrent.TimeUnit;
 import java.util.Objects;
 
+import com.adamroughton.consentus.clienthandler.ClientHandlerService;
 import com.adamroughton.consentus.cluster.coordinator.Cluster.AssignmentRequest;
-import com.adamroughton.consentus.cluster.coordinator.ClusterCoordinator;
+import com.adamroughton.consentus.cluster.coordinator.CoordinatorClusterHandle;
 import com.adamroughton.consentus.cluster.coordinator.ParticipatingNodes;
 import com.adamroughton.consentus.crowdhammer.worker.WorkerService;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
 
 public final class TestRunner implements Runnable {
 
-	private final ClusterCoordinator _cluster;
+	private final CoordinatorClusterHandle _cluster;
 	private final int _testRunDuration;
 	private final int[] _testClientCounts;
 	
-	public TestRunner(ClusterCoordinator cluster, int testRunDuration, int[] testClientCounts) {
+	public TestRunner(CoordinatorClusterHandle cluster, int testRunDuration, int[] testClientCounts) {
 		_cluster = cluster;
 		_testRunDuration = testRunDuration;
 		_testClientCounts = Objects.requireNonNull(testClientCounts);
@@ -79,6 +81,16 @@ public final class TestRunner implements Runnable {
 					_cluster.setAssignment(WorkerService.SERVICE_TYPE, allocation.getWorkerId(), res);
 				}
 				
+				// process client handler ID requests
+				List<AssignmentRequest> clientHandlerReqs = 
+						_cluster.getAssignmentRequests(ClientHandlerService.SERVICE_TYPE);
+				int nextId = 0;
+				for (AssignmentRequest req : clientHandlerReqs) {
+					byte[] res = new byte[4];
+					MessageBytesUtil.writeInt(res, 0, nextId++);
+					_cluster.setAssignment(ClientHandlerService.SERVICE_TYPE, UUID.fromString(req.getServiceId()), res);
+				}
+				
 				_cluster.setState(CrowdHammerServiceState.SET_UP_TEST);
 				while (!_cluster.waitForReady(participatingNodes));
 				
@@ -91,7 +103,7 @@ public final class TestRunner implements Runnable {
 				_cluster.setState(CrowdHammerServiceState.EXEC_TEST);
 				while (!_cluster.waitForReady(participatingNodes));
 				
-				Thread.sleep(_testRunDuration);
+				Thread.sleep(TimeUnit.SECONDS.toMillis(_testRunDuration));
 				
 				_cluster.setState(CrowdHammerServiceState.STOP_SENDING_EVENTS);
 				while (!_cluster.waitForReady(participatingNodes));

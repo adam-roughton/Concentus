@@ -33,6 +33,7 @@ import com.adamroughton.consentus.messaging.EventListener;
 import com.adamroughton.consentus.messaging.SocketPackage;
 import com.adamroughton.consentus.messaging.SocketSettings;
 import com.adamroughton.consentus.messaging.events.EventType;
+import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
@@ -44,7 +45,7 @@ public class MetricListenerService implements CrowdHammerService {
 	
 	public static final String SERVICE_TYPE = "MetricListener";
 	
-	private static final Logger LOG = Logger.getLogger(MetricListenerService.class.getName());
+	//private static final Logger LOG = Logger.getLogger(MetricListenerService.class.getName());
 	
 	private ExecutorService _executor;
 	private Disruptor<byte[]> _inputDisruptor;
@@ -70,7 +71,7 @@ public class MetricListenerService implements CrowdHammerService {
 	@Override
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
 			Cluster cluster) throws Exception {
-		LOG.info(String.format("Entering state %s", newClusterState.name()));
+		//LOG.info(String.format("Entering state %s", newClusterState.name()));
 		if (newClusterState == CrowdHammerServiceState.SET_UP_TEST) {
 			setUpTest(cluster);
 		} else if (newClusterState == CrowdHammerServiceState.CONNECT_SUT) {
@@ -80,7 +81,7 @@ public class MetricListenerService implements CrowdHammerService {
 		} else if (newClusterState == CrowdHammerServiceState.SHUTDOWN) {
 			shutdown(cluster);
 		}
-		LOG.info("Signalling ready for next state");
+		//LOG.info("Signalling ready for next state");
 		cluster.signalReady();
 	}
 

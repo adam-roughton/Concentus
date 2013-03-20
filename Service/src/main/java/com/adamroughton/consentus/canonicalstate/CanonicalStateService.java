@@ -32,6 +32,7 @@ import com.adamroughton.consentus.messaging.EventProcessingHeader;
 import com.adamroughton.consentus.messaging.Publisher;
 import com.adamroughton.consentus.messaging.SocketPackage;
 import com.adamroughton.consentus.messaging.SocketSettings;
+import com.adamroughton.consentus.messaging.patterns.PubSocketQueue;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
@@ -117,8 +118,10 @@ public class CanonicalStateService implements ConsentusService {
 		};
 		
 		SequenceBarrier stateProcBarrier = _inputDisruptor.getRingBuffer().newBarrier();
+		EventProcessingHeader header = new EventProcessingHeader(0, 1);
+		PubSocketQueue pubSocketQueue = new PubSocketQueue(header, _outputDisruptor);
 		_stateProcessor = new StateProcessor(testLogic, _inputDisruptor.getRingBuffer(), 
-				_outputDisruptor.getRingBuffer(), stateProcBarrier, exHandler);
+				pubSocketQueue, stateProcBarrier, exHandler);
 		_inputDisruptor.handleEventsWith(_stateProcessor);
 		
 		_subSocket = _zmqContext.socket(ZMQ.SUB);
@@ -139,9 +142,9 @@ public class CanonicalStateService implements ConsentusService {
 				.setMessageOffsets(0, 0);
 		
 		SocketPackage pubSocketPackage = SocketPackage.create(_pubSocket)
-				.setMessageOffsets(0, 4);
+				.setMessageOffsets(pubSocketQueue.getMessagePartPolicy());
 
-		_publisher = new Publisher(pubSocketPackage, new EventProcessingHeader(0, 1));
+		_publisher = new Publisher(pubSocketPackage, header);
 		_outputDisruptor.handleEventsWith(_publisher);
 		_eventListener = new EventListener(subSocketPackage, _inputDisruptor.getRingBuffer(), _zmqContext, exHandler);
 	}

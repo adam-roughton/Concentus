@@ -16,6 +16,7 @@
 package com.adamroughton.consentus.messaging.events;
 
 public enum EventType {
+	NULL(0, null),
 	CLIENT_INPUT(1, ClientInputEvent.class),
 	STATE_INPUT(2, StateInputEvent.class),
 	STATE_UPDATE(3, StateUpdateEvent.class),

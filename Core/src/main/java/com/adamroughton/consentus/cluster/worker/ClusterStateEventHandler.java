@@ -26,7 +26,7 @@ import com.lmax.disruptor.EventHandler;
 
 class ClusterStateEventHandler<S extends Enum<S> & ClusterStateValue> implements EventHandler<byte[]> {
 
-	private final ClusterWorker _cluster;
+	private final WorkerClusterHandle _cluster;
 	private final ClusterListener<S> _listener;
 	private final FatalExceptionCallback _exCallback;
 	
@@ -34,7 +34,7 @@ class ClusterStateEventHandler<S extends Enum<S> & ClusterStateValue> implements
 	private final Int2ObjectMap<S> _stateValueLookup;
 	
 	public ClusterStateEventHandler(
-			final ClusterWorker cluster,
+			final WorkerClusterHandle cluster,
 			final ClusterListener<S> listener,
 			final FatalExceptionCallback exCallback) {
 		_cluster = Objects.requireNonNull(cluster);
