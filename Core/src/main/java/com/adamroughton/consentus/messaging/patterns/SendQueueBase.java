@@ -3,7 +3,7 @@ package com.adamroughton.consentus.messaging.patterns;
 import java.util.Objects;
 
 import com.adamroughton.consentus.messaging.EventProcessingHeader;
-import com.adamroughton.consentus.messaging.MessagePartBufferPolicy;
+import com.adamroughton.consentus.messaging.MessageFrameBufferMapping;
 import com.adamroughton.consentus.messaging.events.ByteArrayBackedEvent;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventTranslator;
@@ -13,18 +13,18 @@ public abstract class SendQueueBase {
 
 	private final EventProcessingHeader _header;
 	private final Disruptor<byte[]> _disruptor;
-	private final MessagePartBufferPolicy _msgPartPolicy;
+	private final MessageFrameBufferMapping _mapping;
 	
 	public SendQueueBase(final EventProcessingHeader header, 
 			final Disruptor<byte[]> backingDisruptor, 
-			final MessagePartBufferPolicy msgPartPolicy) {
+			final MessageFrameBufferMapping mapping) {
 		_header = Objects.requireNonNull(header);
 		_disruptor = Objects.requireNonNull(backingDisruptor);
-		_msgPartPolicy = Objects.requireNonNull(msgPartPolicy);
+		_mapping = Objects.requireNonNull(mapping);
 	}
 	
-	public MessagePartBufferPolicy getMessagePartPolicy() {
-		return _msgPartPolicy;
+	public MessageFrameBufferMapping getMessagePartPolicy() {
+		return _mapping;
 	}
 	
 	protected <TEvent extends ByteArrayBackedEvent> void doSend(
@@ -36,11 +36,10 @@ public abstract class SendQueueBase {
 			public void translateTo(byte[] event, long sequence) {
 				int contentOffset = _header.getEventOffset();
 				try {
-					for (int i = 0; i < _msgPartPolicy.partCount(); i++) {
-						int offset = _msgPartPolicy.getOffset(i) + contentOffset;
-						int length = _msgPartPolicy.getPartLength(i, contentOffset, event);
+					for (int i = 0; i < _mapping.partCount(); i++) {
+						int offset = _mapping.getOffset(i) + contentOffset;
 						
-						if (i == _msgPartPolicy.partCount() - 1) {
+						if (i == _mapping.partCount() - 1) {
 							try {
 								eventHelper.setBackingArray(event, offset);
 								boolean isValid = eventWriter.write(eventHelper, sequence);
@@ -49,6 +48,7 @@ public abstract class SendQueueBase {
 								eventHelper.releaseBackingArray();
 							}
 						} else {
+							int length = _mapping.getIntermediatePartLength(i);
 							writeMessagePart(i, event, offset, length);
 						}
 					}
@@ -62,6 +62,5 @@ public abstract class SendQueueBase {
 	
 	protected abstract void writeMessagePart(int partIndex, 
 			byte[] event, int offset, int length) throws Exception;
-	
 	
 }

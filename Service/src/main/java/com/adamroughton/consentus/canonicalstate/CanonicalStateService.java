@@ -20,6 +20,7 @@ import java.nio.ByteBuffer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
 
 import com.adamroughton.consentus.ConsentusService;
 import com.adamroughton.consentus.ConsentusProcessCallback;
@@ -30,10 +31,11 @@ import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
 import com.adamroughton.consentus.messaging.EventListener;
 import com.adamroughton.consentus.messaging.EventProcessingHeader;
 import com.adamroughton.consentus.messaging.Publisher;
+import com.adamroughton.consentus.messaging.SocketManager;
 import com.adamroughton.consentus.messaging.SocketPackage;
 import com.adamroughton.consentus.messaging.SocketSettings;
-import com.adamroughton.consentus.messaging.patterns.PubSocketQueue;
-import com.lmax.disruptor.EventFactory;
+import com.adamroughton.consentus.messaging.patterns.PubSendQueueWriter;
+import com.adamroughton.consentus.messaging.patterns.SubRecvQueueReader;
 import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
@@ -41,62 +43,43 @@ import com.lmax.disruptor.dsl.Disruptor;
 
 import org.zeromq.*;
 
+import static com.adamroughton.consentus.Util.msgBufferFactory;
+import static com.adamroughton.consentus.Constants.MSG_BUFFER_LENGTH;
+
 public class CanonicalStateService implements ConsentusService {
 	
 	public final static String SERVICE_TYPE = "CanonicalState";
+	private final static Logger LOG = Logger.getLogger(SERVICE_TYPE);
 	
-	private ExecutorService _executor;
-	private Disruptor<byte[]> _inputDisruptor;
-	private Disruptor<byte[]> _outputDisruptor;
+	private final ExecutorService _executor = Executors.newCachedThreadPool();
+	private final SocketManager _socketManager;
+	private final Disruptor<byte[]> _inputDisruptor;
+	private final Disruptor<byte[]> _outputDisruptor;
+	private final EventProcessingHeader _header;
+	private final StateLogic _stateLogic;
 	
+	private ConsentusProcessCallback _exCallback;
 	private InetAddress _networkAddress;
 	
-	private EventListener _eventListener;
+	private EventListener _subListener;
 	private StateProcessor _stateProcessor;
 	private Publisher _publisher;	
 	
-	private ZMQ.Context _zmqContext;
+	private int _pubSocketId;
+	private int _subSocketId;
 	
-	private SocketSettings _subSocketSettings;
-	private SocketSettings _pubSocketSettings;
-	
-	private ZMQ.Socket _pubSocket;
-	private ZMQ.Socket _subSocket;
-	
-	@Override
-	public String name() {
-		return "Canonical State Service";
-	}
-
-	@SuppressWarnings("unchecked")
-	@Override
-	public void configure(Configuration config, ConsentusProcessCallback exHandler, InetAddress networkAddress) {
-		_networkAddress = networkAddress;
+	public CanonicalStateService() {
+		_socketManager = new SocketManager();
 		
-		_executor = Executors.newCachedThreadPool();
-		_zmqContext = ZMQ.context(1);
+		_inputDisruptor = new Disruptor<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
+				_executor, new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
 		
-		_inputDisruptor = new Disruptor<>(new EventFactory<byte[]>() {
-
-			@Override
-			public byte[] newInstance() {
-				return new byte[256];
-			}
-			
-		}, _executor, new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
-		_inputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Input Disruptor", exHandler));
+		_outputDisruptor = new Disruptor<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
+				_executor, new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
 		
-		_outputDisruptor = new Disruptor<>(new EventFactory<byte[]>() {
-
-			@Override
-			public byte[] newInstance() {
-				return new byte[256];
-			}
-			
-		}, _executor, new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
-		_outputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Output Disruptor", exHandler));
+		_header = new EventProcessingHeader(0, 1);
 		
-		StateLogic testLogic = new StateLogic() {
+		_stateLogic = new StateLogic() {
 
 			private int i = 0;
 			
@@ -116,79 +99,99 @@ public class CanonicalStateService implements ConsentusService {
 			}
 			
 		};
+	}
+	
+	@Override
+	public String name() {
+		return "Canonical State Service";
+	}
+
+	@Override
+	public void configure(Configuration config, ConsentusProcessCallback exHandler, InetAddress networkAddress) {
+		_exCallback = exHandler;
+		_networkAddress = networkAddress;
 		
-		SequenceBarrier stateProcBarrier = _inputDisruptor.getRingBuffer().newBarrier();
-		EventProcessingHeader header = new EventProcessingHeader(0, 1);
-		PubSocketQueue pubSocketQueue = new PubSocketQueue(header, _outputDisruptor);
-		_stateProcessor = new StateProcessor(testLogic, _inputDisruptor.getRingBuffer(), 
-				pubSocketQueue, stateProcBarrier, exHandler);
-		_inputDisruptor.handleEventsWith(_stateProcessor);
+		_inputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Input Disruptor", exHandler));
+		_outputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Output Disruptor", exHandler));
 		
-		_subSocket = _zmqContext.socket(ZMQ.SUB);
-		_pubSocket = _zmqContext.socket(ZMQ.PUB);
-		
+		/*
+		 * Configure sockets
+		 */
+		// sub socket
 		int subPort = config.getServices().get(SERVICE_TYPE).getPorts().get("sub");
-		int pubPort = config.getServices().get(SERVICE_TYPE).getPorts().get("pub");
-		
-		_subSocketSettings = SocketSettings.create()
+		SocketSettings subSocketSettings = SocketSettings.create()
 				.bindToPort(subPort)
 				.setHWM(1000)
 				.subscribeToAll();
-		_pubSocketSettings = SocketSettings.create()
+		_subSocketId = _socketManager.create(ZMQ.SUB, subSocketSettings);
+		
+		// pub socket
+		int pubPort = config.getServices().get(SERVICE_TYPE).getPorts().get("pub");
+		SocketSettings pubSocketSettings = SocketSettings.create()
 				.bindToPort(pubPort)
 				.setHWM(1000);
-		
-		SocketPackage subSocketPackage = SocketPackage.create(_subSocket)
-				.setMessageOffsets(0, 0);
-		
-		SocketPackage pubSocketPackage = SocketPackage.create(_pubSocket)
-				.setMessageOffsets(pubSocketQueue.getMessagePartPolicy());
-
-		_publisher = new Publisher(pubSocketPackage, header);
-		_outputDisruptor.handleEventsWith(_publisher);
-		_eventListener = new EventListener(subSocketPackage, _inputDisruptor.getRingBuffer(), _zmqContext, exHandler);
+		_pubSocketId = _socketManager.create(ZMQ.PUB, pubSocketSettings);
 	}
 
-	private void bind(Cluster cluster) throws Exception {
-		_subSocketSettings.configureSocket(_subSocket);
-		_pubSocketSettings.configureSocket(_pubSocket);
+	@Override
+	public void onStateChanged(ConsentusServiceState newClusterState,
+			Cluster cluster) throws Exception {
+		LOG.info(String.format("Entering state %s", newClusterState.name()));
+		switch (newClusterState) {
+			case BIND:
+				onBind(cluster);
+				break;
+			case START:
+				onStart(cluster);
+				break;
+			case SHUTDOWN:
+				onShutdown(cluster);
+				break;
+			default:
+		}
+		LOG.info("Signalling ready for next state");
+		cluster.signalReady();
+	}
+	
+	@SuppressWarnings("unchecked")
+	private void onBind(Cluster cluster) throws Exception {
+		_socketManager.bindBoundSockets();
+		
+		// infrastructure for sub socket
+		SubRecvQueueReader subRecvQueueReader = new SubRecvQueueReader(_header);
+		SocketPackage subSocketPackage = _socketManager.createSocketPackage(_subSocketId, subRecvQueueReader.getMessageFrameBufferMapping());
+		_subListener = new EventListener(subSocketPackage, _inputDisruptor.getRingBuffer(), _exCallback);
+		
+		// infrastructure for pub socket
+		PubSendQueueWriter pubSendQueueWriter = new PubSendQueueWriter(_header, _outputDisruptor);
+		SocketPackage pubSocketPackage = _socketManager.createSocketPackage(_pubSocketId, pubSendQueueWriter.getMessagePartPolicy());
+		_publisher = new Publisher(pubSocketPackage, _header);
+		
+		SequenceBarrier inputBarrier = _inputDisruptor.getRingBuffer().newBarrier();
+		_stateProcessor = new StateProcessor(_stateLogic, _inputDisruptor.getRingBuffer(), inputBarrier, 
+				subRecvQueueReader, pubSendQueueWriter, _exCallback);
+		
+		_inputDisruptor.handleEventsWith(_stateProcessor);
+		_outputDisruptor.handleEventsWith(_publisher);
 		
 		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _networkAddress.getHostAddress()));
 	}
 
 
-	private void start(Cluster cluster) {
+	private void onStart(Cluster cluster) {
 		_outputDisruptor.start();
 		_inputDisruptor.start();
-		_executor.submit(_eventListener);
+		_executor.submit(_subListener);
 	}
 
-	private void shutdown(Cluster cluster) {
-		_zmqContext.term();
+	private void onShutdown(Cluster cluster) {
 		_executor.shutdownNow();
 		try {
 			_executor.awaitTermination(5, TimeUnit.SECONDS);
 		} catch (InterruptedException eInterrupted) {
 			// ignore
 		}
-	}
-
-	@Override
-	public void onStateChanged(ConsentusServiceState newClusterState,
-			Cluster cluster) throws Exception {
-		switch (newClusterState) {
-			case BIND:
-				bind(cluster);
-				break;
-			case START:
-				start(cluster);
-				break;
-			case SHUTDOWN:
-				shutdown(cluster);
-				break;
-			default:
-		}
-		cluster.signalReady();
+		_socketManager.close();
 	}
 
 	@Override

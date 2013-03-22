@@ -55,25 +55,25 @@ public class NonblockingEventSender {
 	 */
 	public boolean sendIfReady(final SocketPackage socketPackage) {
 		return sendIfReady(socketPackage.getSocket(), 
-				socketPackage.getMessagePartPolicy());
+				socketPackage.getMessageFrameBufferMapping());
 	}
 	
 	/**
 	 * Attempts to send a pending event from the outgoing buffer, succeeding
 	 * only if both the event is ready and the socket is able to send the event.
 	 * @param socket the socket to send the event on
-	 * @param msgPartPolicy the message part policy to apply when sending messages
+	 * @param mapping the message frame mapping to apply when sending messages
 	 * @return whether an event was sent from the buffer.
 	 */
 	public boolean sendIfReady(final ZMQ.Socket socket,
-			final MessagePartBufferPolicy msgPartPolicy) {
+			final MessageFrameBufferMapping mapping) {
 		long nextSeq = _sequence.get() + 1;
 		if (nextSeq > _availableSeq) {
 			_availableSeq = _outgoingBarrier.getCursor();
 		}
 		if (nextSeq <= _availableSeq) {
 			byte[] outgoingBuffer = _outgoingBuffer.get(nextSeq);
-			if (_eventSender.send(socket, msgPartPolicy, outgoingBuffer)) {
+			if (_eventSender.send(socket, mapping, outgoingBuffer)) {
 				_sequence.addAndGet(1);
 				return true;
 			}

@@ -21,6 +21,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
 
 import org.zeromq.ZMQ;
 
@@ -33,7 +34,13 @@ import com.adamroughton.consentus.cluster.worker.Cluster;
 import com.adamroughton.consentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.consentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.consentus.crowdhammer.config.CrowdHammerConfiguration;
+import com.adamroughton.consentus.messaging.EventProcessingHeader;
+import com.adamroughton.consentus.messaging.EventReceiver;
+import com.adamroughton.consentus.messaging.EventSender;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
+import com.adamroughton.consentus.messaging.MessageFrameBufferMapping;
+import com.adamroughton.consentus.messaging.events.ClientConnectEvent;
+import com.adamroughton.consentus.messaging.events.ConnectResponseEvent;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 import com.lmax.disruptor.dsl.Disruptor;
@@ -45,6 +52,7 @@ import static com.adamroughton.consentus.Util.*;
 public final class WorkerService implements CrowdHammerService {
 
 	public static final String SERVICE_TYPE = "CrowdHammerWorker";
+	private static final Logger LOG = Logger.getLogger(SERVICE_TYPE);
 	
 	private final ZMQ.Context _zmqContext;
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
@@ -75,6 +83,7 @@ public final class WorkerService implements CrowdHammerService {
 	@Override
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
 			Cluster cluster) throws Exception {
+		LOG.info(String.format("Entering state %s", newClusterState.name()));
 		if (newClusterState == CrowdHammerServiceState.INIT) {
 			init(cluster);
 		} else if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
@@ -92,7 +101,7 @@ public final class WorkerService implements CrowdHammerService {
 		} else if (newClusterState == CrowdHammerServiceState.SHUTDOWN) {
 			shutdown(cluster);
 		}
-		
+		LOG.info("Signalling ready for next state");
 		cluster.signalReady();
 	}
 
@@ -130,7 +139,7 @@ public final class WorkerService implements CrowdHammerService {
 		// read in the number of clients to test with
 		byte[] res = cluster.getAssignment(SERVICE_TYPE);
 		if (res.length != 4) throw new RuntimeException("Expected an integer value");
-		int _clientCountForTest = MessageBytesUtil.readInt(res, 0);
+		_clientCountForTest = MessageBytesUtil.readInt(res, 0);
 		
 		if (_clientCountForTest > _maxClients)
 			throw new IllegalArgumentException(
@@ -143,6 +152,14 @@ public final class WorkerService implements CrowdHammerService {
 		String[] clientHandlerConnStrings = cluster.getAllServices(ClientHandlerService.SERVICE_TYPE);
 		int clientHandlerPort = _config.getServices().get(ClientHandlerService.SERVICE_TYPE).getPorts().get("input");
 		
+		ClientConnectEvent connectEvent = new ClientConnectEvent();
+		ConnectResponseEvent resEvent = new ConnectResponseEvent();
+		EventProcessingHeader header = new EventProcessingHeader(0, 1);
+		EventSender sender = new EventSender(header, false);
+		EventReceiver receiver = new EventReceiver(header, false);
+		MessageFrameBufferMapping msgPartOffsets = new MessageFrameBufferMapping(0);
+		byte[] buffer = new byte[Constants.MSG_BUFFER_LENGTH];
+		
 		int nextConnString = 0;
 		Client client;
 		for (int i = 0; i < _clients.getLength(); i++) {
@@ -154,6 +171,37 @@ public final class WorkerService implements CrowdHammerService {
 						clientHandlerPort);
 				client.setClientHandlerConnString(connString);
 				clientSocket.connect(connString);
+				
+				// send a connect event
+				header.setIsValid(true, buffer);
+				connectEvent.setBackingArray(buffer, header.getEventOffset());
+				boolean success = false;
+				try {
+					connectEvent.setAuthToken("Auth".getBytes(), 0);
+					success = sender.send(clientSocket, msgPartOffsets, buffer);
+					if (!success) {
+						throw new RuntimeException("Failed to send connect message for client. Aborting test");
+					}
+				} finally {
+					connectEvent.releaseBackingArray();
+				}
+				
+				// recv the connect response event
+				success = receiver.recv(clientSocket, msgPartOffsets, 0, buffer);
+				if (!success) {
+					throw new RuntimeException("Failed to recv connect response for client. Aborting test");
+				}
+				resEvent.setBackingArray(buffer, header.getEventOffset());
+				try {
+					if (resEvent.getResponseCode() != ConnectResponseEvent.RES_OK) {
+						throw new RuntimeException(String.format("The response code for a client connection was %d, expected %d (OK). Aborting test", 
+								resEvent.getResponseCode(), ConnectResponseEvent.RES_OK));
+					}
+					client.setClientId(resEvent.getClientIdBits());
+				} finally {
+					resEvent.releaseBackingArray();
+				}
+				
 				client.setIsActive(true);
 				try {
 					Thread.sleep(10);

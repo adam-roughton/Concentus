@@ -1,18 +1,26 @@
 package com.adamroughton.consentus.messaging.patterns;
 
 import com.adamroughton.consentus.messaging.EventProcessingHeader;
-import com.adamroughton.consentus.messaging.MessagePartBufferPolicy;
+import com.adamroughton.consentus.messaging.MessageFrameBufferMapping;
 import com.adamroughton.consentus.messaging.events.ByteArrayBackedEvent;
 import com.lmax.disruptor.dsl.Disruptor;
 
-public class RouterSocketSendQueue extends SendQueueBase {
+import static com.adamroughton.consentus.messaging.patterns.Patterns.validate;
+
+public class RouterSendQueueWriter extends SendQueueBase {
 
 	private byte[] _socketIdCache = null;
 	
-	public RouterSocketSendQueue(EventProcessingHeader header,
+	public RouterSendQueueWriter(EventProcessingHeader header, 
+			Disruptor<byte[]> backingDisruptor, 
+			MessageFrameBufferMapping mapping) {
+		super(header, backingDisruptor, validate(mapping, 2));
+	}
+	
+	public RouterSendQueueWriter(EventProcessingHeader header,
 			Disruptor<byte[]> backingDisruptor,
 			int socketIdLength) {
-		super(header, backingDisruptor, new MessagePartBufferPolicy(0, socketIdLength));
+		super(header, backingDisruptor, new MessageFrameBufferMapping(0, socketIdLength));
 	}
 	
 	public <TEvent extends ByteArrayBackedEvent> void send(byte[] socketId, TEvent eventHelper, EventWriter<TEvent> writer) {

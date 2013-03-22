@@ -89,6 +89,10 @@ public final class SocketSettings {
 		return Arrays.copyOf(_portsToBindTo, _portsToBindTo.length);
 	}
 	
+	public boolean isBound() {
+		return _portsToBindTo.length != 0;
+	}
+	
 	public long getHWM() {
 		return _hwm;
 	}
@@ -102,7 +106,7 @@ public final class SocketSettings {
 		return subscriptions;
 	}
 	
-	public void configureSocket(ZMQ.Socket socket) throws Exception {
+	public void configureSocket(ZMQ.Socket socket) {
 		long hwm = this.getHWM();
 		if (hwm != -1) {
 			socket.setHWM(hwm);

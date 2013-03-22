@@ -28,29 +28,31 @@ import com.lmax.disruptor.RingBuffer;
 public final class EventListener implements Runnable {
 	private final AtomicBoolean _isRunning = new AtomicBoolean(false);
 	
-	private final ZMQ.Context _zmqContext;
 	private final RingBuffer<byte[]> _ringBuffer;
 	private final FatalExceptionCallback _exCallback;
-	
-	private final SocketPackage[] _socketPackages;
-	
+	private ListenerLogic _listenerLogic;
+		
 	public EventListener(
 			final SocketPackage socketPackage,
 			final RingBuffer<byte[]> ringBuffer, 
-			final ZMQ.Context zmqContext,
 			final FatalExceptionCallback exCallback) {
-		this(new SocketPackage[] {socketPackage}, ringBuffer, zmqContext, exCallback);
+		this(ringBuffer, exCallback);
+		_listenerLogic = new SingleSocketListener(socketPackage);
 	}
 	
 	public EventListener(
-			final SocketPackage[] socketPackages,
+			final SocketPollInSet pollInSet,
 			final RingBuffer<byte[]> ringBuffer, 
-			final ZMQ.Context zmqContext,
+			final FatalExceptionCallback exCallback) {
+		this(ringBuffer, exCallback);
+		_listenerLogic = new MultiSocketListener(pollInSet);
+		
+	}
+	
+	private EventListener(final RingBuffer<byte[]> ringBuffer, 
 			final FatalExceptionCallback exCallback) {
 		_ringBuffer = Objects.requireNonNull(ringBuffer);
-		_zmqContext = Objects.requireNonNull(zmqContext);
 		_exCallback = Objects.requireNonNull(exCallback);
-		_socketPackages = Objects.requireNonNull(socketPackages);
 	}
 
 	@Override
@@ -61,56 +63,23 @@ public final class EventListener implements Runnable {
 		
 		try {
 			try {		
-				if (_socketPackages.length == 1) {
-					doRecvSingleSocket(_socketPackages[0]);
-				} else {
-					doRecvMultiSocket(_socketPackages);
-				}
+				_listenerLogic.listen();
 			} catch (ZMQException eZmq) {
 				// check that the socket hasn't just been closed
 				if (eZmq.getErrorCode() != ZMQ.Error.ETERM.getCode()) {
 					throw eZmq;
 				}
-			} finally {
-				try {
-					for (int i = 0; i < _socketPackages.length; i++) {
-						_socketPackages[i].getSocket().close();
-					}
-				} catch (Exception eClose) {
-					Log.warn("Exception thrown when closing ZMQ socket.", eClose);
-				}
-			}
+			} 
 		} catch (Throwable t) {
 			_exCallback.signalFatalException(t);
 		}
 	}
 	
-	private void doRecvSingleSocket(final SocketPackage socketPackage) throws Exception {
-		while (!Thread.interrupted()) {
-			nextEvent(socketPackage.getSocket(), 
-					socketPackage.getMessagePartPolicy(), 
-					socketPackage.getSocketId());
-		}
-	}
-	
-	private void doRecvMultiSocket(SocketPackage[] socketPackages) throws Exception {
-		ZMQ.Poller poller = _zmqContext.poller(socketPackages.length);
-		for (int i = 0; i < socketPackages.length; i++) {
-			poller.register(socketPackages[i].getSocket(), ZMQ.Poller.POLLIN);
-		}
-		while (!Thread.interrupted()) {
-			poller.poll();
-			for (int i = 0; i < socketPackages.length; i++) {
-				if (poller.pollin(i)) {
-					nextEvent(poller.getSocket(i), 
-							socketPackages[i].getMessagePartPolicy(), 
-							socketPackages[i].getSocketId());
-				}
-			}
-		}
-	}
-	
-	private void nextEvent(final ZMQ.Socket input, final MessagePartBufferPolicy msgPartPolicy, final int socketId) {
+	private void nextEvent(final SocketPackage socketPackage) {
+		ZMQ.Socket input = socketPackage.getSocket();
+		MessageFrameBufferMapping mapping = socketPackage.getMessageFrameBufferMapping();
+		int socketId = socketPackage.getSocketId();
+		
 		final long seq = _ringBuffer.next();
 		final byte[] array = _ringBuffer.get(seq);
 		try {
@@ -118,12 +87,12 @@ public final class EventListener implements Runnable {
 			// we reserve the first byte of the buffer to communicate
 			// whether the event was received correctly
 			int offset = 1;
-			for (int i = 0; i < msgPartPolicy.partCount(); i++) {
-				offset = msgPartPolicy.getOffset(i) + 1;
+			for (int i = 0; i < mapping.partCount(); i++) {
+				offset = mapping.getOffset(i) + 1;
 				result = input.recv(array, offset, array.length - offset, 0);
 				if (result == -1)
 					break;
-				if (msgPartPolicy.partCount() > i + 1 &&					
+				if (mapping.partCount() > i + 1 &&					
 						!input.hasReceiveMore()) {
 					result = -1;
 					break;
@@ -144,4 +113,46 @@ public final class EventListener implements Runnable {
 			_ringBuffer.publish(seq);
 		}
 	}
+	
+	private interface ListenerLogic {
+		void listen();
+	}
+	
+	private class SingleSocketListener implements ListenerLogic {
+
+		private final SocketPackage _socketPackage;
+		
+		public SingleSocketListener(final SocketPackage socketPackage) {
+			_socketPackage = socketPackage;
+		}
+		
+		@Override
+		public void listen() {
+			while (!Thread.interrupted()) {
+				nextEvent(_socketPackage);
+			}
+		}
+	}
+	
+	private class MultiSocketListener implements ListenerLogic {
+
+		private final SocketPollInSet _pollInSet;
+		
+		public MultiSocketListener(final SocketPollInSet pollInSet) {
+			_pollInSet = pollInSet;
+		}
+		
+		@Override
+		public void listen() {
+			try {
+				for (;;) {
+					nextEvent(_pollInSet.poll());
+				}
+			} catch (InterruptedException eInterrupted) {
+				Thread.currentThread().interrupt();
+			}
+		}
+		
+	}
+	
 }

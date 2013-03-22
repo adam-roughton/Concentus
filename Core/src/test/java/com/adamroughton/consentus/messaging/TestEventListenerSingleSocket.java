@@ -41,7 +41,7 @@ import static com.adamroughton.consentus.Util.*;
 import static org.junit.Assert.*;
 
 @RunWith(MockitoJUnitRunner.class)
-public class TestEventListener {
+public class TestEventListenerSingleSocket {
 	
 	private ExecutorService _executor;
 	
@@ -66,7 +66,7 @@ public class TestEventListener {
 		
 		SocketPackage socketPackage = SocketPackage.create(_zmqSocket)
 				.setMessageOffsets(0, 0);
-		_eventListener = new EventListener(socketPackage, _disruptor, _zmqContext, new FatalExceptionCallback() {
+		_eventListener = new EventListener(socketPackage, _disruptor, new FatalExceptionCallback() {
 			
 			@Override
 			public void signalFatalException(Throwable exception) {

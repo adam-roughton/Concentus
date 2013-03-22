@@ -51,7 +51,7 @@ public class EventSender {
 	public boolean send(final SocketPackage socketPackage, 
 			byte[] outgoingBuffer) {
 		return send(socketPackage.getSocket(),
-				socketPackage.getMessagePartPolicy(),
+				socketPackage.getMessageFrameBufferMapping(),
 				outgoingBuffer);
 	}
 	
@@ -59,18 +59,18 @@ public class EventSender {
 	 * Attempts to send a pending event from the outgoing buffer, succeeding
 	 * only if the socket is ready.
 	 * @param socket the socket to send the event on
-	 * @param msgPartOffsets the message part policy to apply for sending the message
+	 * @param mapping the message frame mapping to apply for sending the message
 	 * @param outgoingBuffer the buffer to send from
 	 * @return whether an event was sent.
 	 */
 	public boolean send(final ZMQ.Socket socket,
-			MessagePartBufferPolicy msgPartOffsets,
+			MessageFrameBufferMapping mapping,
 			byte[] outgoingBuffer) {
-		if (msgPartOffsets.getMinReqBufferSize() > outgoingBuffer.length - _msgOffset) {
+		if (mapping.getMinReqBufferSize() > outgoingBuffer.length - _msgOffset) {
 			throw new IllegalArgumentException(String.format(
-					"The message part buffer policy requires a buffer size (%d) greater than" +
+					"The message frame buffer mapping requires a buffer size (%d) greater than" +
 					" the underlying buffer of this sender (%d - note %d reserved for flags).", 
-					msgPartOffsets.getMinReqBufferSize(),
+					mapping.getMinReqBufferSize(),
 					outgoingBuffer.length - _msgOffset,
 					_msgOffset));
 		}
@@ -78,7 +78,7 @@ public class EventSender {
 		// only send if the event is valid
 		if (!_header.isValid(outgoingBuffer)) return false;
 		
-		int partCount = msgPartOffsets.partCount();
+		int partCount = mapping.partCount();
 		int offset;
 		byte[] msgPart;
 		int zmqFlag;
@@ -86,13 +86,13 @@ public class EventSender {
 		for (int i = 0; i < partCount; i++) {
 			// for every msg part that is not the last one
 			if (i < partCount - 1) {
-				int reqLength = msgPartOffsets.getOffset(i + 1) - msgPartOffsets.getOffset(i);
+				int reqLength = mapping.getOffset(i + 1) - mapping.getOffset(i);
 				msgPart = getBuffer(reqLength);
 				offset = msgPart.length - reqLength;
-				System.arraycopy(outgoingBuffer, msgPartOffsets.getOffset(i) + _msgOffset, msgPart, offset, reqLength);
+				System.arraycopy(outgoingBuffer, mapping.getOffset(i) + _msgOffset, msgPart, offset, reqLength);
 				zmqFlag = ZMQ.SNDMORE | _baseZmqFlag;
 			} else {
-				offset = msgPartOffsets.getOffset(i) + _msgOffset;
+				offset = mapping.getOffset(i) + _msgOffset;
 				msgPart = outgoingBuffer;
 				zmqFlag = _baseZmqFlag;
 			}

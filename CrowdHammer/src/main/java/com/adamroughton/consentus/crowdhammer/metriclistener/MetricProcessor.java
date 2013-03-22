@@ -15,9 +15,13 @@
  */
 package com.adamroughton.consentus.crowdhammer.metriclistener;
 
-import com.adamroughton.consentus.messaging.MessageBytesUtil;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+
 import com.adamroughton.consentus.messaging.events.EventType;
 import com.adamroughton.consentus.messaging.events.StateMetricEvent;
+import com.adamroughton.consentus.messaging.patterns.EventReader;
+import com.adamroughton.consentus.messaging.patterns.SubRecvQueueReader;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
@@ -25,48 +29,30 @@ import com.lmax.disruptor.collections.Histogram;
 
 public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 
+	private final SubRecvQueueReader _subRecvQueueReader;
 	private final StateMetricEvent _metricEvent = new StateMetricEvent();
 	private long _lastUpdateId = -1;
 	private Histogram _histogram;
 	
+	private long _lastPrintTime = -1;
+	
+	public MetricProcessor(final SubRecvQueueReader subRecvQueueReader) {
+		_subRecvQueueReader = Objects.requireNonNull(subRecvQueueReader);
+	}
+	
 	@Override
-	public void onEvent(byte[] event, long sequence, boolean endOfBatch)
+	public void onEvent(byte[] eventBytes, long sequence, boolean endOfBatch)
 			throws Exception {
-		if (!isValid(event)) {
-			return;
-		}
+		int eventType = _subRecvQueueReader.getEventType(eventBytes);
+		if (eventType == EventType.STATE_METRIC.getId()) {
+			_subRecvQueueReader.read(eventBytes, _metricEvent, new EventReader<StateMetricEvent>() {
 
-		if (MessageBytesUtil.readInt(event, 1) == EventType.STATE_METRIC.getId()) {
-			_metricEvent.setBackingArray(event, 1);
-			long actionsProcessed = _metricEvent.getInputActionsProcessed();
-			long duration = _metricEvent.getDurationInMs();
-			
-			double throughput = 0;
-			if (duration > 0) {
-				throughput = ((double) actionsProcessed / (double) duration) * 1000;
-				//_histogram.addObservation(throughput);
-			}
-			
-			long missedEventCount = 0;
-			long updateId = _metricEvent.getUpdateId();
-			if (updateId > _lastUpdateId + 1) {
-				missedEventCount = updateId - _lastUpdateId;
-			}
-			_lastUpdateId = updateId;
-			
-			if (sequence % 100 == 0) {
-				Log.info(String.format("Throughput: %f per second. Missed event count: %d", throughput, missedEventCount));
+				@Override
+				public void read(StateMetricEvent event) {
+					processStateMetric(event);
+				}
 				
-				
-				/*Log.info(String.format("Mean: %s, Max: %d, Min: %d, 99.00%%: %d, 99.99%%: %d", 
-						_histogram.getMean().toEngineeringString(),
-						_histogram.getMax(),
-						_histogram.getMin(),
-						_histogram.getTwoNinesUpperBound(),
-						_histogram.getFourNinesUpperBound()
-						));*/
-			}
-			_metricEvent.releaseBackingArray();
+			});
 		}
 	}
 
@@ -81,12 +67,30 @@ public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 
 	@Override
 	public void onShutdown() {
-		// TODO Auto-generated method stub
-		
 	}
 	
-	private static boolean isValid(byte[] event) {
-		return !MessageBytesUtil.readFlagFromByte(event, 0, 0);
+	private void processStateMetric(final StateMetricEvent event) {
+		long actionsProcessed = event.getInputActionsProcessed();
+		long duration = event.getDurationInMs();
+		
+		double throughput = 0;
+		if (duration > 0) {
+			throughput = ((double) actionsProcessed / (double) duration) * 1000;
+			_histogram.addObservation((long)throughput);
+		}
+		
+		long missedEventCount = 0;
+		long updateId = event.getUpdateId();
+		if (updateId > _lastUpdateId + 1) {
+			missedEventCount = updateId - _lastUpdateId;
+		}
+		_lastUpdateId = updateId;
+		
+		if (System.nanoTime() > _lastPrintTime + TimeUnit.SECONDS.toNanos(1)) {
+			Log.info(String.format("Throughput: %f per second. Missed event count: %d", throughput, missedEventCount));
+			
+			_lastPrintTime = System.nanoTime();
+		}
 	}
 
 }

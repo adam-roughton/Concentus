@@ -2,18 +2,18 @@ package com.adamroughton.consentus.messaging.patterns;
 
 import com.adamroughton.consentus.messaging.EventProcessingHeader;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
-import com.adamroughton.consentus.messaging.MessagePartBufferPolicy;
+import com.adamroughton.consentus.messaging.MessageFrameBufferMapping;
 import com.adamroughton.consentus.messaging.events.ByteArrayBackedEvent;
 import com.adamroughton.consentus.messaging.events.EventType;
 import com.lmax.disruptor.dsl.Disruptor;
 
-public class PubSocketQueue extends SendQueueBase {
+public class PubSendQueueWriter extends SendQueueBase {
 	
 	private EventType _eventTypeCache = null;
 	
-	public PubSocketQueue(final EventProcessingHeader header,
+	public PubSendQueueWriter(final EventProcessingHeader header,
 			final Disruptor<byte[]> backingDisruptor) {
-		super(header, backingDisruptor, new MessagePartBufferPolicy(0, 4));
+		super(header, backingDisruptor, new MessageFrameBufferMapping(0, 4));
 	}
 	
 	public <TEvent extends ByteArrayBackedEvent> void send(EventType eventType, TEvent eventHelper, EventWriter<TEvent> writer) {

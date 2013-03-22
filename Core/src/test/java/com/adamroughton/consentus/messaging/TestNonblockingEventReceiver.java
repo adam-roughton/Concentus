@@ -22,6 +22,7 @@ import org.junit.runner.RunWith;
 import org.mockito.*;
 import org.mockito.runners.MockitoJUnitRunner;
 import org.zeromq.ZMQ;
+import org.zeromq.ZMQException;
 
 import com.adamroughton.consentus.messaging.NonblockingEventReceiver;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
@@ -126,7 +127,7 @@ public class TestNonblockingEventReceiver {
 		_gatingSeq.set(0);
 		
 		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
-			.thenReturn(0);
+			.thenReturn(-1);
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
@@ -172,7 +173,7 @@ public class TestNonblockingEventReceiver {
 		_gatingSeq.set(0);
 		
 		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
-			.thenReturn(-1);
+			.thenThrow(new ZMQException("Random error", 4));
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
@@ -191,7 +192,7 @@ public class TestNonblockingEventReceiver {
 		
 		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
 			.then(fakeRecv(expectedIdBytes))
-			.thenReturn(-1);
+			.thenThrow(new ZMQException("Random error", 4));
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(true)
 			.thenReturn(false);
@@ -336,7 +337,7 @@ public class TestNonblockingEventReceiver {
 		_gatingSeq.set(0);
 		
 		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
-			.thenReturn(0);
+			.thenReturn(-1);
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		

@@ -23,6 +23,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
 import com.adamroughton.consentus.ConsentusProcessCallback;
+import com.adamroughton.consentus.Constants;
+import com.adamroughton.consentus.Util;
 import com.adamroughton.consentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.consentus.cluster.worker.Cluster;
 import com.adamroughton.consentus.crowdhammer.CrowdHammerService;
@@ -30,11 +32,12 @@ import com.adamroughton.consentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.consentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
 import com.adamroughton.consentus.messaging.EventListener;
+import com.adamroughton.consentus.messaging.EventProcessingHeader;
+import com.adamroughton.consentus.messaging.SocketManager;
 import com.adamroughton.consentus.messaging.SocketPackage;
 import com.adamroughton.consentus.messaging.SocketSettings;
 import com.adamroughton.consentus.messaging.events.EventType;
-import com.esotericsoftware.minlog.Log;
-import com.lmax.disruptor.EventFactory;
+import com.adamroughton.consentus.messaging.patterns.SubRecvQueueReader;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 import com.lmax.disruptor.dsl.Disruptor;
@@ -45,24 +48,32 @@ public class MetricListenerService implements CrowdHammerService {
 	
 	public static final String SERVICE_TYPE = "MetricListener";
 	
-	//private static final Logger LOG = Logger.getLogger(MetricListenerService.class.getName());
+	private static final Logger LOG = Logger.getLogger(MetricListenerService.class.getName());
 	
-	private ExecutorService _executor;
-	private Disruptor<byte[]> _inputDisruptor;
+	private final ExecutorService _executor = Executors.newCachedThreadPool();
+	private final SocketManager _socketManager;
+	private final Disruptor<byte[]> _inputDisruptor;
+	private final EventProcessingHeader _header;
 	
+	private MetricProcessor _metricProcessor;
 	private EventListener _eventListener;
 	private Future<?> _eventListenerTask;
-	private MetricProcessor _metricProcessor;
 	
-	private ZMQ.Context _zmqContext;
-	private ZMQ.Socket _subSocket;
+	private int _subSocketId;
 	
 	private CrowdHammerConfiguration _config;
 	private InetAddress _networkAddress;
 	private ConsentusProcessCallback _exHandler;
 	
-	private SocketSettings _subSocketSettings;
-
+	public MetricListenerService() {
+		_socketManager = new SocketManager();
+		
+		_inputDisruptor = new Disruptor<>(Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), _executor, 
+				new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
+		
+		_header = new EventProcessingHeader(0, 1);
+	}
+	
 	@Override
 	public String name() {
 		return "Metric Listener Service";
@@ -71,17 +82,17 @@ public class MetricListenerService implements CrowdHammerService {
 	@Override
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
 			Cluster cluster) throws Exception {
-		//LOG.info(String.format("Entering state %s", newClusterState.name()));
+		LOG.info(String.format("Entering state %s", newClusterState.name()));
 		if (newClusterState == CrowdHammerServiceState.SET_UP_TEST) {
-			setUpTest(cluster);
+			onSetUpTest(cluster);
 		} else if (newClusterState == CrowdHammerServiceState.CONNECT_SUT) {
-			connectSUT(cluster);
+			onConnectSUT(cluster);
 		} else if (newClusterState == CrowdHammerServiceState.TEAR_DOWN) {
-			tearDown(cluster);
+			onTearDown(cluster);
 		} else if (newClusterState == CrowdHammerServiceState.SHUTDOWN) {
-			shutdown(cluster);
+			onShutdown(cluster);
 		}
-		//LOG.info("Signalling ready for next state");
+		LOG.info("Signalling ready for next state");
 		cluster.signalReady();
 	}
 
@@ -90,7 +101,6 @@ public class MetricListenerService implements CrowdHammerService {
 		return CrowdHammerServiceState.class;
 	}
 
-	@SuppressWarnings("unchecked")
 	@Override
 	public void configure(CrowdHammerConfiguration config,
 			ConsentusProcessCallback exHandler, InetAddress networkAddress) {
@@ -98,65 +108,55 @@ public class MetricListenerService implements CrowdHammerService {
 		_exHandler = exHandler;
 		_networkAddress = networkAddress;
 		
-		_executor = Executors.newCachedThreadPool();
-		_zmqContext = ZMQ.context(1);
-		
-		_inputDisruptor = new Disruptor<>(new EventFactory<byte[]>() {
-
-			@Override
-			public byte[] newInstance() {
-				return new byte[256];
-			}
-			
-		}, _executor, new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
 		_inputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Input Disruptor", exHandler));
 		
-		_metricProcessor = new MetricProcessor();
-		_inputDisruptor.handleEventsWith(_metricProcessor);
-		
 		int testMetricsSubPort = config.getServices().get(SERVICE_TYPE).getPorts().get("input");
-		_subSocketSettings = SocketSettings.create()
+		SocketSettings subSocketSettings = SocketSettings.create()
 				.bindToPort(testMetricsSubPort)
-				.subscribeTo(EventType.STATE_METRIC);	
+				.subscribeTo(EventType.STATE_METRIC);
+		_subSocketId = _socketManager.create(ZMQ.SUB, subSocketSettings);
 	}
 	
-	private void setUpTest(Cluster cluster) throws Exception {
-		_subSocket = _zmqContext.socket(ZMQ.SUB);
-		_subSocketSettings.configureSocket(_subSocket);
-		SocketPackage socketPackage = SocketPackage.create(_subSocket) 
-				.setMessageOffsets(0, 0);
-		_eventListener = new EventListener(socketPackage, _inputDisruptor.getRingBuffer(), _zmqContext, _exHandler);
+	@SuppressWarnings("unchecked")
+	private void onSetUpTest(Cluster cluster) throws Exception {
+		_socketManager.bindBoundSockets();
+		
+		SubRecvQueueReader subRecvQueueReader = new SubRecvQueueReader(_header);
+		SocketPackage socketPackage = _socketManager.createSocketPackage(_subSocketId, subRecvQueueReader.getMessageFrameBufferMapping());
+		_eventListener = new EventListener(socketPackage, _inputDisruptor.getRingBuffer(), _exHandler);
+		
+		_metricProcessor = new MetricProcessor(subRecvQueueReader);
+		_inputDisruptor.handleEventsWith(_metricProcessor);
 		
 		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _networkAddress.getHostAddress()));
 	}
 	
-	private void connectSUT(Cluster cluster) {
-		
+	private void onConnectSUT(Cluster cluster) {
 		int metricsPort = _config.getServices().get(CanonicalStateService.SERVICE_TYPE).getPorts().get("pub");
 		for (String service : cluster.getAllServices(CanonicalStateService.SERVICE_TYPE)) {
-			_subSocket.connect(String.format("%s:%d", service, metricsPort));
+			_socketManager.connectSocket(_subSocketId, String.format("%s:%d", service, metricsPort));
 		}
 		_eventListenerTask = _executor.submit(_eventListener);
 		_inputDisruptor.start();
 	}
 	
-	private void tearDown(Cluster cluster) {
+	private void onTearDown(Cluster cluster) {
 		_eventListenerTask.cancel(true);
 		
 		// persist results to file
 		
 		_inputDisruptor.shutdown();
-		_subSocket.close();		
+		_socketManager.closeManagedSockets();		
 	}
 	
 	
-	private void shutdown(Cluster cluster) {
+	private void onShutdown(Cluster cluster) {
 		_executor.shutdownNow();
 		try {
 			_executor.awaitTermination(5, TimeUnit.SECONDS);
 		} catch (InterruptedException eInterrupted) {
 			// ignore
 		}
-		_zmqContext.term();
+		_socketManager.close();
 	}
 }

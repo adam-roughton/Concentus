@@ -17,6 +17,8 @@ package com.adamroughton.consentus.crowdhammer;
 
 import java.net.InetAddress;
 import java.util.Objects;
+import java.util.UUID;
+import java.util.logging.Logger;
 
 import com.adamroughton.consentus.ConsentusProcessCallback;
 import com.adamroughton.consentus.ConsentusService;
@@ -27,6 +29,8 @@ import com.adamroughton.consentus.crowdhammer.config.CrowdHammerConfiguration;
 
 public class ConsentusServiceAdapter implements CrowdHammerService {
 
+	private final Logger _log;
+	
 	private final Class<? extends ConsentusService> _serviceClass;
 	private Configuration _configuration;
 	private ConsentusProcessCallback _processCallback;
@@ -36,11 +40,13 @@ public class ConsentusServiceAdapter implements CrowdHammerService {
 	
 	public ConsentusServiceAdapter(final Class<? extends ConsentusService> consentusServiceClass) {
 		_serviceClass = Objects.requireNonNull(consentusServiceClass);
+		_log = Logger.getLogger(String.format("CrowdHammer wrapping '%s'", _serviceClass.getName()));
 	}
 
 	@Override
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
 			Cluster cluster) throws Exception {
+		_log.info(String.format("Entering state %s", newClusterState.name()));
 		if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
 			try {
 				_currentInstance = _serviceClass.newInstance();
@@ -51,11 +57,13 @@ public class ConsentusServiceAdapter implements CrowdHammerService {
 		}
 		ConsentusServiceState consentusState = newClusterState.getEquivalentSUTState();
 		if (consentusState != null) {
-			_currentInstance.onStateChanged(consentusState, cluster);
+			_currentInstance.onStateChanged(consentusState, new SignalReadyDisabledCluster(cluster));
 		}
 		if (newClusterState == CrowdHammerServiceState.TEAR_DOWN) {
 			_currentInstance = null;
 		}
+		_log.info("Signalling ready for next state");
+		cluster.signalReady();
 	}
 
 	@Override
@@ -75,6 +83,56 @@ public class ConsentusServiceAdapter implements CrowdHammerService {
 	@Override
 	public String name() {
 		return String.format("CrowdHammer Wrapping '%s'.", _serviceClass.getName());
+	}
+	
+	private class SignalReadyDisabledCluster implements Cluster {
+
+		private final Cluster _wrappedCluster;
+		
+		public SignalReadyDisabledCluster(final Cluster wrappedCluster) {
+			_wrappedCluster = Objects.requireNonNull(wrappedCluster);
+		}
+		
+		@Override
+		public void registerService(String serviceType, String address) {
+			_wrappedCluster.registerService(serviceType, address);
+		}
+
+		@Override
+		public String getServiceAtRandom(String serviceType) {
+			return _wrappedCluster.getServiceAtRandom(serviceType);
+		}
+
+		@Override
+		public String[] getAllServices(String serviceType) {
+			return _wrappedCluster.getAllServices(serviceType);
+		}
+
+		@Override
+		public void requestAssignment(String serviceType, byte[] requestBytes) {
+			_wrappedCluster.requestAssignment(serviceType, requestBytes);
+		}
+
+		@Override
+		public byte[] getAssignment(String serviceType) {
+			return _wrappedCluster.getAssignment(serviceType);
+		}
+
+		@Override
+		public void deleteAssignmentRequest(String serviceType) {
+			_wrappedCluster.deleteAssignmentRequest(serviceType);
+		}
+
+		@Override
+		public void signalReady() {
+			_log.info("Suppressing signal ready");
+		}
+
+		@Override
+		public UUID getMyId() {
+			return _wrappedCluster.getMyId();
+		}
+		
 	}
 
 }

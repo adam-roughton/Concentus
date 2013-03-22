@@ -16,12 +16,14 @@
 package com.adamroughton.consentus.crowdhammer;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Logger;
 import java.util.Objects;
 
 import com.adamroughton.consentus.clienthandler.ClientHandlerService;
@@ -31,8 +33,12 @@ import com.adamroughton.consentus.cluster.coordinator.ParticipatingNodes;
 import com.adamroughton.consentus.crowdhammer.worker.WorkerService;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
 
+import static com.adamroughton.consentus.crowdhammer.CrowdHammerServiceState.*;
+
 public final class TestRunner implements Runnable {
 
+	private final static Logger LOG = Logger.getLogger("CrowdHammerCoordinator");
+	
 	private final CoordinatorClusterHandle _cluster;
 	private final int _testRunDuration;
 	private final int[] _testClientCounts;
@@ -50,8 +56,7 @@ public final class TestRunner implements Runnable {
 		
 		try {			
 			for (int clientCount : _testClientCounts) {	
-				_cluster.setState(CrowdHammerServiceState.INIT_TEST);
-				while (!_cluster.waitForReady(participatingNodes));
+				setAndWait(CrowdHammerServiceState.INIT_TEST, participatingNodes);
 				
 				// get worker assignment requests
 				List<AssignmentRequest> workerAssignmentReqs = 
@@ -91,31 +96,28 @@ public final class TestRunner implements Runnable {
 					_cluster.setAssignment(ClientHandlerService.SERVICE_TYPE, UUID.fromString(req.getServiceId()), res);
 				}
 				
-				_cluster.setState(CrowdHammerServiceState.SET_UP_TEST);
-				while (!_cluster.waitForReady(participatingNodes));
-				
-				_cluster.setState(CrowdHammerServiceState.CONNECT_SUT);
-				while (!_cluster.waitForReady(participatingNodes));
-				
-				_cluster.setState(CrowdHammerServiceState.START_SUT);
-				while (!_cluster.waitForReady(participatingNodes));
-				
-				_cluster.setState(CrowdHammerServiceState.EXEC_TEST);
-				while (!_cluster.waitForReady(participatingNodes));
+				for (CrowdHammerServiceState state : Arrays.asList(SET_UP_TEST, CONNECT_SUT, START_SUT, EXEC_TEST)) {
+					setAndWait(state, participatingNodes);
+				}
 				
 				Thread.sleep(TimeUnit.SECONDS.toMillis(_testRunDuration));
 				
-				_cluster.setState(CrowdHammerServiceState.STOP_SENDING_EVENTS);
-				while (!_cluster.waitForReady(participatingNodes));
-				
-				_cluster.setState(CrowdHammerServiceState.TEAR_DOWN);
-				while (!_cluster.waitForReady(participatingNodes));
+				for (CrowdHammerServiceState state : Arrays.asList(STOP_SENDING_EVENTS, TEAR_DOWN)) {
+					setAndWait(state, participatingNodes);
+				}
 			}
-			_cluster.setState(CrowdHammerServiceState.SHUTDOWN);
-			while (!_cluster.waitForReady(participatingNodes));
+			setAndWait(SHUTDOWN, participatingNodes);
 		} catch (InterruptedException eInterrupted) {
 			System.out.println("Test Interrupted");
 		}		
+	}
+	
+	private void setAndWait(CrowdHammerServiceState newState, ParticipatingNodes participatingNodes) {
+		LOG.info(String.format("Setting state to %s", newState.name()));
+		_cluster.setState(newState);
+		LOG.info("Waiting for nodes...");
+		while (!_cluster.waitForReady(participatingNodes));
+		LOG.info("All nodes ready, proceeding...");
 	}
 	
 	private static class WorkerAllocation {

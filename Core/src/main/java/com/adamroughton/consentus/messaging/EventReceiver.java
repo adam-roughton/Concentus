@@ -18,6 +18,7 @@ package com.adamroughton.consentus.messaging;
 import java.util.Objects;
 
 import org.zeromq.ZMQ;
+import org.zeromq.ZMQException;
 
 public class EventReceiver {
 
@@ -47,7 +48,7 @@ public class EventReceiver {
 	public boolean recv(final SocketPackage socketPackage, 
 			final byte[] eventBuffer) {
 		return recv(socketPackage.getSocket(), 
-				socketPackage.getMessagePartPolicy(), 
+				socketPackage.getMessageFrameBufferMapping(), 
 				socketPackage.getSocketId(), 
 				eventBuffer);
 	}
@@ -56,43 +57,43 @@ public class EventReceiver {
 	 * Receives an event on the given socket, filling the given
 	 * event buffer as per the given message parts policy.
 	 * @param socket the socket to receive on
-	 * @param msgPartPolicy the message part policy to apply to incoming messages
+	 * @param mapping the message frame mapping to apply to incoming messages
 	 * @param socketId the socket ID to write into the header of incoming messages
 	 * @param eventBuffer the buffer to place the event in
 	 * @return whether an event was placed in the buffer
 	 */
 	public boolean recv(final ZMQ.Socket socket,
-			MessagePartBufferPolicy msgPartPolicy,
+			MessageFrameBufferMapping mapping,
 			int socketId,
 			final byte[] eventBuffer) {		
 		int msgOffsetIndex = 0;
-		int expMsgParts = msgPartPolicy.partCount();
+		int expMsgParts = mapping.partCount();
 		int offset;
 		boolean isValid = true;
 		
 		// get the first offset, or use a default if the policy is not valid
-		if (msgPartPolicy.getMinReqBufferSize() > eventBuffer.length - _msgOffset) {
+		if (mapping.getMinReqBufferSize() > eventBuffer.length - _msgOffset) {
 			offset = _msgOffset;
 			isValid = false;
 		} else if (expMsgParts == 0) {
 			offset = _msgOffset;
 		} else {
-			offset = _msgOffset + msgPartPolicy.getOffset(0);
+			offset = _msgOffset + mapping.getOffset(0);
 		}
 		
 		// check if we have any messages waiting
-		int recvdAmount = socket.recv(eventBuffer, offset, eventBuffer.length - offset, _baseZmqFlag);
+		int recvdAmount = doRecv(socket, eventBuffer, offset, eventBuffer.length - offset, _baseZmqFlag);
 		if (recvdAmount == 0) {
+			// no message ready
 			return false;
-		} else {
-			// now we act on the validity of the message
+		} else {		
 			if (recvdAmount == -1) {
 				isValid = false;
 			}
 			
 			while(isValid && socket.hasReceiveMore() && ++msgOffsetIndex < expMsgParts) {
-				offset = _msgOffset + msgPartPolicy.getOffset(msgOffsetIndex);
-				recvdAmount = socket.recv(eventBuffer, offset, eventBuffer.length - offset, _baseZmqFlag);
+				offset = _msgOffset + mapping.getOffset(msgOffsetIndex);
+				recvdAmount = doRecv(socket, eventBuffer, offset, eventBuffer.length - offset, _baseZmqFlag);
 				if (recvdAmount == -1) {
 					isValid = false;
 				}
@@ -110,6 +111,16 @@ public class EventReceiver {
 			_header.setIsValid(isValid, eventBuffer);
 			_header.setSocketId(socketId, eventBuffer);
 			return true;
+		}
+	}
+	
+	private int doRecv(ZMQ.Socket socket, byte[] eventBuffer, int offset, int length, int zmqFlags) {
+		try {
+			int recvAmount = socket.recv(eventBuffer, offset, eventBuffer.length - offset, _baseZmqFlag);
+			return recvAmount == -1? 0 : recvAmount;
+		} catch (ZMQException eZmq) {
+			// if we get an exception, there was an error besides EAGAIN
+			return -1;
 		}
 	}
 	

@@ -25,15 +25,16 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.consentus.Constants;
 import com.adamroughton.consentus.FatalExceptionCallback;
-import com.adamroughton.consentus.messaging.MessageBytesUtil;
 import com.adamroughton.consentus.messaging.events.ClientHandlerEntry;
 import com.adamroughton.consentus.messaging.events.EventType;
 import com.adamroughton.consentus.messaging.events.StateInputEvent;
 import com.adamroughton.consentus.messaging.events.StateMetricEvent;
 import com.adamroughton.consentus.messaging.events.StateUpdateEvent;
 import com.adamroughton.consentus.messaging.events.StateUpdateInfoEvent;
+import com.adamroughton.consentus.messaging.patterns.EventReader;
 import com.adamroughton.consentus.messaging.patterns.EventWriter;
-import com.adamroughton.consentus.messaging.patterns.PubSocketQueue;
+import com.adamroughton.consentus.messaging.patterns.PubSendQueueWriter;
+import com.adamroughton.consentus.messaging.patterns.SubRecvQueueReader;
 import com.lmax.disruptor.AlertException;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.RingBuffer;
@@ -50,11 +51,12 @@ public class StateProcessor implements EventProcessor {
 	
 	private final StateLogic _stateLogic;
 	private final RingBuffer<byte[]> _inputRingBuffer;
-	private final PubSocketQueue _pubQueue;
+	private final SequenceBarrier _inputBarrier;
+	private final SubRecvQueueReader _subRecvQueueReader;
+	private final PubSendQueueWriter _pubSendQueueWriter;
 	private final FatalExceptionCallback _exCallback;
 
 	private final Sequence _sequence;
-	private final SequenceBarrier _barrier;
 	
 	private final Int2LongMap _clientHandlerEventTracker;
 	
@@ -69,17 +71,19 @@ public class StateProcessor implements EventProcessor {
 	public StateProcessor(
 			StateLogic stateLogic,
 			RingBuffer<byte[]> inputRingBuffer,
-			PubSocketQueue pubQueue, 
-			SequenceBarrier barrier,
+			SequenceBarrier inputBarrier,
+			SubRecvQueueReader subRecvQueueReader,
+			PubSendQueueWriter pubSendQueueWriter, 
 			FatalExceptionCallback exceptionCallback) {
 		_stateLogic = Objects.requireNonNull(stateLogic);
 		_inputRingBuffer = Objects.requireNonNull(inputRingBuffer);
-		_pubQueue = Objects.requireNonNull(pubQueue);
+		_inputBarrier = Objects.requireNonNull(inputBarrier);
+		_subRecvQueueReader = Objects.requireNonNull(subRecvQueueReader);
+		_pubSendQueueWriter = Objects.requireNonNull(pubSendQueueWriter);
 		_exCallback = Objects.requireNonNull(exceptionCallback);
 
 		_clientHandlerEventTracker = new Int2LongOpenHashMap(50);
 		
-		_barrier = Objects.requireNonNull(barrier);
 		_sequence = new Sequence();
 	}
 
@@ -88,7 +92,7 @@ public class StateProcessor implements EventProcessor {
 		if (!_running.compareAndSet(false, true)) {
 			throw new IllegalStateException("The state processor can only be started once.");
 		}
-		_barrier.clearAlert();
+		_inputBarrier.clearAlert();
 		
 		_lastTickTime = System.currentTimeMillis();
 		_simTime = 0;
@@ -101,11 +105,21 @@ public class StateProcessor implements EventProcessor {
 			try {
 				tickIfNeeded();
 				
-				final long availableSequence = _barrier.waitFor(nextSequence, 
+				final long availableSequence = _inputBarrier.waitFor(nextSequence, 
 						getTimeUntilNextTick(), TimeUnit.MILLISECONDS);
 				while (nextSequence <= availableSequence) {
 					byte[] nextInput = _inputRingBuffer.get(nextSequence++);
-					processInput(nextInput);
+					boolean wasValid = _subRecvQueueReader.read(nextInput, _inputEvent, new EventReader<StateInputEvent>() {
+
+						@Override
+						public void read(StateInputEvent event) {
+							processInput(event);
+						}
+						
+					});
+					if (!wasValid) {
+						_eventErrorCount++;
+					}
 				}
 				_sequence.set(availableSequence);
 				
@@ -127,7 +141,7 @@ public class StateProcessor implements EventProcessor {
 	@Override
 	public void halt() {
 		_running.set(false);
-		_barrier.alert();
+		_inputBarrier.alert();
 	}
 	
 	private void tickIfNeeded() {
@@ -162,25 +176,18 @@ public class StateProcessor implements EventProcessor {
 		return remainingTime;
 	}
 	
-	private void processInput(byte[] input) {
-		// check that the error flag is not set
-		if (MessageBytesUtil.readFlagFromByte(input, 0, 0)) {
-			_eventErrorCount++;
-			return;
-		}
-		
-		_inputEvent.setBackingArray(input, 1);
+	private void processInput(StateInputEvent event) {
 		// read header (client handler) etc
-		int clientHandlerId = _inputEvent.getClientHandlerId();
-		long inputId = _inputEvent.getInputId();
+		int clientHandlerId = event.getClientHandlerId();
+		long inputId = event.getInputId();
 		_clientHandlerEventTracker.put(clientHandlerId, inputId);
 		
 		// get input bytes
-		_stateLogic.collectInput(_inputEvent.getInputBuffer());
+		_stateLogic.collectInput(event.getInputBuffer());
 	}
 	
 	private void sendUpdateEvent(final long updateId, final long simTime) {
-		_pubQueue.send(EventType.STATE_UPDATE, _updateEvent, new EventWriter<StateUpdateEvent>() {
+		_pubSendQueueWriter.send(EventType.STATE_UPDATE, _updateEvent, new EventWriter<StateUpdateEvent>() {
 
 			@Override
 			public boolean write(StateUpdateEvent event, long sequence) {
@@ -194,7 +201,7 @@ public class StateProcessor implements EventProcessor {
 	}
 	
 	private void sendMetricEvent(final long updateId, final long timeSinceLastInMs) {
-		_pubQueue.send(EventType.STATE_METRIC, _metricEvent, new EventWriter<StateMetricEvent>() {
+		_pubSendQueueWriter.send(EventType.STATE_METRIC, _metricEvent, new EventWriter<StateMetricEvent>() {
 
 			@Override
 			public boolean write(StateMetricEvent event, long sequence) {
@@ -214,7 +221,7 @@ public class StateProcessor implements EventProcessor {
 		// update, we attempt to fill each update with the maximum number of entries.
 		final IntIterator handlerIdIterator = _clientHandlerEventTracker.keySet().iterator();
 		while(handlerIdIterator.hasNext()) {
-			_pubQueue.send(EventType.STATE_INFO, _updateInfoEvent, new EventWriter<StateUpdateInfoEvent>() {
+			_pubSendQueueWriter.send(EventType.STATE_INFO, _updateInfoEvent, new EventWriter<StateUpdateInfoEvent>() {
 	
 				@Override
 				public boolean write(StateUpdateInfoEvent event, long sequence) {

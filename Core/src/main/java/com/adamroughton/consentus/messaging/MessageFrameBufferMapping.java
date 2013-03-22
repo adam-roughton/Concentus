@@ -29,7 +29,7 @@ import java.util.Objects;
  * @author Adam Roughton
  *
  */
-public final class MessagePartBufferPolicy {
+public final class MessageFrameBufferMapping {
 
 	private final int[] _offsets;
 	private final int _minReqBufferSize;
@@ -41,7 +41,7 @@ public final class MessagePartBufferPolicy {
 	 * @param messagePartOffsets
 	 * @throws IllegalArgumentException if any of the offsets are negative
 	 */
-	public MessagePartBufferPolicy(final int... messagePartOffsets) {
+	public MessageFrameBufferMapping(final int... messagePartOffsets) {
 		int minBuffSize = 0;
 		int lastOffset = 0;
 		for (int offset : messagePartOffsets) {
@@ -55,7 +55,7 @@ public final class MessagePartBufferPolicy {
 		_labelLookup = new Object2IntArrayMap<>(messagePartOffsets.length);
 	}
 	
-	public MessagePartBufferPolicy(final NamedOffset... messagePartOffsets) {
+	public MessageFrameBufferMapping(final NamedOffset... messagePartOffsets) {
 		this(getOffsets(messagePartOffsets));
 		String[] labels = getLabels(messagePartOffsets);
 		for (int i = 0; i < labels.length; i++) {
@@ -67,7 +67,7 @@ public final class MessagePartBufferPolicy {
 	 * Instantiates this policy with the properties of the given policy
 	 * @param policyToClone
 	 */
-	public MessagePartBufferPolicy(final MessagePartBufferPolicy policyToClone) {
+	public MessageFrameBufferMapping(final MessageFrameBufferMapping policyToClone) {
 		Objects.requireNonNull(policyToClone);
 		_offsets = Arrays.copyOf(policyToClone._offsets, policyToClone._offsets.length);
 		_minReqBufferSize = policyToClone._minReqBufferSize;
@@ -117,26 +117,15 @@ public final class MessagePartBufferPolicy {
 		}
 	}
 	
-	public int getPartLength(int partIndex, int bufferOffset, int bufferLength) {
-		if (_offsets.length == 0) {
-			return bufferLength - bufferOffset;
-		} else if (partIndex < _offsets.length - 1) {
-			return _offsets[partIndex + 1] - _offsets[partIndex];
-		} else {
-			return bufferLength - bufferOffset - _offsets[partIndex];
-		}
+	public int getIntermediatePartLength(int partIndex)
+		throws IllegalArgumentException {
+		if (partIndex >= _offsets.length - 1)
+			throw new IllegalArgumentException("The part index given does not map to an intermediate message part.");
+		return _offsets[partIndex + 1] - _offsets[partIndex];
 	}
 	
-	public int getPartLength(int partIndex, int bufferLength) {
-		return getPartLength(partIndex, 0, bufferLength);
-	}
-	
-	public int getPartLength(int partIndex, int bufferOffset, byte[] buffer) {
-		return getPartLength(partIndex, bufferOffset, buffer.length);
-	}
-	
-	public int getPartLength(int partIndex, byte[] buffer) {
-		return getPartLength(partIndex, buffer.length);
+	public int getContentLength(int bufferOffset, int bufferLength) {
+		return bufferLength - bufferOffset - getContentOffset();
 	}
 	
 	/**
@@ -172,7 +161,7 @@ public final class MessagePartBufferPolicy {
 			return false;
 		if (getClass() != obj.getClass())
 			return false;
-		MessagePartBufferPolicy other = (MessagePartBufferPolicy) obj;
+		MessageFrameBufferMapping other = (MessageFrameBufferMapping) obj;
 		if (_minReqBufferSize != other._minReqBufferSize)
 			return false;
 		if (!Arrays.equals(_offsets, other._offsets))

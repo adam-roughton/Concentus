@@ -20,13 +20,15 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 
+import jline.internal.Log;
+
 import org.zeromq.ZMQ;
 
 import com.adamroughton.consentus.Util;
 import com.adamroughton.consentus.messaging.EventProcessingHeader;
 import com.adamroughton.consentus.messaging.EventReceiver;
 import com.adamroughton.consentus.messaging.EventSender;
-import com.adamroughton.consentus.messaging.MessagePartBufferPolicy;
+import com.adamroughton.consentus.messaging.MessageFrameBufferMapping;
 import com.adamroughton.consentus.messaging.events.ClientInputEvent;
 import com.adamroughton.consentus.messaging.events.ClientUpdateEvent;
 import com.adamroughton.consentus.messaging.events.EventType;
@@ -50,6 +52,7 @@ public class ClientReactor implements Runnable {
 	private final RingBuffer<byte[]> _metricSendQueue;
 	private final SequenceBarrier _metricSendBarrier;
 	
+	private final EventProcessingHeader _header;
 	private final EventSender _sender;
 	private final EventReceiver _receiver;
 	
@@ -68,9 +71,9 @@ public class ClientReactor implements Runnable {
 		_metricSendQueue = Objects.requireNonNull(metricSendQueue);
 		_metricSendBarrier = Objects.requireNonNull(metricSendBarrier);
 		
-		EventProcessingHeader header = new EventProcessingHeader(0, 0);
-		_sender = new EventSender(header, false);
-		_receiver = new EventReceiver(header, true);
+		_header = new EventProcessingHeader(0, 1);
+		_sender = new EventSender(_header, false);
+		_receiver = new EventReceiver(_header, true);
 	}
 	
 	public void halt() {
@@ -91,10 +94,10 @@ public class ClientReactor implements Runnable {
 		_isSendingInput = true;
 		
 		byte[] messageBuffer = new byte[MSG_BUFFER_LENGTH];
-		MessagePartBufferPolicy msgPartPolicy = new MessagePartBufferPolicy(0, 4);
+		MessageFrameBufferMapping msgPartPolicy = new MessageFrameBufferMapping(0);
 		long nextMetricTime = 0;
 		
-		long currentClientIndex = 0;
+		long currentClientIndex = -1;
 		long now;
 		while(_isRunning) {
 			now = System.nanoTime();
@@ -107,35 +110,41 @@ public class ClientReactor implements Runnable {
 			// the processing time for all clients is less than the tick time
 			
 			// get next client
-			Client client = _clients.get(currentClientIndex++ & _clientLengthMask);
+			Client client = _clients.get(++currentClientIndex & _clientLengthMask);
 			if (client.isActive()) {
 				long nextSendTime = client.getNextSendTimeInNanos();
 				
 				// recv events
 				ZMQ.Socket socket = client.getSocket();
 				while(_receiver.recv(socket, msgPartPolicy, 0, messageBuffer)) {
-					processClientUpdate(messageBuffer);
+					processClientRecv(messageBuffer);
 				}
 				
 				// send outgoing event
 				if (_isSendingInput) {
 					LockSupport.parkNanos(getWaitTime(nextSendTime));
 					createClientEvent(client, messageBuffer);
-					_sender.send(socket, msgPartPolicy, messageBuffer);
+					if (!_sender.send(socket, msgPartPolicy, messageBuffer)){
+						Log.warn(String.format("Failed to send client input event: clientId = %d, clientIndex = %d", 
+								client.getClientId(), 
+								currentClientIndex));
+					} else {
+						client.advanceSendTime();
+					}
 				}
 			}
 		}
 	}
 	
-	private void processClientUpdate(byte[] incomingBuffer) {
+	private void processClientRecv(byte[] incomingBuffer) {
 		// create metrics
 	}
 	
 	private void createClientEvent(final Client client, final byte[] outgoingBuffer) {
 		long sendTime = System.nanoTime();
 		long actionId = client.addSentAction(sendTime);
-		Util.writeSubscriptionBytes(EventType.CLIENT_INPUT, outgoingBuffer, 0);
-		_inputEvent.setBackingArray(outgoingBuffer, 4);
+		_header.setIsValid(true, outgoingBuffer);
+		_inputEvent.setBackingArray(outgoingBuffer, _header.getEventOffset());
 		try {
 			_inputEvent.setClientId(client.getClientId());
 			_inputEvent.setClientActionId(actionId);			

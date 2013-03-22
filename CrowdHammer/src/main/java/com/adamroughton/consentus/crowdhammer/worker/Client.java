@@ -111,4 +111,7 @@ public final class Client {
 		_clientHandlerConnString = connString;
 	}
 	
+	public boolean hasConnected() {
+		return _clientId != -1;
+	}
 }
