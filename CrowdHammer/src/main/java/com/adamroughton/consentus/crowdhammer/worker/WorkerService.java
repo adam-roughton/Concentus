@@ -34,13 +34,17 @@ import com.adamroughton.consentus.cluster.worker.Cluster;
 import com.adamroughton.consentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.consentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.consentus.crowdhammer.config.CrowdHammerConfiguration;
-import com.adamroughton.consentus.messaging.EventProcessingHeader;
+import com.adamroughton.consentus.messaging.EventHeader;
 import com.adamroughton.consentus.messaging.EventReceiver;
 import com.adamroughton.consentus.messaging.EventSender;
+import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
-import com.adamroughton.consentus.messaging.MessageFrameBufferMapping;
+import com.adamroughton.consentus.messaging.OutgoingEventHeader;
 import com.adamroughton.consentus.messaging.events.ClientConnectEvent;
 import com.adamroughton.consentus.messaging.events.ConnectResponseEvent;
+import com.adamroughton.consentus.messaging.patterns.EventPattern;
+import com.adamroughton.consentus.messaging.patterns.EventReader;
+import com.adamroughton.consentus.messaging.patterns.EventWriter;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 import com.lmax.disruptor.dsl.Disruptor;
@@ -154,10 +158,11 @@ public final class WorkerService implements CrowdHammerService {
 		
 		ClientConnectEvent connectEvent = new ClientConnectEvent();
 		ConnectResponseEvent resEvent = new ConnectResponseEvent();
-		EventProcessingHeader header = new EventProcessingHeader(0, 1);
-		EventSender sender = new EventSender(header, false);
-		EventReceiver receiver = new EventReceiver(header, false);
-		MessageFrameBufferMapping msgPartOffsets = new MessageFrameBufferMapping(0);
+		IncomingEventHeader recvHeader = new IncomingEventHeader(0, 1);
+		OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, 1);
+		EventSender sender = new EventSender(sendHeader, false);
+		EventReceiver receiver = new EventReceiver(recvHeader, false);
+
 		byte[] buffer = new byte[Constants.MSG_BUFFER_LENGTH];
 		
 		int nextConnString = 0;
@@ -173,35 +178,36 @@ public final class WorkerService implements CrowdHammerService {
 				clientSocket.connect(connString);
 				
 				// send a connect event
-				header.setIsValid(true, buffer);
-				connectEvent.setBackingArray(buffer, header.getEventOffset());
-				boolean success = false;
-				try {
-					connectEvent.setAuthToken("Auth".getBytes(), 0);
-					success = sender.send(clientSocket, msgPartOffsets, buffer);
-					if (!success) {
-						throw new RuntimeException("Failed to send connect message for client. Aborting test");
+				EventPattern.writeContent(buffer, sendHeader.getEventOffset(), sendHeader, connectEvent, 
+						new EventWriter<ClientConnectEvent>() {
+
+					@Override
+					public void write(ClientConnectEvent event)
+							throws Exception {
+						// currently no content for connect events
 					}
-				} finally {
-					connectEvent.releaseBackingArray();
-				}
+					
+				});
+				boolean success = sender.send(clientSocket, buffer);
 				
 				// recv the connect response event
-				success = receiver.recv(clientSocket, msgPartOffsets, 0, buffer);
+				success = receiver.recv(clientSocket, 0, buffer);
 				if (!success) {
 					throw new RuntimeException("Failed to recv connect response for client. Aborting test");
 				}
-				resEvent.setBackingArray(buffer, header.getEventOffset());
-				try {
-					if (resEvent.getResponseCode() != ConnectResponseEvent.RES_OK) {
-						throw new RuntimeException(String.format("The response code for a client connection was %d, expected %d (OK). Aborting test", 
-								resEvent.getResponseCode(), ConnectResponseEvent.RES_OK));
+				final Client fixedClientRef = client;
+				EventPattern.readContent(buffer, recvHeader, resEvent, new EventReader<ConnectResponseEvent>() {
+
+					@Override
+					public void read(ConnectResponseEvent event) {
+						if (event.getResponseCode() != ConnectResponseEvent.RES_OK) {
+							throw new RuntimeException(String.format("The response code for a client connection was %d, expected %d (OK). Aborting test", 
+									event.getResponseCode(), ConnectResponseEvent.RES_OK));
+						}
+						fixedClientRef.setClientId(event.getClientIdBits());
 					}
-					client.setClientId(resEvent.getClientIdBits());
-				} finally {
-					resEvent.releaseBackingArray();
-				}
-				
+					
+				});
 				client.setIsActive(true);
 				try {
 					Thread.sleep(10);

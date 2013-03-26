@@ -24,38 +24,43 @@ public class StateUpdateEvent extends ByteArrayBackedEvent {
 	private static final int UPDATE_ID_OFFSET = 0;
 	private static final int SIM_TIME_OFFSET = 8;
 	private static final int UPDATE_BUFFER_OFFSET = 16;
+	private static final int BASE_SIZE = UPDATE_BUFFER_OFFSET;
 	
 	public StateUpdateEvent() {
 		super(EventType.STATE_UPDATE.getId());
 	}
 	
-	public long getUpdateId() {
+	public final long getUpdateId() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET));
 	}
 
-	public void setUpdateId(long updateId) {
+	public final void setUpdateId(long updateId) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET), updateId);
 	}
 
-	public long getSimTime() {
+	public final long getSimTime() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(SIM_TIME_OFFSET));
 	}
 
-	public void setSimTime(long simTime) {
+	public final void setSimTime(long simTime) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(SIM_TIME_OFFSET), simTime);
 	}
 	
-	public ByteBuffer getUpdateBuffer() {
+	public final ByteBuffer getUpdateBuffer() {
 		byte[] backingArray = getBackingArray();
 		int offset = getOffset(UPDATE_BUFFER_OFFSET);
 		return ByteBuffer.wrap(backingArray, offset, backingArray.length - offset);
 	}
 	
-	public void copyUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
+	public final void copyUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
 		byte[] backingArray = getBackingArray();
 		int updateLength = backingArray.length - UPDATE_BUFFER_OFFSET;
 		System.arraycopy(getBackingArray(), UPDATE_BUFFER_OFFSET, exBuffer, 0, 
 				length < updateLength? length : updateLength);
+	}
+	
+	public final void addUsedLength(final ByteBuffer updateBuffer) {
+		setEventSize(BASE_SIZE + getUsedLength(getOffset(UPDATE_BUFFER_OFFSET), updateBuffer));
 	}
 	
 }

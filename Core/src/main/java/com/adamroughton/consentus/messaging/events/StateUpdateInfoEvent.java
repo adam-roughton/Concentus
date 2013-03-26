@@ -23,39 +23,41 @@ public class StateUpdateInfoEvent extends ByteArrayBackedEvent {
 	private final static int ENTRY_COUNT_OFFSET = 8;
 	private final static int ENTRY_START_OFFSET = 12;
 	private final static int ENTRY_SIZE = 12;
+	private static final int BASE_SIZE = ENTRY_START_OFFSET;
 
 	public StateUpdateInfoEvent() {
 		super(EventType.STATE_INFO.getId());
 	}
 	
-	public long getUpdateId() {
+	public final long getUpdateId() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET));
 	}
 	
-	public void setUpdateId(long updateId) {
+	public final void setUpdateId(long updateId) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET), updateId);
 	}
 	
-	public int getEntryCount() {
+	public final int getEntryCount() {
 		return MessageBytesUtil.readInt(getBackingArray(), getOffset(ENTRY_COUNT_OFFSET));
 	}
 	
-	public void setEntryCount(int entryCount) {
+	public final void setEntryCount(int entryCount) {
 		MessageBytesUtil.writeInt(getBackingArray(), getOffset(ENTRY_COUNT_OFFSET), entryCount);
+		setEventSize(BASE_SIZE + entryCount * ENTRY_SIZE);
 	}
 	
-	public ClientHandlerEntry getHandlerEntry(int index) {
+	public final ClientHandlerEntry getHandlerEntry(int index) {
 		int clientHandlerId = MessageBytesUtil.readInt(getBackingArray(), getOffset(getEntryOffset(index)));
 		long highestSeq = MessageBytesUtil.readLong(getBackingArray(), getOffset(getEntryOffset(index) + 4));
 		return new ClientHandlerEntry(clientHandlerId, highestSeq);
 	}
 	
-	public void setHandlerEntry(int index, ClientHandlerEntry entry) {
+	public final void setHandlerEntry(int index, ClientHandlerEntry entry) {
 		MessageBytesUtil.writeInt(getBackingArray(), getOffset(getEntryOffset(index)), entry.getClientHandlerId());
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(getEntryOffset(index) + 4), entry.getHighestHandlerSeq());
 	}
 
-	private int getEntryOffset(int index) {
+	private final int getEntryOffset(int index) {
 		return ENTRY_START_OFFSET + ENTRY_SIZE * index;
 	}
 	
@@ -66,7 +68,7 @@ public class StateUpdateInfoEvent extends ByteArrayBackedEvent {
 	 * intended backing array before invoking this method.
 	 * @return the number of entries that can be written into this event
 	 */
-	public int getMaximumEntries() {
+	public final int getMaximumEntries() {
 		int availableBytes = getAvailableSize() - 12;
 		return availableBytes / ENTRY_SIZE;
 	}
@@ -78,7 +80,7 @@ public class StateUpdateInfoEvent extends ByteArrayBackedEvent {
 	 * @return the ID of the first Client Handler, or {@code -1} if no entries
 	 * are contained within this event.
 	 */
-	public int getStartingClientHandlerId() {
+	public final int getStartingClientHandlerId() {
 		if (getEntryCount() > 0) {
 			return getClientHandlerIdAtIndex(0);
 		} else {
@@ -86,11 +88,11 @@ public class StateUpdateInfoEvent extends ByteArrayBackedEvent {
 		}
 	}
 	
-	public int getClientHandlerIdAtIndex(int index) {
+	public final int getClientHandlerIdAtIndex(int index) {
 		return MessageBytesUtil.readInt(getBackingArray(), getOffset(getEntryOffset(index)));
 	}
 	
-	public long getHighestSequenceAtIndex(int index) {
+	public final long getHighestSequenceAtIndex(int index) {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(getEntryOffset(index) + 4));
 	}
 	
@@ -101,7 +103,7 @@ public class StateUpdateInfoEvent extends ByteArrayBackedEvent {
 	 * @return the ID of the last Client Handler, or {@code -1} if no entries
 	 * are contained within this event.
 	 */
-	public int getLastClientHandlerId() {
+	public final int getLastClientHandlerId() {
 		int entryCount = getEntryCount();
 		if (entryCount > 0) {
 			return getClientHandlerIdAtIndex(entryCount - 1);

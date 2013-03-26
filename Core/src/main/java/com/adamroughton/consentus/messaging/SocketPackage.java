@@ -17,59 +17,20 @@ package com.adamroughton.consentus.messaging;
 
 import org.zeromq.ZMQ;
 
-import com.adamroughton.consentus.messaging.MessageFrameBufferMapping.NamedOffset;
-
 public final class SocketPackage {
 	
 	private final ZMQ.Socket _socket;
-	private final MessageFrameBufferMapping _messagePartPolicy;
 	private final int _socketId;
 	
 	public static SocketPackage create(ZMQ.Socket socket) {
-		return new SocketPackage(socket, new MessageFrameBufferMapping(0), 0);
+		return new SocketPackage(socket, 0);
 	}
 	
 	private SocketPackage(
 			final ZMQ.Socket socket,
-			final MessageFrameBufferMapping messagePartPolicy,
 			final int socketId) {
 		_socket = socket;
-		_messagePartPolicy = messagePartPolicy;
 		_socketId = socketId;
-	}
-	
-	/**
-	 * The offsets to apply to the incoming event buffer when receiving the event parts. 
-	 * All offsets are relative to any reserved byte offset.
-	 * @param firstOffset
-	 * @param subsequentOffsets
-	 * @return
-	 */
-	public SocketPackage setMessageOffsets(final int firstOffset, int... subsequentOffsets) {
-		int[] offsets = new int[subsequentOffsets.length + 1];
-		offsets[0] = firstOffset;
-		System.arraycopy(subsequentOffsets, 0, offsets, 1, subsequentOffsets.length);
-		MessageFrameBufferMapping messagePartPolicy = new MessageFrameBufferMapping(offsets);
-		return new SocketPackage(_socket, messagePartPolicy, _socketId);
-	}
-	
-	/**
-	 * The offsets to apply to the incoming event buffer when receiving the event parts. 
-	 * All offsets are relative to any reserved byte offset.
-	 * @param firstOffset
-	 * @param subsequentOffsets
-	 * @return
-	 */
-	public SocketPackage setMessageOffsets(final NamedOffset firstOffset, NamedOffset... subsequentOffsets) {
-		NamedOffset[] offsets = new NamedOffset[subsequentOffsets.length + 1];
-		offsets[0] = firstOffset;
-		System.arraycopy(subsequentOffsets, 0, offsets, 1, subsequentOffsets.length);
-		MessageFrameBufferMapping messagePartPolicy = new MessageFrameBufferMapping(offsets);
-		return new SocketPackage(_socket, messagePartPolicy, _socketId);
-	}
-	
-	public SocketPackage setMessageOffsets(final MessageFrameBufferMapping offsetPolicy) {
-		return new SocketPackage(_socket, offsetPolicy, _socketId);
 	}
 	
 	/**
@@ -80,11 +41,7 @@ public final class SocketPackage {
 	 * @return
 	 */
 	public SocketPackage setSocketId(final int socketId) {
-		return new SocketPackage(_socket, _messagePartPolicy, socketId);
-	}
-	
-	public MessageFrameBufferMapping getMessageFrameBufferMapping() {
-		return new MessageFrameBufferMapping(_messagePartPolicy);
+		return new SocketPackage(_socket, socketId);
 	}
 	
 	/**

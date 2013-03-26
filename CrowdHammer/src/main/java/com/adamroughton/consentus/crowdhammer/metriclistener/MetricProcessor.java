@@ -18,10 +18,11 @@ package com.adamroughton.consentus.crowdhammer.metriclistener;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
+import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.events.EventType;
 import com.adamroughton.consentus.messaging.events.StateMetricEvent;
+import com.adamroughton.consentus.messaging.patterns.EventPattern;
 import com.adamroughton.consentus.messaging.patterns.EventReader;
-import com.adamroughton.consentus.messaging.patterns.SubRecvQueueReader;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
@@ -29,23 +30,23 @@ import com.lmax.disruptor.collections.Histogram;
 
 public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 
-	private final SubRecvQueueReader _subRecvQueueReader;
+	private final IncomingEventHeader _subHeader;
 	private final StateMetricEvent _metricEvent = new StateMetricEvent();
 	private long _lastUpdateId = -1;
 	private Histogram _histogram;
 	
 	private long _lastPrintTime = -1;
 	
-	public MetricProcessor(final SubRecvQueueReader subRecvQueueReader) {
-		_subRecvQueueReader = Objects.requireNonNull(subRecvQueueReader);
+	public MetricProcessor(final IncomingEventHeader subHeader) {
+		_subHeader = Objects.requireNonNull(subHeader);
 	}
 	
 	@Override
 	public void onEvent(byte[] eventBytes, long sequence, boolean endOfBatch)
 			throws Exception {
-		int eventType = _subRecvQueueReader.getEventType(eventBytes);
+		int eventType = EventPattern.getEventType(eventBytes, _subHeader);
 		if (eventType == EventType.STATE_METRIC.getId()) {
-			_subRecvQueueReader.read(eventBytes, _metricEvent, new EventReader<StateMetricEvent>() {
+			EventPattern.readContent(eventBytes, _subHeader, _metricEvent, new EventReader<StateMetricEvent>() {
 
 				@Override
 				public void read(StateMetricEvent event) {

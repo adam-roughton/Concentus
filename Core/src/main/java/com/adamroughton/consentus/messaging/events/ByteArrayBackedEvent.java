@@ -15,41 +15,58 @@
  */
 package com.adamroughton.consentus.messaging.events;
 
+import java.nio.ByteBuffer;
+
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
 
 public abstract class ByteArrayBackedEvent {
 
-	private final boolean _writeId;
 	private final int _id;
+	private final int _defaultEventSize;
 	
 	private byte[] _backingArray;
 	private int _offset;
-	
-	public ByteArrayBackedEvent() {
-		_writeId = false;
-		_id = 0;
+	private int _eventSize;
+		
+	protected ByteArrayBackedEvent(int typeId) {
+		this(typeId, 0);
 	}
 	
-	public ByteArrayBackedEvent(int typeId) {
-		_writeId = true;
+	/**
+	 * Creates a new instance with the given typeId. The default event
+	 * size allows implementors to avoid calling {@link ByteArrayBackedEvent#setBackingArray(byte[], int)}
+	 * each time they set a new backing array.
+	 * @param typeId
+	 * @param defaultEventSize the default size of the event <b><u>not including the typeId</u></b>. This class
+	 * adds any necessary header additions to the size.
+	 */
+	protected ByteArrayBackedEvent(int typeId, int defaultEventSize) {
 		_id = typeId;
+		_defaultEventSize = defaultEventSize + 4;
 	}
 	
-	public byte[] getBackingArray() {
+	public final byte[] getBackingArray() {
 		return _backingArray;
 	}
 	
-	public void setBackingArray(byte[] backingArray, int offset) {
+	public final void setBackingArray(byte[] backingArray, int offset) {
 		_backingArray = backingArray;
+		_eventSize = _defaultEventSize;
 		_offset = offset;
-		if (_writeId) {
-			MessageBytesUtil.writeInt(_backingArray, offset, _id);
-			_offset += 4;
-		}
+		MessageBytesUtil.writeInt(_backingArray, offset, _id);
+		_offset += 4;
 	}
 	
-	public int getEventTypeId() {
+	public final int getEventTypeId() {
 		return _id;
+	}
+	
+	protected final void setEventSize(int size) {
+		_eventSize = size + 4;
+	}
+	
+	public final int getEventSize() {
+		return _eventSize;
 	}
 	
 	/**
@@ -57,13 +74,14 @@ public abstract class ByteArrayBackedEvent {
 	 * @param internalFieldOffset the byte offset of the field relative to the other fields in the event
 	 * @return the absolute offset
 	 */
-	protected int getOffset(int internalFieldOffset) {
+	protected final int getOffset(int internalFieldOffset) {
 		return _offset + internalFieldOffset;
 	}
 	
-	public void releaseBackingArray() {
+	public final void releaseBackingArray() {
 		_backingArray = null;
 		_offset = 0;
+		_eventSize = 0;
 	}
 	
 	/**
@@ -74,7 +92,12 @@ public abstract class ByteArrayBackedEvent {
 	 * intended backing array before invoking this method.
 	 * @return the number of bytes that can be written into this event
 	 */
-	protected int getAvailableSize() {
-		return _backingArray.length - (_writeId? 4 : 0);
+	protected final int getAvailableSize() {
+		return _backingArray.length - 4;
 	}
+	
+	public static int getUsedLength(int startPos, ByteBuffer buffer) {
+		return buffer.position() - startPos;
+	}
+
 }

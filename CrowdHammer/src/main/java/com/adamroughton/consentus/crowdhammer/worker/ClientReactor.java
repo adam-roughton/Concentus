@@ -20,18 +20,20 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.LockSupport;
 
-import jline.internal.Log;
-
 import org.zeromq.ZMQ;
 
 import com.adamroughton.consentus.Util;
-import com.adamroughton.consentus.messaging.EventProcessingHeader;
+import com.adamroughton.consentus.messaging.EventHeader;
 import com.adamroughton.consentus.messaging.EventReceiver;
 import com.adamroughton.consentus.messaging.EventSender;
-import com.adamroughton.consentus.messaging.MessageFrameBufferMapping;
+import com.adamroughton.consentus.messaging.IncomingEventHeader;
+import com.adamroughton.consentus.messaging.OutgoingEventHeader;
 import com.adamroughton.consentus.messaging.events.ClientInputEvent;
 import com.adamroughton.consentus.messaging.events.ClientUpdateEvent;
 import com.adamroughton.consentus.messaging.events.EventType;
+import com.adamroughton.consentus.messaging.patterns.EventPattern;
+import com.adamroughton.consentus.messaging.patterns.EventWriter;
+import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.SequenceBarrier;
 import uk.co.real_logic.intrinsics.StructuredArray;
@@ -52,7 +54,8 @@ public class ClientReactor implements Runnable {
 	private final RingBuffer<byte[]> _metricSendQueue;
 	private final SequenceBarrier _metricSendBarrier;
 	
-	private final EventProcessingHeader _header;
+	private final OutgoingEventHeader _sendHeader;
+	private final IncomingEventHeader _recvHeader;
 	private final EventSender _sender;
 	private final EventReceiver _receiver;
 	
@@ -71,9 +74,10 @@ public class ClientReactor implements Runnable {
 		_metricSendQueue = Objects.requireNonNull(metricSendQueue);
 		_metricSendBarrier = Objects.requireNonNull(metricSendBarrier);
 		
-		_header = new EventProcessingHeader(0, 1);
-		_sender = new EventSender(_header, false);
-		_receiver = new EventReceiver(_header, true);
+		_sendHeader = new OutgoingEventHeader(0, 1);
+		_recvHeader = new IncomingEventHeader(0, 1);
+		_sender = new EventSender(_sendHeader, true);
+		_receiver = new EventReceiver(_recvHeader, true);
 	}
 	
 	public void halt() {
@@ -94,7 +98,6 @@ public class ClientReactor implements Runnable {
 		_isSendingInput = true;
 		
 		byte[] messageBuffer = new byte[MSG_BUFFER_LENGTH];
-		MessageFrameBufferMapping msgPartPolicy = new MessageFrameBufferMapping(0);
 		long nextMetricTime = 0;
 		
 		long currentClientIndex = -1;
@@ -116,7 +119,7 @@ public class ClientReactor implements Runnable {
 				
 				// recv events
 				ZMQ.Socket socket = client.getSocket();
-				while(_receiver.recv(socket, msgPartPolicy, 0, messageBuffer)) {
+				while(_receiver.recv(socket, 0, messageBuffer)) {
 					processClientRecv(messageBuffer);
 				}
 				
@@ -124,7 +127,7 @@ public class ClientReactor implements Runnable {
 				if (_isSendingInput) {
 					LockSupport.parkNanos(getWaitTime(nextSendTime));
 					createClientEvent(client, messageBuffer);
-					if (!_sender.send(socket, msgPartPolicy, messageBuffer)){
+					if (!_sender.send(socket, messageBuffer)){
 						Log.warn(String.format("Failed to send client input event: clientId = %d, clientIndex = %d", 
 								client.getClientId(), 
 								currentClientIndex));
@@ -141,16 +144,18 @@ public class ClientReactor implements Runnable {
 	}
 	
 	private void createClientEvent(final Client client, final byte[] outgoingBuffer) {
-		long sendTime = System.nanoTime();
-		long actionId = client.addSentAction(sendTime);
-		_header.setIsValid(true, outgoingBuffer);
-		_inputEvent.setBackingArray(outgoingBuffer, _header.getEventOffset());
-		try {
-			_inputEvent.setClientId(client.getClientId());
-			_inputEvent.setClientActionId(actionId);			
-		} finally {
-			_inputEvent.releaseBackingArray();
-		}
+		EventPattern.writeContent(outgoingBuffer, _sendHeader.getEventOffset(), _sendHeader, _inputEvent, 
+				new EventWriter<ClientInputEvent>() {
+
+			@Override
+			public void write(ClientInputEvent event) throws Exception {
+				long sendTime = System.nanoTime();
+				long actionId = client.addSentAction(sendTime);
+				event.setClientId(client.getClientId());
+				event.setClientActionId(actionId);	
+			}
+			
+		});
 	}
 	
 	private void sendMetricEvent() {

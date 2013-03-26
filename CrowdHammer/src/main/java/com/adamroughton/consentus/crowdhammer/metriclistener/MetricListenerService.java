@@ -32,12 +32,12 @@ import com.adamroughton.consentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.consentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
 import com.adamroughton.consentus.messaging.EventListener;
-import com.adamroughton.consentus.messaging.EventProcessingHeader;
+import com.adamroughton.consentus.messaging.EventReceiver;
+import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.SocketManager;
 import com.adamroughton.consentus.messaging.SocketPackage;
 import com.adamroughton.consentus.messaging.SocketSettings;
 import com.adamroughton.consentus.messaging.events.EventType;
-import com.adamroughton.consentus.messaging.patterns.SubRecvQueueReader;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 import com.lmax.disruptor.dsl.Disruptor;
@@ -53,7 +53,7 @@ public class MetricListenerService implements CrowdHammerService {
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	private final SocketManager _socketManager;
 	private final Disruptor<byte[]> _inputDisruptor;
-	private final EventProcessingHeader _header;
+	private final IncomingEventHeader _header;
 	
 	private MetricProcessor _metricProcessor;
 	private EventListener _eventListener;
@@ -67,11 +67,9 @@ public class MetricListenerService implements CrowdHammerService {
 	
 	public MetricListenerService() {
 		_socketManager = new SocketManager();
-		
 		_inputDisruptor = new Disruptor<>(Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), _executor, 
 				new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
-		
-		_header = new EventProcessingHeader(0, 1);
+		_header = new IncomingEventHeader(0, 2);
 	}
 	
 	@Override
@@ -121,11 +119,10 @@ public class MetricListenerService implements CrowdHammerService {
 	private void onSetUpTest(Cluster cluster) throws Exception {
 		_socketManager.bindBoundSockets();
 		
-		SubRecvQueueReader subRecvQueueReader = new SubRecvQueueReader(_header);
-		SocketPackage socketPackage = _socketManager.createSocketPackage(_subSocketId, subRecvQueueReader.getMessageFrameBufferMapping());
-		_eventListener = new EventListener(socketPackage, _inputDisruptor.getRingBuffer(), _exHandler);
+		SocketPackage socketPackage = _socketManager.createSocketPackage(_subSocketId);
+		_eventListener = new EventListener(new EventReceiver(_header, false), socketPackage, _inputDisruptor.getRingBuffer(), _exHandler);
 		
-		_metricProcessor = new MetricProcessor(subRecvQueueReader);
+		_metricProcessor = new MetricProcessor(_header);
 		_inputDisruptor.handleEventsWith(_metricProcessor);
 		
 		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _networkAddress.getHostAddress()));

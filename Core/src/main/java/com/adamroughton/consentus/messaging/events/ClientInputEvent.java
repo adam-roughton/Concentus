@@ -25,39 +25,45 @@ public class ClientInputEvent extends ByteArrayBackedEvent {
 	private static final int CLIENT_ID_OFFSET = 0;
 	private static final int CLIENT_ACTION_ID_OFFSET = 8;
 	private static final int INPUT_BUFFER_OFFSET = 16;
+	
+	private static final int BASE_SIZE = 16;
 
 	public ClientInputEvent() {
 		super(EventType.CLIENT_INPUT.getId());
 	}
 	
-	public ClientId getClientId() {
+	public final ClientId getClientId() {
 		return MessageBytesUtil.readClientId(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
 	}
 
-	public void setClientId(final ClientId clientId) {
+	public final void setClientId(final ClientId clientId) {
 		MessageBytesUtil.writeClientId(getBackingArray(), getOffset(CLIENT_ID_OFFSET), clientId);
 	}
 	
-	public void setClientId(final long clientIdBits) {
+	public final void setClientId(final long clientIdBits) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET), clientIdBits);
 	}
 	
-	public long getClientIdBits() {
+	public final long getClientIdBits() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
 	}
 	
-	public long getClientActionId() {
+	public final long getClientActionId() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(CLIENT_ACTION_ID_OFFSET));
 	}
 	
-	public void setClientActionId(final long clientActionId) {
+	public final void setClientActionId(final long clientActionId) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CLIENT_ACTION_ID_OFFSET), clientActionId);
 	}
 	
-	public ByteBuffer getInputBuffer() {
+	public final ByteBuffer getInputBuffer() {
 		byte[] backingArray = getBackingArray();
 		int offset = getOffset(INPUT_BUFFER_OFFSET);
 		return ByteBuffer.wrap(backingArray, offset, backingArray.length - offset);
+	}
+	
+	public final void addUsedLength(final ByteBuffer inputBuffer) {
+		setEventSize(BASE_SIZE + getUsedLength(getOffset(INPUT_BUFFER_OFFSET), inputBuffer));
 	}
 	
 }

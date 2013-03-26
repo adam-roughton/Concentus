@@ -22,35 +22,36 @@ public class ConnectResponseEvent extends ByteArrayBackedEvent {
 	
 	private static final int RES_CODE_OFFSET = 0;
 	private static final int CLIENT_ID_OFFSET = 4;
+	private static final int EVENT_SIZE = CLIENT_ID_OFFSET + 8;
 	
 	public static final int RES_OK = 0;
 	public static final int RES_ERROR = 1;
 
 	public ConnectResponseEvent() {
-		super(EventType.CONNECT_RES.getId());
+		super(EventType.CONNECT_RES.getId(), EVENT_SIZE);
 	}
 	
-	public int getResponseCode() {
+	public final int getResponseCode() {
 		return MessageBytesUtil.readInt(getBackingArray(), getOffset(RES_CODE_OFFSET));
 	}
 	
-	public void setResponseCode(final int responseCode) {
+	public final void setResponseCode(final int responseCode) {
 		MessageBytesUtil.writeInt(getBackingArray(), getOffset(RES_CODE_OFFSET), responseCode);
 	}
 	
-	public ClientId getClientId() {
+	public final ClientId getClientId() {
 		return MessageBytesUtil.readClientId(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
 	}
 
-	public void setClientId(ClientId clientId) {
+	public final void setClientId(ClientId clientId) {
 		MessageBytesUtil.writeClientId(getBackingArray(), getOffset(CLIENT_ID_OFFSET), clientId);
 	}
 	
-	public void setClientId(long clientIdBits) {
+	public final void setClientId(long clientIdBits) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET), clientIdBits);
 	}
 	
-	public long getClientIdBits() {
+	public final long getClientIdBits() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
 	}
 	

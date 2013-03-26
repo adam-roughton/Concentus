@@ -23,9 +23,10 @@ public class StateMetricEvent extends ByteArrayBackedEvent {
 	private final static int INPUT_ACTIONS_OFFSET = 8;
 	private final static int DURATION_OFFSET = 16;
 	private final static int EVENT_ERROR_COUNT_OFFSET = 24;
+	private static final int EVENT_SIZE = EVENT_ERROR_COUNT_OFFSET + 4;
 
 	public StateMetricEvent() {
-		super(EventType.STATE_METRIC.getId());
+		super(EventType.STATE_METRIC.getId(), EVENT_SIZE);
 	}
 	
 	public long getUpdateId() {

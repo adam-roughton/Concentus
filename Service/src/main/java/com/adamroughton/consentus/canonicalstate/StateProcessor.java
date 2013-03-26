@@ -19,22 +19,24 @@ import it.unimi.dsi.fastutil.ints.Int2LongMap;
 import it.unimi.dsi.fastutil.ints.Int2LongOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntIterator;
 
+import java.nio.ByteBuffer;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.consentus.Constants;
 import com.adamroughton.consentus.FatalExceptionCallback;
+import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.events.ClientHandlerEntry;
-import com.adamroughton.consentus.messaging.events.EventType;
 import com.adamroughton.consentus.messaging.events.StateInputEvent;
 import com.adamroughton.consentus.messaging.events.StateMetricEvent;
 import com.adamroughton.consentus.messaging.events.StateUpdateEvent;
 import com.adamroughton.consentus.messaging.events.StateUpdateInfoEvent;
+import com.adamroughton.consentus.messaging.patterns.EventPattern;
 import com.adamroughton.consentus.messaging.patterns.EventReader;
 import com.adamroughton.consentus.messaging.patterns.EventWriter;
-import com.adamroughton.consentus.messaging.patterns.PubSendQueueWriter;
-import com.adamroughton.consentus.messaging.patterns.SubRecvQueueReader;
+import com.adamroughton.consentus.messaging.patterns.PubSubPattern;
+import com.adamroughton.consentus.messaging.patterns.SendQueue;
 import com.lmax.disruptor.AlertException;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.RingBuffer;
@@ -52,8 +54,8 @@ public class StateProcessor implements EventProcessor {
 	private final StateLogic _stateLogic;
 	private final RingBuffer<byte[]> _inputRingBuffer;
 	private final SequenceBarrier _inputBarrier;
-	private final SubRecvQueueReader _subRecvQueueReader;
-	private final PubSendQueueWriter _pubSendQueueWriter;
+	private final IncomingEventHeader _subHeader;
+	private final SendQueue _pubSendQueue;
 	private final FatalExceptionCallback _exCallback;
 
 	private final Sequence _sequence;
@@ -72,14 +74,14 @@ public class StateProcessor implements EventProcessor {
 			StateLogic stateLogic,
 			RingBuffer<byte[]> inputRingBuffer,
 			SequenceBarrier inputBarrier,
-			SubRecvQueueReader subRecvQueueReader,
-			PubSendQueueWriter pubSendQueueWriter, 
+			IncomingEventHeader subHeader,
+			SendQueue pubSendQueue, 
 			FatalExceptionCallback exceptionCallback) {
 		_stateLogic = Objects.requireNonNull(stateLogic);
 		_inputRingBuffer = Objects.requireNonNull(inputRingBuffer);
 		_inputBarrier = Objects.requireNonNull(inputBarrier);
-		_subRecvQueueReader = Objects.requireNonNull(subRecvQueueReader);
-		_pubSendQueueWriter = Objects.requireNonNull(pubSendQueueWriter);
+		_subHeader = Objects.requireNonNull(subHeader);
+		_pubSendQueue = Objects.requireNonNull(pubSendQueue);
 		_exCallback = Objects.requireNonNull(exceptionCallback);
 
 		_clientHandlerEventTracker = new Int2LongOpenHashMap(50);
@@ -109,15 +111,17 @@ public class StateProcessor implements EventProcessor {
 						getTimeUntilNextTick(), TimeUnit.MILLISECONDS);
 				while (nextSequence <= availableSequence) {
 					byte[] nextInput = _inputRingBuffer.get(nextSequence++);
-					boolean wasValid = _subRecvQueueReader.read(nextInput, _inputEvent, new EventReader<StateInputEvent>() {
+					boolean wasValid = _subHeader.isValid(nextInput);
+					if (wasValid) {
+						EventPattern.readContent(nextInput, _subHeader, _inputEvent, new EventReader<StateInputEvent>() {
 
-						@Override
-						public void read(StateInputEvent event) {
-							processInput(event);
-						}
-						
-					});
-					if (!wasValid) {
+							@Override
+							public void read(StateInputEvent event) {
+								processInput(event);
+							}
+							
+						});
+					} else {
 						_eventErrorCount++;
 					}
 				}
@@ -187,32 +191,32 @@ public class StateProcessor implements EventProcessor {
 	}
 	
 	private void sendUpdateEvent(final long updateId, final long simTime) {
-		_pubSendQueueWriter.send(EventType.STATE_UPDATE, _updateEvent, new EventWriter<StateUpdateEvent>() {
+		_pubSendQueue.send(PubSubPattern.asTask(_updateEvent, new EventWriter<StateUpdateEvent>() {
 
 			@Override
-			public boolean write(StateUpdateEvent event, long sequence) {
+			public void write(StateUpdateEvent event) {
 				event.setUpdateId(updateId);
 				event.setSimTime(simTime);
-				_stateLogic.createUpdate(event.getUpdateBuffer());
-				return true;
+				ByteBuffer updateBuffer = event.getUpdateBuffer();
+				_stateLogic.createUpdate(updateBuffer);
+				event.addUsedLength(updateBuffer);
 			}
 			
-		});
+		}));
 	}
 	
 	private void sendMetricEvent(final long updateId, final long timeSinceLastInMs) {
-		_pubSendQueueWriter.send(EventType.STATE_METRIC, _metricEvent, new EventWriter<StateMetricEvent>() {
+		_pubSendQueue.send(PubSubPattern.asTask(_metricEvent, new EventWriter<StateMetricEvent>() {
 
 			@Override
-			public boolean write(StateMetricEvent event, long sequence) {
+			public void write(StateMetricEvent event) {
 				event.setUpdateId(updateId);
 				event.setInputActionsProcessed(_sequence.get() - _seqStart);
 				event.setDurationInMs(timeSinceLastInMs);
 				event.setEventErrorCount(_eventErrorCount);
-				return true;
 			}
 			
-		});
+		}));
 	}
 	
 	private void sendClientHandlerEvents(final long updateId) {	
@@ -221,10 +225,10 @@ public class StateProcessor implements EventProcessor {
 		// update, we attempt to fill each update with the maximum number of entries.
 		final IntIterator handlerIdIterator = _clientHandlerEventTracker.keySet().iterator();
 		while(handlerIdIterator.hasNext()) {
-			_pubSendQueueWriter.send(EventType.STATE_INFO, _updateInfoEvent, new EventWriter<StateUpdateInfoEvent>() {
+			_pubSendQueue.send(PubSubPattern.asTask(_updateInfoEvent, new EventWriter<StateUpdateInfoEvent>() {
 	
 				@Override
-				public boolean write(StateUpdateInfoEvent event, long sequence) {
+				public void write(StateUpdateInfoEvent event) {
 					int maxEntries = event.getMaximumEntries();
 					int currEntryIndex = 0;
 					event.setUpdateId(updateId);
@@ -235,11 +239,9 @@ public class StateProcessor implements EventProcessor {
 						event.setHandlerEntry(currEntryIndex++, entry);
 					}
 					event.setEntryCount(currEntryIndex + 1);
-					
-					return true;
 				}
 				
-			});
+			}));
 		}
 	}
 	

@@ -21,18 +21,12 @@ import org.zeromq.ZMQ;
 
 public class EventSender {
 
-	private final static int DEFAULT_MSG_PART_BUF_SIZE = 32;
-	
-	private final EventProcessingHeader _header;
-	private final int _msgOffset;
-	private byte[] _msgPartBytesBuffer = new byte[DEFAULT_MSG_PART_BUF_SIZE];
-	
+	private final OutgoingEventHeader _header;
 	private final int _baseZmqFlag;
 	
-	public EventSender(final EventProcessingHeader processingHeader,
+	public EventSender(final OutgoingEventHeader header,
 			final boolean isNoBlock) {
-		_header = Objects.requireNonNull(processingHeader);
-		_msgOffset = _header.getEventOffset();
+		_header = Objects.requireNonNull(header);
 		
 		if (isNoBlock) {
 			_baseZmqFlag = ZMQ.NOBLOCK;
@@ -51,63 +45,50 @@ public class EventSender {
 	public boolean send(final SocketPackage socketPackage, 
 			byte[] outgoingBuffer) {
 		return send(socketPackage.getSocket(),
-				socketPackage.getMessageFrameBufferMapping(),
 				outgoingBuffer);
 	}
 	
 	/**
 	 * Attempts to send a pending event from the outgoing buffer, succeeding
 	 * only if the socket is ready.
+	 * 
 	 * @param socket the socket to send the event on
-	 * @param mapping the message frame mapping to apply for sending the message
 	 * @param outgoingBuffer the buffer to send from
-	 * @return whether an event was sent.
+	 * @return {@code true} if the complete event was sent, {@code false} otherwise
 	 */
 	public boolean send(final ZMQ.Socket socket,
-			MessageFrameBufferMapping mapping,
 			byte[] outgoingBuffer) {
-		if (mapping.getMinReqBufferSize() > outgoingBuffer.length - _msgOffset) {
-			throw new IllegalArgumentException(String.format(
-					"The message frame buffer mapping requires a buffer size (%d) greater than" +
-					" the underlying buffer of this sender (%d - note %d reserved for flags).", 
-					mapping.getMinReqBufferSize(),
-					outgoingBuffer.length - _msgOffset,
-					_msgOffset));
-		}
-		
 		// only send if the event is valid
-		if (!_header.isValid(outgoingBuffer)) return false;
+		if (!_header.isValid(outgoingBuffer)) return false;	
 		
-		int partCount = mapping.partCount();
-		int offset;
-		byte[] msgPart;
-		int zmqFlag;
-		boolean success = true;
-		for (int i = 0; i < partCount; i++) {
-			// for every msg part that is not the last one
-			if (i < partCount - 1) {
-				int reqLength = mapping.getOffset(i + 1) - mapping.getOffset(i);
-				msgPart = getBuffer(reqLength);
-				offset = msgPart.length - reqLength;
-				System.arraycopy(outgoingBuffer, mapping.getOffset(i) + _msgOffset, msgPart, offset, reqLength);
-				zmqFlag = ZMQ.SNDMORE | _baseZmqFlag;
-			} else {
-				offset = mapping.getOffset(i) + _msgOffset;
-				msgPart = outgoingBuffer;
-				zmqFlag = _baseZmqFlag;
-			}
-			success = socket.send(msgPart, offset, zmqFlag);
-			if (!success)
+		// check event bounds
+		int segmentCount = _header.getSegmentCount();
+		int lastSegmentMetaData = _header.getSegmentMetaData(outgoingBuffer, segmentCount - 1);
+		int lastSegmentOffset = EventHeader.getSegmentOffset(lastSegmentMetaData);
+		int lastSegmentLength = EventHeader.getSegmentLength(lastSegmentMetaData);
+		int requiredLength = lastSegmentOffset + lastSegmentLength;
+		if (requiredLength > outgoingBuffer.length)
+			throw new RuntimeException(String.format("The buffer length is less than the content length (%d < %d)", 
+					outgoingBuffer.length, requiredLength));
+		
+		int segmentIndex;
+		if (_header.isPartiallySent(outgoingBuffer)) {
+			segmentIndex = _header.getNextSegmentToSend(outgoingBuffer);
+		} else {
+			segmentIndex = 0;
+		}
+		for (;segmentIndex < segmentCount; segmentIndex++) {
+			int segmentMetaData = _header.getSegmentMetaData(outgoingBuffer, segmentIndex);
+			int offset = EventHeader.getSegmentOffset(segmentMetaData);
+			int length = EventHeader.getSegmentLength(segmentMetaData);
+			int flags = _baseZmqFlag | ((segmentIndex < segmentCount - 1)? ZMQ.SNDMORE : 0);
+			if (!socket.send(outgoingBuffer, offset, length, flags)) {
+				_header.setNextSegmentToSend(outgoingBuffer, segmentIndex);
+				_header.setIsPartiallySent(outgoingBuffer, true);
 				return false;
+			}
 		}
-		return success;
-	}
-	
-	private byte[] getBuffer(int reqSpace) {
-		if (_msgPartBytesBuffer.length < reqSpace) {
-			_msgPartBytesBuffer = new byte[reqSpace];
-		}
-		return _msgPartBytesBuffer;
+		return true;
 	}
 	
 }

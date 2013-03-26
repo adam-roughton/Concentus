@@ -22,14 +22,14 @@ import org.zeromq.ZMQException;
 
 public class EventReceiver {
 
-	private final EventProcessingHeader _header;
-	private final int _msgOffset;
+	private final IncomingEventHeader _header;
+	private final int _contentOffset;
 	private final int _baseZmqFlag;
 	
-	public EventReceiver(final EventProcessingHeader processingHeader, 
+	public EventReceiver(final IncomingEventHeader header, 
 			final boolean isNoBlock) {
-		_header = Objects.requireNonNull(processingHeader);
-		_msgOffset = _header.getEventOffset();
+		_header = Objects.requireNonNull(header);
+		_contentOffset = _header.getEventOffset();
 		
 		if (isNoBlock) {
 			_baseZmqFlag = ZMQ.NOBLOCK;
@@ -48,7 +48,6 @@ public class EventReceiver {
 	public boolean recv(final SocketPackage socketPackage, 
 			final byte[] eventBuffer) {
 		return recv(socketPackage.getSocket(), 
-				socketPackage.getMessageFrameBufferMapping(), 
 				socketPackage.getSocketId(), 
 				eventBuffer);
 	}
@@ -57,61 +56,45 @@ public class EventReceiver {
 	 * Receives an event on the given socket, filling the given
 	 * event buffer as per the given message parts policy.
 	 * @param socket the socket to receive on
-	 * @param mapping the message frame mapping to apply to incoming messages
 	 * @param socketId the socket ID to write into the header of incoming messages
 	 * @param eventBuffer the buffer to place the event in
 	 * @return whether an event was placed in the buffer
 	 */
 	public boolean recv(final ZMQ.Socket socket,
-			MessageFrameBufferMapping mapping,
 			int socketId,
-			final byte[] eventBuffer) {		
-		int msgOffsetIndex = 0;
-		int expMsgParts = mapping.partCount();
-		int offset;
+			final byte[] eventBuffer) {			
+		
+		int cursor = _contentOffset;
+		int expectedSegmentCount = _header.getSegmentCount();
+		int segmentIndex = 0;
 		boolean isValid = true;
 		
-		// get the first offset, or use a default if the policy is not valid
-		if (mapping.getMinReqBufferSize() > eventBuffer.length - _msgOffset) {
-			offset = _msgOffset;
-			isValid = false;
-		} else if (expMsgParts == 0) {
-			offset = _msgOffset;
-		} else {
-			offset = _msgOffset + mapping.getOffset(0);
-		}
-		
-		// check if we have any messages waiting
-		int recvdAmount = doRecv(socket, eventBuffer, offset, eventBuffer.length - offset, _baseZmqFlag);
-		if (recvdAmount == 0) {
-			// no message ready
-			return false;
-		} else {		
-			if (recvdAmount == -1) {
+		do {
+			if (segmentIndex > expectedSegmentCount || cursor >= eventBuffer.length) {
 				isValid = false;
 			}
 			
-			while(isValid && socket.hasReceiveMore() && ++msgOffsetIndex < expMsgParts) {
-				offset = _msgOffset + mapping.getOffset(msgOffsetIndex);
-				recvdAmount = doRecv(socket, eventBuffer, offset, eventBuffer.length - offset, _baseZmqFlag);
-				if (recvdAmount == -1) {
+			if (isValid) {
+				int recvdAmount = doRecv(socket, eventBuffer, cursor, eventBuffer.length - cursor, _baseZmqFlag);
+				if (segmentIndex == 0 && recvdAmount == 0) {
+					// no message ready
+					return false;
+				} else if (recvdAmount == -1) {
 					isValid = false;
+				} else {
+					_header.setSegmentMetaData(eventBuffer, segmentIndex, cursor, recvdAmount);
+					cursor += recvdAmount;
+					segmentIndex++;
 				}
+			} else {
+				// absorb remaining segments
+				socket.recv();
 			}
-			
-			if (msgOffsetIndex < expMsgParts - 1) {
-				isValid = false;
-			}
-			
-			// capture any additional message parts
-			while (socket.hasReceiveMore()) {
-				socket.recv(0);
-			}
-			
-			_header.setIsValid(isValid, eventBuffer);
-			_header.setSocketId(socketId, eventBuffer);
-			return true;
-		}
+		} while (socket.hasReceiveMore());
+		
+		_header.setIsValid(eventBuffer, isValid);
+		_header.setSocketId(eventBuffer, socketId);
+		return true;
 	}
 	
 	private int doRecv(ZMQ.Socket socket, byte[] eventBuffer, int offset, int length, int zmqFlags) {

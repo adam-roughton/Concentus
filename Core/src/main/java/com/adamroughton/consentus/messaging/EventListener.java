@@ -22,35 +22,40 @@ import org.zeromq.ZMQ;
 import org.zeromq.ZMQException;
 
 import com.adamroughton.consentus.FatalExceptionCallback;
-import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.RingBuffer;
 
 public final class EventListener implements Runnable {
 	private final AtomicBoolean _isRunning = new AtomicBoolean(false);
 	
+	private final EventReceiver _eventReceiver;
 	private final RingBuffer<byte[]> _ringBuffer;
 	private final FatalExceptionCallback _exCallback;
 	private ListenerLogic _listenerLogic;
 		
 	public EventListener(
+			final EventReceiver eventReceiver,
 			final SocketPackage socketPackage,
 			final RingBuffer<byte[]> ringBuffer, 
 			final FatalExceptionCallback exCallback) {
-		this(ringBuffer, exCallback);
+		this(eventReceiver, ringBuffer, exCallback);
 		_listenerLogic = new SingleSocketListener(socketPackage);
 	}
 	
 	public EventListener(
+			final EventReceiver eventReceiver,
 			final SocketPollInSet pollInSet,
 			final RingBuffer<byte[]> ringBuffer, 
 			final FatalExceptionCallback exCallback) {
-		this(ringBuffer, exCallback);
+		this(eventReceiver, ringBuffer, exCallback);
 		_listenerLogic = new MultiSocketListener(pollInSet);
 		
 	}
 	
-	private EventListener(final RingBuffer<byte[]> ringBuffer, 
+	private EventListener(
+			final EventReceiver eventReceiver,
+			final RingBuffer<byte[]> ringBuffer, 
 			final FatalExceptionCallback exCallback) {
+		_eventReceiver = Objects.requireNonNull(eventReceiver);
 		_ringBuffer = Objects.requireNonNull(ringBuffer);
 		_exCallback = Objects.requireNonNull(exCallback);
 	}
@@ -76,40 +81,11 @@ public final class EventListener implements Runnable {
 	}
 	
 	private void nextEvent(final SocketPackage socketPackage) {
-		ZMQ.Socket input = socketPackage.getSocket();
-		MessageFrameBufferMapping mapping = socketPackage.getMessageFrameBufferMapping();
-		int socketId = socketPackage.getSocketId();
-		
 		final long seq = _ringBuffer.next();
-		final byte[] array = _ringBuffer.get(seq);
+		final byte[] outgoingBuffer = _ringBuffer.get(seq);
 		try {
-			int result = -1;
-			// we reserve the first byte of the buffer to communicate
-			// whether the event was received correctly
-			int offset = 1;
-			for (int i = 0; i < mapping.partCount(); i++) {
-				offset = mapping.getOffset(i) + 1;
-				result = input.recv(array, offset, array.length - offset, 0);
-				if (result == -1)
-					break;
-				if (mapping.partCount() > i + 1 &&					
-						!input.hasReceiveMore()) {
-					result = -1;
-					break;
-				}
-			}
-			if (result == -1) {
-				MessageBytesUtil.writeFlagToByte(array, 0, 0, true);
-			} else {
-				MessageBytesUtil.writeFlagToByte(array, 0, 0, false);
-			}		
-		} catch (Exception e) {
-			// indicate error condition on the message
-			MessageBytesUtil.writeFlagToByte(array, 0, 0, true);
-			Log.error("An error was raised on receiving a message.", e);
-			throw new RuntimeException(e);
+			_eventReceiver.recv(socketPackage, outgoingBuffer);
 		} finally {
-			MessageBytesUtil.write4BitUInt(array, 0, 4, socketId);
 			_ringBuffer.publish(seq);
 		}
 	}

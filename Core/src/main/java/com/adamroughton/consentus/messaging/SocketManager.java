@@ -6,7 +6,6 @@ import it.unimi.dsi.fastutil.ints.IntArraySet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 
 import java.io.Closeable;
-import java.io.IOException;
 import java.util.Objects;
 
 import org.zeromq.ZMQ;
@@ -70,11 +69,10 @@ public class SocketManager implements Closeable {
 		return _socketLookup.get(socketId);
 	}
 	
-	public synchronized SocketPackage createSocketPackage(final int socketId, final MessageFrameBufferMapping mapping) {
+	public synchronized SocketPackage createSocketPackage(final int socketId) {
 		assertManagerActive();
 		ZMQ.Socket socket = _socketLookup.get(socketId);
 		return SocketPackage.create(socket)
-					 .setMessageOffsets(mapping)
 					 .setSocketId(socketId);
 	}
 	

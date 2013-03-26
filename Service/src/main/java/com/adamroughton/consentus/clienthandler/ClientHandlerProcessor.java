@@ -20,19 +20,19 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 
 import java.util.Objects;
 
-import com.adamroughton.consentus.messaging.EventProcessingHeader;
+import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.events.ClientConnectEvent;
 import com.adamroughton.consentus.messaging.events.ClientInputEvent;
 import com.adamroughton.consentus.messaging.events.ClientUpdateEvent;
 import com.adamroughton.consentus.messaging.events.ConnectResponseEvent;
 import com.adamroughton.consentus.messaging.events.StateInputEvent;
 import com.adamroughton.consentus.messaging.events.StateUpdateEvent;
+import com.adamroughton.consentus.messaging.patterns.EventPattern;
 import com.adamroughton.consentus.messaging.patterns.EventReader;
 import com.adamroughton.consentus.messaging.patterns.EventWriter;
-import com.adamroughton.consentus.messaging.patterns.PubSendQueueWriter;
-import com.adamroughton.consentus.messaging.patterns.RouterRecvQueueReader;
-import com.adamroughton.consentus.messaging.patterns.RouterSendQueueWriter;
-import com.adamroughton.consentus.messaging.patterns.SubRecvQueueReader;
+import com.adamroughton.consentus.messaging.patterns.PubSubPattern;
+import com.adamroughton.consentus.messaging.patterns.RouterPattern;
+import com.adamroughton.consentus.messaging.patterns.SendQueue;
 import com.adamroughton.consentus.model.ClientId;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventHandler;
@@ -45,12 +45,10 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 	private final int _routerSocketId;
 	private final int _subSocketId;
 	
-	private final PubSendQueueWriter _pubSendQueue;
-	private final RouterSendQueueWriter _routerSendQueue;
-	private final SubRecvQueueReader _subRecvQueueReader;
-	private final RouterRecvQueueReader _routerRecvQueueReader;
+	private final SendQueue _pubSendQueue;
+	private final SendQueue _routerSendQueue;
 	
-	private final EventProcessingHeader _incomingQueueHeader;
+	private final IncomingEventHeader _incomingQueueHeader;
 	
 	private long _inputId = 0;
 	private long _nextClientId = 0;
@@ -68,19 +66,15 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 			final int clientHandlerId,
 			final int routerSocketId,
 			final int subSocketId,
-			final RouterSendQueueWriter routerSendQueue,
-			final PubSendQueueWriter pubSendQueue,
-			final EventProcessingHeader incomingQueueHeader,
-			final SubRecvQueueReader subRecvQueueReader,
-			final RouterRecvQueueReader routerRecvQueueReader) {
+			final SendQueue routerSendQueue,
+			final SendQueue pubSendQueue,
+			final IncomingEventHeader incomingQueueHeader) {
 		_clientHandlerId = clientHandlerId;
 		_routerSocketId = routerSocketId;
 		_subSocketId = subSocketId;
 		
 		_routerSendQueue = Objects.requireNonNull(routerSendQueue);
 		_pubSendQueue = Objects.requireNonNull(pubSendQueue);
-		_subRecvQueueReader = Objects.requireNonNull(subRecvQueueReader);
-		_routerRecvQueueReader = Objects.requireNonNull(routerRecvQueueReader);
 		
 		_incomingQueueHeader = incomingQueueHeader;
 	}
@@ -101,13 +95,12 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 	public void onEvent(byte[] eventBytes, long sequence, boolean endOfBatch)
 			throws Exception {
 		int recvSocketId = _incomingQueueHeader.getSocketId(eventBytes);
-		int eventTypeId;
+		int eventTypeId = EventPattern.getEventType(eventBytes, _incomingQueueHeader);
 		
 		if (recvSocketId == _routerSocketId) {
-			eventTypeId = _routerRecvQueueReader.getEventType(eventBytes);
-			final byte[] clientSocketId = _routerRecvQueueReader.getSocketId(eventBytes);
+			final byte[] clientSocketId = RouterPattern.getSocketId(eventBytes, _incomingQueueHeader);
 			if (eventTypeId == CLIENT_CONNECT.getId()) {
-				_routerRecvQueueReader.read(eventBytes, _clientConnectEvent, new EventReader<ClientConnectEvent>() {
+				EventPattern.readContent(eventBytes, _incomingQueueHeader, _clientConnectEvent, new EventReader<ClientConnectEvent>() {
 
 					@Override
 					public void read(ClientConnectEvent event) {
@@ -116,7 +109,7 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 					
 				});				
 			} else if (eventTypeId == CLIENT_INPUT.getId()) {
-				_routerRecvQueueReader.read(eventBytes, _clientInputEvent, new EventReader<ClientInputEvent>() {
+				EventPattern.readContent(eventBytes, _incomingQueueHeader, _clientInputEvent, new EventReader<ClientInputEvent>() {
 
 					@Override
 					public void read(ClientInputEvent event) {
@@ -127,9 +120,8 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 				Log.warn(String.format("Unknown event type %d received on the router socket.", eventTypeId));
 			}
 		} else if (recvSocketId == _subSocketId) {
-			eventTypeId = _subRecvQueueReader.getEventType(eventBytes);
 			if (eventTypeId == STATE_UPDATE.getId()) {
-				_subRecvQueueReader.read(eventBytes, _stateUpdateEvent, new EventReader<StateUpdateEvent>() {
+				EventPattern.readContent(eventBytes, _incomingQueueHeader, _stateUpdateEvent, new EventReader<StateUpdateEvent>() {
 
 					@Override
 					public void read(StateUpdateEvent event) {
@@ -154,16 +146,15 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 		_clientLookup.put(newClientId, newClient);
 		
 		// send a connect response
-		_routerSendQueue.send(newClient.getSocketId(), _connectResEvent, new EventWriter<ConnectResponseEvent>() {
+		_routerSendQueue.send(RouterPattern.asTask(newClient.getSocketId(), _connectResEvent, new EventWriter<ConnectResponseEvent>() {
 
 			@Override
-			public boolean write(ConnectResponseEvent event, long sequence) {
+			public void write(ConnectResponseEvent event) {
 				event.setClientId(new ClientId(_clientHandlerId, newClientId));
 				event.setResponseCode(ConnectResponseEvent.RES_OK);
-				return true;
 			}
 			
-		});
+		}));
 	}
 	
 	private void onClientInput(final byte[] clientSocketId, ClientInputEvent inputEvent) {
@@ -175,20 +166,19 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 		//TODO need efficient data structure for this
 		for (ClientProxy client : _clientLookup.values()) {
 			final long nextUpdateId = client.getLastUpdateId() + 1;
-			_routerSendQueue.send(client.getSocketId(), _clientUpdateEvent, new EventWriter<ClientUpdateEvent>() {
+			_routerSendQueue.send(RouterPattern.asTask(client.getSocketId(), _clientUpdateEvent, new EventWriter<ClientUpdateEvent>() {
 
 				@Override
-				public boolean write(ClientUpdateEvent event, long sequence) {
+				public void write(ClientUpdateEvent event) {
 					event.setUpdateId(nextUpdateId);
 					event.setSimTime(updateEvent.getSimTime());
 					// copy update data over
 					updateEvent.copyUpdateBytes(event.getBackingArray(), 
 							event.getUpdateOffset(), 
 							event.getUpdateLength());
-					return true;
 				}
 				
-			});
+			}));
 			client.setLastUpdateId(nextUpdateId);
 		}
 	}
@@ -196,16 +186,15 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 
 	private void forwardStateInputEvent(final byte[] clientSocketId, ClientInputEvent inputEvent) {
 		// note that the event is currently ignored for testing
-		_pubSendQueue.send(STATE_INPUT, _stateInputEvent, new EventWriter<StateInputEvent>() {
+		_pubSendQueue.send(PubSubPattern.asTask(_stateInputEvent, new EventWriter<StateInputEvent>() {
 
 			@Override
-			public boolean write(StateInputEvent event, long sequence) {
+			public void write(StateInputEvent event) {
 				event.setClientHandlerId(_clientHandlerId);
 				event.setInputId(_inputId++);
-				return true;
 			}
 			
-		});
+		}));
 	}
 
 }

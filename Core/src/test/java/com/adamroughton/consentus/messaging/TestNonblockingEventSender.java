@@ -15,7 +15,6 @@
  */
 package com.adamroughton.consentus.messaging;
 
-import java.util.List;
 import java.util.UUID;
 
 import org.junit.*;
@@ -30,8 +29,6 @@ import com.lmax.disruptor.RingBuffer;
 
 import static org.junit.Assert.*;
 import static org.mockito.Mockito.*;
-import static com.adamroughton.consentus.Util.*;
-import static com.adamroughton.consentus.messaging.ZmqTestUtil.*;
 
 @RunWith(MockitoJUnitRunner.class)
 public class TestNonblockingEventSender {
@@ -41,10 +38,10 @@ public class TestNonblockingEventSender {
 	private RingBuffer<byte[]> _buffer;
 	@Mock private ZMQ.Socket _zmqSocket;
 	private NonblockingEventSender _sender;
-	private final EventProcessingHeader _processingHeader = new EventProcessingHeader(0, 1);
+	private final OutgoingEventHeader _header = new OutgoingEventHeader(0, 2);
 	private SocketPackage _socketPackage;
 	
-	private final int _msgOffset = _processingHeader.getEventOffset();
+	private final int _msgOffset = _header.getEventOffset();
 	
 	@Before
 	public void setUp() {
@@ -53,316 +50,136 @@ public class TestNonblockingEventSender {
 				return new byte[BUFFER_SIZE];
 			}
 		}, 4);
-		_sender = new NonblockingEventSender(_buffer, _buffer.newBarrier(), _processingHeader);
+		_sender = new NonblockingEventSender(_buffer, _buffer.newBarrier(), _header);
 		_buffer.setGatingSequences(_sender.getSequence());
 		
 		_socketPackage = SocketPackage.create(_zmqSocket)
-				.setMessageOffsets(0, 16)
-				.setSocketId(0);
+				.setSocketId(0);		
 	}
 	
 	@Test
 	public void sendWithSocketAndBufferReady() {
-		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt()))
+		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.thenReturn(true)
 			.thenReturn(true);
 		
 		long seq = _buffer.next();
 		byte[] outgoingBuffer = _buffer.get(seq);
-		
-		// write the ID
-		UUID expectedId = UUID.fromString("abababab-abab-abab-abab-abababababab");
-		MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, expectedId);
-		
-		for (int i = 0; i < 256; i += 4) {
-			MessageBytesUtil.writeInt(outgoingBuffer, i + _msgOffset + 16, i / 4);
-		}
-		_processingHeader.setIsValid(true, outgoingBuffer);
+		writeFakeMessage(outgoingBuffer);
 		_buffer.publish(seq);
 		
 		assertTrue(_sender.sendIfReady(_socketPackage));
-		
-		ArgumentCaptor<byte[]> eBytesCaptor = ArgumentCaptor.forClass(byte[].class);
-		ArgumentCaptor<Integer> eOffsetCaptor = ArgumentCaptor.forClass(Integer.class);
-		verify(_zmqSocket).send(eBytesCaptor.capture(), eOffsetCaptor.capture(), eq(ZMQ.SNDMORE | ZMQ.NOBLOCK));
-		verify(_zmqSocket).send(eBytesCaptor.capture(), eOffsetCaptor.capture(), eq(ZMQ.NOBLOCK));
-		
-		List<byte[]> eventParts = eBytesCaptor.getAllValues();
-		List<Integer> offsets = eOffsetCaptor.getAllValues();
-		
-		// id
-		byte[] id = eventParts.get(0);
-		assertEquals(expectedId, MessageBytesUtil.readUUID(id, offsets.get(0)));
-		
-		// contents
-		byte[] contents = eventParts.get(1);
-		int contentOffset = offsets.get(1);
-		for (int i = 0; i < 256; i += 4) {
-			int expVal = i / 4;
-			assertEquals(getUnmatchedOffsetMessage(expVal, i + contentOffset, contents), 
-					expVal, MessageBytesUtil.readInt(contents, i  + contentOffset));
-		}
-		
 		assertEquals(0, _sender.getSequence().get());
 	}
 	
 	@Test
 	public void sendMultipleWithSocketAndBufferReady() {
-		ByteArrayCaptor eventPartCaptor = new ByteArrayCaptor();
-		ArgumentCaptor<Integer> eOffsetCaptor = ArgumentCaptor.forClass(Integer.class);
-		when(_zmqSocket.send(argThat(eventPartCaptor), eOffsetCaptor.capture(), anyInt()))
+		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.thenReturn(true)
 			.thenReturn(true)
 			.thenReturn(true)
 			.thenReturn(true)
 			.thenReturn(true)
 			.thenReturn(true);
-		
-		UUID id1 = UUID.fromString("11111111-1111-1111-1111-111111111111");
-		UUID id2 = UUID.fromString("22222222-2222-2222-2222-222222222222");
-		UUID id3 = UUID.fromString("33333333-3333-3333-3333-333333333333");
-		UUID[] ids = new UUID[] {id1, id2, id3};
-		
-		byte[] id1Bytes = new byte[16];
-		MessageBytesUtil.writeUUID(id1Bytes, 0, id1);
-		byte[] id2Bytes = new byte[16];
-		MessageBytesUtil.writeUUID(id2Bytes, 0, id2);
-		byte[] id3Bytes = new byte[16];
-		MessageBytesUtil.writeUUID(id3Bytes, 0, id3);
-		byte[][] idsBytes = new byte[][] {id1Bytes, id2Bytes, id3Bytes};
-		
-		byte[] content1 = new byte[256];
-		byte[] content2 = new byte[256];
-		byte[] content3 = new byte[256];
-		byte[][] contents = new byte[][] {content1, content2, content3};
-		
-		for (int i = 0; i < contents.length; i++) {
-			for (int j = 0; j < 256; j += 4) {
-				MessageBytesUtil.writeInt(contents[i], j, -(i + 1));
-			}
-		}
 		
 		// write the events out
 		for (int i = 0; i < 3; i++) {
 			long seq = _buffer.next();
 			byte[] outgoingBuffer = _buffer.get(seq);
-			MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, ids[i]);
-			System.arraycopy(contents[i], 0, outgoingBuffer, _msgOffset + 16, contents[i].length);
-			_processingHeader.setIsValid(true, outgoingBuffer);
+			writeFakeMessage(outgoingBuffer, i);
 			_buffer.publish(seq);
 		}
-		
+		// send the events
 		for (int i = 0; i < 3; i++) {
 			assertTrue(_sender.sendIfReady(_socketPackage));
 		}
-		
-		verify(_zmqSocket, times(3)).send(any(byte[].class), anyInt(), eq(ZMQ.SNDMORE | ZMQ.NOBLOCK));
-		verify(_zmqSocket, times(3)).send(any(byte[].class), anyInt(), eq(ZMQ.NOBLOCK));
-		
-		List<byte[]> eventParts = eventPartCaptor.getAllValues();
-		List<Integer> offsets = eOffsetCaptor.getAllValues();
-		assertEquals(6, eventParts.size());
-		for (int i = 0; i < 3; i++) {
-			byte[] idBytes = eventParts.get(2 * i);
-			int idOffset = offsets.get(2 * 1);
-			assertRangeEqual(idsBytes[i], idBytes, idOffset, idsBytes[i].length);
-			
-			byte[] contentBytes = eventParts.get(2 * i + 1);
-			int contentOffset = offsets.get(2 * i + 1);
-			assertRangeEqual(contents[i], contentBytes, contentOffset, contents[i].length);
-		}
-		
 		assertEquals(2, _sender.getSequence().get());
-		verifyNoMoreInteractions(_zmqSocket);
 	}
 	
 	@Test
 	public void sendWithSocketNotReady() {
-		ByteArrayCaptor eventPartCaptor = new ByteArrayCaptor();
-		ArgumentCaptor<Integer> eOffsetCaptor = ArgumentCaptor.forClass(Integer.class);
-		
-		when(_zmqSocket.send(argThat(eventPartCaptor), eOffsetCaptor.capture(), anyInt()))
+		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.thenReturn(false);
 		
 		long seq = _buffer.next();
 		byte[] outgoingBuffer = _buffer.get(seq);
-		
-		// write the ID
-		byte[] expectedIdBytes = new byte[16];
-		UUID expectedId = UUID.fromString("abababab-abab-abab-abab-abababababab");
-		MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, expectedId);
-		MessageBytesUtil.writeUUID(expectedIdBytes, 0, expectedId);
-		
-		for (int i = 0; i < 256; i += 4) {
-			MessageBytesUtil.writeInt(outgoingBuffer, i + _msgOffset + 16, i / 4);
-		}
-		_processingHeader.setIsValid(true, outgoingBuffer);
+		writeFakeMessage(outgoingBuffer);
 		_buffer.publish(seq);
 		
 		assertFalse(_sender.sendIfReady(_socketPackage));
-		verify(_zmqSocket, only()).send(any(byte[].class), anyInt(), eq(ZMQ.SNDMORE | ZMQ.NOBLOCK));
-		
-		assertRangeEqual(expectedIdBytes, eventPartCaptor.getValue(), eOffsetCaptor.getValue(), expectedIdBytes.length);
-		
 		assertEquals(-1, _sender.getSequence().get());
 	}
 	
 	@Test
 	public void sendWithSocketNotReadyThenReady() {
-		ByteArrayCaptor eventPartCaptor = new ByteArrayCaptor();
-		ArgumentCaptor<Integer> eOffsetCaptor = ArgumentCaptor.forClass(Integer.class);
-		
-		when(_zmqSocket.send(argThat(eventPartCaptor), eOffsetCaptor.capture(), anyInt()))
+		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.thenReturn(false)
 			.thenReturn(true)
 			.thenReturn(true);
-		
+	
 		long seq = _buffer.next();
 		byte[] outgoingBuffer = _buffer.get(seq);
-		
-		// write the ID
-		byte[] expectedIdBytes = new byte[16];
-		UUID expectedId = UUID.fromString("abababab-abab-abab-abab-abababababab");
-		MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, expectedId);
-		MessageBytesUtil.writeUUID(expectedIdBytes, 0, expectedId);
-		
-		byte[] content = new byte[256];
-		for (int i = 0; i < 256; i += 4) {
-			MessageBytesUtil.writeInt(outgoingBuffer, i + _msgOffset + 16, i / 4);
-			MessageBytesUtil.writeInt(content, i, i / 4);
-		}
-		_processingHeader.setIsValid(true, outgoingBuffer);
+		writeFakeMessage(outgoingBuffer);
 		_buffer.publish(seq);
 		
 		assertFalse(_sender.sendIfReady(_socketPackage));
 		assertEquals(-1, _sender.getSequence().get());
 		
 		assertTrue(_sender.sendIfReady(_socketPackage));
-		verify(_zmqSocket, times(2)).send(any(byte[].class), anyInt(), eq(ZMQ.SNDMORE | ZMQ.NOBLOCK));
-		verify(_zmqSocket).send(any(byte[].class), anyInt(), eq(ZMQ.NOBLOCK));
-		
 		assertEquals(0, _sender.getSequence().get());
-		
-		List<byte[]> sentBytes = eventPartCaptor.getAllValues();
-		List<Integer> offsets = eOffsetCaptor.getAllValues();
-		
-		// id, id, content
-		assertRangeEqual(expectedIdBytes, sentBytes.get(0), offsets.get(0), expectedIdBytes.length);
-		assertRangeEqual(expectedIdBytes, sentBytes.get(1), offsets.get(1), expectedIdBytes.length);
-		assertRangeEqual(content, sentBytes.get(2), offsets.get(2), content.length);
-				
-		verifyNoMoreInteractions(_zmqSocket);
 	}
 	
 	@Test
-	public void sendWithNoPendingEvents() {
-		_sender.sendIfReady(_socketPackage);
+	public void sendWithNoPendingEvents() {	
+		assertFalse(_sender.sendIfReady(_socketPackage));
 		assertEquals(-1, _sender.getSequence().get());
 		verifyZeroInteractions(_zmqSocket);
 	}
 	
 	@Test
-	public void sendWithNoPendingEventsThenPendingEvents() {
-		ByteArrayCaptor eventPartCaptor = new ByteArrayCaptor();
-		ArgumentCaptor<Integer> eOffsetCaptor = ArgumentCaptor.forClass(Integer.class);
-		
-		when(_zmqSocket.send(argThat(eventPartCaptor), eOffsetCaptor.capture(), anyInt()))
+	public void sendWithNoPendingEventsThenPendingEvents() {				
+		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.thenReturn(true)
 			.thenReturn(true);
 		
-		_sender.sendIfReady(_socketPackage);
-		
+		assertFalse(_sender.sendIfReady(_socketPackage));
+	
 		long seq = _buffer.next();
 		byte[] outgoingBuffer = _buffer.get(seq);
-		
-		// write the ID
-		byte[] expectedIdBytes = new byte[16];
-		UUID expectedId = UUID.fromString("abababab-abab-abab-abab-abababababab");
-		MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, expectedId);
-		MessageBytesUtil.writeUUID(expectedIdBytes, 0, expectedId);
-		
-		byte[] content = new byte[256];
-		for (int i = 0; i < 256; i += 4) {
-			MessageBytesUtil.writeInt(outgoingBuffer, i + _msgOffset + 16, i / 4);
-			MessageBytesUtil.writeInt(content, i, i / 4);
-		}
-		_processingHeader.setIsValid(true, outgoingBuffer);
+		writeFakeMessage(outgoingBuffer);
 		_buffer.publish(seq);
-		
-		_sender.sendIfReady(_socketPackage);
-		
-		verify(_zmqSocket).send(any(byte[].class), anyInt(), eq(ZMQ.SNDMORE | ZMQ.NOBLOCK));
-		verify(_zmqSocket).send(any(byte[].class), anyInt(), eq(ZMQ.NOBLOCK));
-		
-		List<byte[]> sentBytes = eventPartCaptor.getAllValues();
-		List<Integer> offsets = eOffsetCaptor.getAllValues();
-		
-		// id, id, content
-		assertRangeEqual(expectedIdBytes, sentBytes.get(0), offsets.get(0), expectedIdBytes.length);
-		assertRangeEqual(content, sentBytes.get(1), offsets.get(1), content.length);
-		
+				
+		assertTrue(_sender.sendIfReady(_socketPackage));
 		assertEquals(0, _sender.getSequence().get());
-		verifyNoMoreInteractions(_zmqSocket);
 	}
 	
 	@Test
 	public void sendWithSocketNotReadyForSecondPart() {
-		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt()))
+		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.thenReturn(true)
 			.thenReturn(false);
 		
 		long seq = _buffer.next();
 		byte[] outgoingBuffer = _buffer.get(seq);
-		
-		// write the ID
-		byte[] expectedIdBytes = new byte[16];
-		UUID expectedId = UUID.fromString("abababab-abab-abab-abab-abababababab");
-		MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, expectedId);
-		MessageBytesUtil.writeUUID(expectedIdBytes, 0, expectedId);
-		
-		for (int i = 0; i < 256; i += 4) {
-			MessageBytesUtil.writeInt(outgoingBuffer, i + _msgOffset + 16, i / 4);
-		}
-		_processingHeader.setIsValid(true, outgoingBuffer);
+		writeFakeMessage(outgoingBuffer);
 		_buffer.publish(seq);
 		
 		assertFalse(_sender.sendIfReady(_socketPackage));
-		verify(_zmqSocket).send(any(byte[].class), anyInt(), eq(ZMQ.SNDMORE | ZMQ.NOBLOCK));
-		verify(_zmqSocket).send(any(byte[].class), anyInt(), eq(ZMQ.NOBLOCK));
 		assertEquals(-1, _sender.getSequence().get());	
-		
-		verifyNoMoreInteractions(_zmqSocket);
 	}
 	
-	@Test(expected=IllegalArgumentException.class)
-	public void sendWithOffsetOutOfRange() {
-		long seq = _buffer.next();
-		byte[] outgoingBuffer = _buffer.get(seq);
-		
-		// write the ID
-		byte[] expectedIdBytes = new byte[16];
-		UUID expectedId = UUID.fromString("abababab-abab-abab-abab-abababababab");
-		MessageBytesUtil.writeUUID(outgoingBuffer, _msgOffset, expectedId);
-		MessageBytesUtil.writeUUID(expectedIdBytes, 0, expectedId);
-		
+	private void writeFakeMessage(byte[] outgoingBytes) {
+		writeFakeMessage(outgoingBytes, 0);
+	}
+	
+	private void writeFakeMessage(byte[] outgoingBytes, int seed) {
+		byte[] segment1 = new byte[16];
+		MessageBytesUtil.writeUUID(segment1, 0, UUID.fromString(String.format("abababab-abab-abab-%04d-abababababab", seed)));
+		byte[] segment2 = new byte[256];
 		for (int i = 0; i < 256; i += 4) {
-			MessageBytesUtil.writeInt(outgoingBuffer, i + _msgOffset + 16, i / 4);
+			MessageBytesUtil.writeInt(segment2, i + _msgOffset + 16, (i * (seed + 1)) / 4);
 		}
-		_processingHeader.setIsValid(true, outgoingBuffer);
-		_buffer.publish(seq);
-		
-		SocketPackage socketPackage = SocketPackage.create(_zmqSocket)
-				.setMessageOffsets(BUFFER_SIZE)
-				.setSocketId(0);
-		
-		_sender.sendIfReady(socketPackage);
-	}
-	
-	private String getUnmatchedOffsetMessage(int expectedValue, int offset, byte[] actual) {
-		return String.format("expected: %d at offset %d, actual array: %s", 
-				expectedValue, 
-				offset, 
-				toHexStringSegment(actual, offset, 5));
+		TestEventSender.writeMessage(new byte[][] {segment1, segment2}, outgoingBytes, _header);
 	}
 	
 }

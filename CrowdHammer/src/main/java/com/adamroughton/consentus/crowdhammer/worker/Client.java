@@ -114,4 +114,5 @@ public final class Client {
 	public boolean hasConnected() {
 		return _clientId != -1;
 	}
+
 }

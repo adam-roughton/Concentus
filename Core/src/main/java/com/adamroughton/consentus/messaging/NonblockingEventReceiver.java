@@ -34,7 +34,7 @@ public class NonblockingEventReceiver {
 	private final EventReceiver _eventReceiver;
 	private final RingBuffer<byte[]> _incomingBuffer;
 	private final Sequence _sequence;
-	private final EventProcessingHeader _header;
+	private final IncomingEventHeader _header;
 	
 	/**
 	 * As we might not recv a message during a {@link recvIfReady} call,
@@ -45,11 +45,11 @@ public class NonblockingEventReceiver {
 	private long _unpubClaimedSeq = -1;
 	
 	public NonblockingEventReceiver(final RingBuffer<byte[]> incomingBuffer, 
-			final EventProcessingHeader processingHeader) {
-		_eventReceiver = new EventReceiver(processingHeader, true);
+			final IncomingEventHeader header) {
+		_eventReceiver = new EventReceiver(header, true);
 		_incomingBuffer = Objects.requireNonNull(incomingBuffer);
 		_sequence = new Sequence(-1);
-		_header = Objects.requireNonNull(processingHeader);
+		_header = Objects.requireNonNull(header);
 	}
 	
 	/**
@@ -62,7 +62,6 @@ public class NonblockingEventReceiver {
 	 */
 	public boolean recvIfReady(final SocketPackage socketPackage) {
 		return recvIfReady(socketPackage.getSocket(), 
-				socketPackage.getMessageFrameBufferMapping(), 
 				socketPackage.getSocketId());
 	}
 	
@@ -70,13 +69,11 @@ public class NonblockingEventReceiver {
 	 * Attempts to receive an event if an event is immediately available, and there is
 	 * space in the ring buffer for it.
 	 * @param socket the socket to receive on
-	 * @param mapping the mapping to apply to received messages
 	 * @param socketId the ID to put in the header of received messages
 	 * @return whether an event was placed in the buffer. This will return true even
 	 * if the event is corrupt or had an unexpected number of event parts
 	 */
 	public boolean recvIfReady(final ZMQ.Socket socket,
-			final MessageFrameBufferMapping mapping,
 			final int socketId) {
 		if (_unpubClaimedSeq == -1 && _incomingBuffer.hasAvailableCapacity(1)) {
 			_unpubClaimedSeq = _incomingBuffer.next();					
@@ -84,7 +81,7 @@ public class NonblockingEventReceiver {
 		// only recv if slots are available
 		if (_unpubClaimedSeq != -1) {
 			byte[] incomingBuffer = _incomingBuffer.get(_unpubClaimedSeq);
-			if (_eventReceiver.recv(socket, mapping, socketId, incomingBuffer)) {
+			if (_eventReceiver.recv(socket, socketId, incomingBuffer)) {
 				publish();
 				return true;
 			}
@@ -101,7 +98,7 @@ public class NonblockingEventReceiver {
 	public void tidyUp() {
 		if (_unpubClaimedSeq != -1) {
 			byte[] incomingBuffer = _incomingBuffer.get(_unpubClaimedSeq);
-			_header.setIsValid(false, incomingBuffer);
+			_header.setIsValid(incomingBuffer, false);
 			publish();
 		}
 	}

@@ -29,13 +29,14 @@ import com.adamroughton.consentus.cluster.worker.Cluster;
 import com.adamroughton.consentus.config.Configuration;
 import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
 import com.adamroughton.consentus.messaging.EventListener;
-import com.adamroughton.consentus.messaging.EventProcessingHeader;
+import com.adamroughton.consentus.messaging.EventReceiver;
+import com.adamroughton.consentus.messaging.IncomingEventHeader;
+import com.adamroughton.consentus.messaging.OutgoingEventHeader;
 import com.adamroughton.consentus.messaging.Publisher;
 import com.adamroughton.consentus.messaging.SocketManager;
 import com.adamroughton.consentus.messaging.SocketPackage;
 import com.adamroughton.consentus.messaging.SocketSettings;
-import com.adamroughton.consentus.messaging.patterns.PubSendQueueWriter;
-import com.adamroughton.consentus.messaging.patterns.SubRecvQueueReader;
+import com.adamroughton.consentus.messaging.patterns.SendQueue;
 import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
@@ -55,7 +56,8 @@ public class CanonicalStateService implements ConsentusService {
 	private final SocketManager _socketManager;
 	private final Disruptor<byte[]> _inputDisruptor;
 	private final Disruptor<byte[]> _outputDisruptor;
-	private final EventProcessingHeader _header;
+	private final OutgoingEventHeader _pubHeader;
+	private final IncomingEventHeader _subHeader;
 	private final StateLogic _stateLogic;
 	
 	private ConsentusProcessCallback _exCallback;
@@ -77,7 +79,8 @@ public class CanonicalStateService implements ConsentusService {
 		_outputDisruptor = new Disruptor<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
 				_executor, new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
 		
-		_header = new EventProcessingHeader(0, 1);
+		_pubHeader = new OutgoingEventHeader(0, 2);
+		_subHeader = new IncomingEventHeader(0, 2);
 		
 		_stateLogic = new StateLogic() {
 
@@ -158,18 +161,17 @@ public class CanonicalStateService implements ConsentusService {
 		_socketManager.bindBoundSockets();
 		
 		// infrastructure for sub socket
-		SubRecvQueueReader subRecvQueueReader = new SubRecvQueueReader(_header);
-		SocketPackage subSocketPackage = _socketManager.createSocketPackage(_subSocketId, subRecvQueueReader.getMessageFrameBufferMapping());
-		_subListener = new EventListener(subSocketPackage, _inputDisruptor.getRingBuffer(), _exCallback);
+		SocketPackage subSocketPackage = _socketManager.createSocketPackage(_subSocketId);
+		_subListener = new EventListener(new EventReceiver(_subHeader, false), subSocketPackage, _inputDisruptor.getRingBuffer(), _exCallback);
 		
 		// infrastructure for pub socket
-		PubSendQueueWriter pubSendQueueWriter = new PubSendQueueWriter(_header, _outputDisruptor);
-		SocketPackage pubSocketPackage = _socketManager.createSocketPackage(_pubSocketId, pubSendQueueWriter.getMessagePartPolicy());
-		_publisher = new Publisher(pubSocketPackage, _header);
+		SendQueue pubSendQueue = new SendQueue(_pubHeader, _outputDisruptor);
+		SocketPackage pubSocketPackage = _socketManager.createSocketPackage(_pubSocketId);
+		_publisher = new Publisher(pubSocketPackage, _pubHeader);
 		
 		SequenceBarrier inputBarrier = _inputDisruptor.getRingBuffer().newBarrier();
 		_stateProcessor = new StateProcessor(_stateLogic, _inputDisruptor.getRingBuffer(), inputBarrier, 
-				subRecvQueueReader, pubSendQueueWriter, _exCallback);
+				_subHeader, pubSendQueue, _exCallback);
 		
 		_inputDisruptor.handleEventsWith(_stateProcessor);
 		_outputDisruptor.handleEventsWith(_publisher);

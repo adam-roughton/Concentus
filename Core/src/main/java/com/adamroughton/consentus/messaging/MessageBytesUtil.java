@@ -65,7 +65,7 @@ public final class MessageBytesUtil {
 		return 1 << (_isLittleEndian? 7 - flagOffset : flagOffset);
 	}
 	
-	public static boolean readFlagFromByte(byte[] array, long fieldOffset, int flagOffset) {		
+	public static boolean readFlagFromByte(byte[] array, long fieldOffset, int flagOffset) {	
 		int flagMask = getFlagMask(flagOffset);
 		byte field = _unsafe.getByte(array, BYTE_ARRAY_OFFSET + fieldOffset);
 		return (field & flagMask) != 0;

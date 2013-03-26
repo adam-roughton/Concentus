@@ -17,19 +17,14 @@ package com.adamroughton.consentus.messaging.events;
 
 public class ClientConnectEvent extends ByteArrayBackedEvent {
 	
+	private static final int EVENT_SIZE = 0;
 	/**
 	 * Brushing over security details for now
 	 */
 	//private static final int AUTH_TOKEN_OFFSET = 0;
 
 	public ClientConnectEvent() {
-		super(EventType.CLIENT_CONNECT.getId());
-	}
-	
-	public void getAuthToken(byte[] buffer, int offset) {
-	}
-
-	public void setAuthToken(byte[] buffer, int offset) {
+		super(EventType.CLIENT_CONNECT.getId(), EVENT_SIZE);
 	}
 	
 }

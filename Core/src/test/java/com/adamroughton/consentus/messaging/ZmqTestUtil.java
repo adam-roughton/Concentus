@@ -67,6 +67,22 @@ public class ZmqTestUtil {
 		return new ArrayLengthMatcher<>(length);
 	}
 	
+	public static FlagMatcher hasFlags(final int... flags) {
+		return createFlagMatcher(true, flags);
+	}
+	
+	public static FlagMatcher doesNotHaveFlags(final int... flags) {
+		return createFlagMatcher(false, flags);
+	}
+	
+	private static FlagMatcher createFlagMatcher(final boolean flagsWanted, final int... flags) {
+		int flagSet = 0;
+		for (int flag : flags) {
+			flagSet |= flag;
+		}
+		return new FlagMatcher(flagSet, flagsWanted);
+	}
+	
 	public static ByteArrayMatcher hasBytes(final byte[] bytes) {
 		return new ByteArrayMatcher(bytes);
 	}

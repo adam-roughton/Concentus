@@ -25,14 +25,14 @@ public class Publisher implements EventHandler<byte[]> {
 	private final EventSender _eventSender;
 	
 	public Publisher(final SocketPackage socketPackage,
-			final EventProcessingHeader processingHeader) {
+			final OutgoingEventHeader header) {
 		_socketPackage = Objects.requireNonNull(socketPackage);
 		ZMQ.Socket socket = socketPackage.getSocket();
 		if (socket.getType() != ZMQ.PUB && socket.getType() != ZMQ.XPUB) {
 			throw new IllegalArgumentException(String.format("The socket type was %d, not PUB or XPUB", 
 					socket.getType()));
 		}
-		_eventSender = new EventSender(processingHeader, false);
+		_eventSender = new EventSender(header, false);
 	}
 
 	@Override

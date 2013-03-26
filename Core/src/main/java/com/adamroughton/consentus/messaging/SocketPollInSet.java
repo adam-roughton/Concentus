@@ -8,7 +8,7 @@ public class SocketPollInSet {
 	private final SocketPackage[] _socketPackages;
 	
 	public SocketPollInSet(ZMQ.Context context, SocketPackage... socketPackages) {
-		_poller = context.poller(socketPackages.length);
+		_poller = new ZMQ.Poller(socketPackages.length);
 		_socketPackages = socketPackages;
 		for (int i = 0; i < _socketPackages.length; i++) {
 			_poller.register(_socketPackages[i].getSocket());

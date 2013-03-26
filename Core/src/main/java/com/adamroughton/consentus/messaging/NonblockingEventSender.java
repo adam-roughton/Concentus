@@ -39,8 +39,8 @@ public class NonblockingEventSender {
 	
 	public NonblockingEventSender(final RingBuffer<byte[]> outgoingBuffer,
 			final SequenceBarrier outgoingBarrier, 
-			final EventProcessingHeader processingHeader) {
-		_eventSender = new EventSender(processingHeader, true);
+			final OutgoingEventHeader header) {
+		_eventSender = new EventSender(header, true);
 		_sequence = new Sequence(-1);
 		_outgoingBuffer = outgoingBuffer;
 		_outgoingBarrier = outgoingBarrier;
@@ -54,26 +54,23 @@ public class NonblockingEventSender {
 	 * @see equivalent to NonblockingEventSender#sendIfReady(org.zeromq.ZMQ.Socket, MessagePartBufferPolicy)
 	 */
 	public boolean sendIfReady(final SocketPackage socketPackage) {
-		return sendIfReady(socketPackage.getSocket(), 
-				socketPackage.getMessageFrameBufferMapping());
+		return sendIfReady(socketPackage.getSocket());
 	}
 	
 	/**
 	 * Attempts to send a pending event from the outgoing buffer, succeeding
 	 * only if both the event is ready and the socket is able to send the event.
 	 * @param socket the socket to send the event on
-	 * @param mapping the message frame mapping to apply when sending messages
 	 * @return whether an event was sent from the buffer.
 	 */
-	public boolean sendIfReady(final ZMQ.Socket socket,
-			final MessageFrameBufferMapping mapping) {
+	public boolean sendIfReady(final ZMQ.Socket socket) {
 		long nextSeq = _sequence.get() + 1;
 		if (nextSeq > _availableSeq) {
 			_availableSeq = _outgoingBarrier.getCursor();
 		}
 		if (nextSeq <= _availableSeq) {
 			byte[] outgoingBuffer = _outgoingBuffer.get(nextSeq);
-			if (_eventSender.send(socket, mapping, outgoingBuffer)) {
+			if (_eventSender.send(socket, outgoingBuffer)) {
 				_sequence.addAndGet(1);
 				return true;
 			}

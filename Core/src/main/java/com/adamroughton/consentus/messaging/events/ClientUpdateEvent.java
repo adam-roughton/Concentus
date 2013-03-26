@@ -25,53 +25,59 @@ public class ClientUpdateEvent extends ByteArrayBackedEvent {
 	private static final int SIM_TIME_OFFSET = 8;
 	private static final int UPDATE_BUFFER_OFFSET = 16;
 	
+	private static final int BASE_SIZE = 16;
+	
 	// 2 bytes for last client action Id, 2 bytes for preceding 16 updates (flag based)
 	
 	public ClientUpdateEvent() {
 		super(EventType.STATE_UPDATE.getId());
 	}
 	
-	public long getUpdateId() {
+	public final long getUpdateId() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET));
 	}
 
-	public void setUpdateId(long updateId) {
+	public final void setUpdateId(long updateId) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET), updateId);
 	}
 
-	public long getSimTime() {
+	public final long getSimTime() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(SIM_TIME_OFFSET));
 	}
 
-	public void setSimTime(long simTime) {
+	public final void setSimTime(long simTime) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(SIM_TIME_OFFSET), simTime);
 	}
 	
-	public ByteBuffer getUpdateBuffer() {
+	public final ByteBuffer getUpdateBuffer() {
 		byte[] backingArray = getBackingArray();
 		int offset = getOffset(UPDATE_BUFFER_OFFSET);
 		return ByteBuffer.wrap(backingArray, offset, backingArray.length - offset);
 	}
 	
-	public int getUpdateOffset() {
+	public final int getUpdateOffset() {
 		return getOffset(UPDATE_BUFFER_OFFSET);
 	}
 	
-	public int getUpdateLength() {
+	public final int getUpdateLength() {
 		byte[] backingArray = getBackingArray();
 		return backingArray.length - getOffset(UPDATE_BUFFER_OFFSET);
 	}
 	
-	public void copyFromUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
+	public final void copyFromUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
 		int updateLength = getUpdateLength();
 		System.arraycopy(getBackingArray(), UPDATE_BUFFER_OFFSET, exBuffer, 0, 
 				length < updateLength? length : updateLength);
 	}
 	
-	public void copyToUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
+	public final void copyToUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
 		int updateLength = getUpdateLength();
 		System.arraycopy(exBuffer, offset, getBackingArray(), UPDATE_BUFFER_OFFSET, 
 				length < updateLength? length : updateLength);
+	}
+	
+	public final void addUsedLength(final ByteBuffer updateBuffer) {
+		setEventSize(BASE_SIZE + getUsedLength(getOffset(UPDATE_BUFFER_OFFSET), updateBuffer));
 	}
 	
 }

@@ -31,21 +31,19 @@ import com.adamroughton.consentus.cluster.worker.Cluster;
 import com.adamroughton.consentus.config.Configuration;
 import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
 import com.adamroughton.consentus.messaging.EventListener;
-import com.adamroughton.consentus.messaging.EventProcessingHeader;
+import com.adamroughton.consentus.messaging.EventReceiver;
+import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
-import com.adamroughton.consentus.messaging.MessageFrameBufferMapping;
 import com.adamroughton.consentus.messaging.NonblockingEventReceiver;
 import com.adamroughton.consentus.messaging.NonblockingEventSender;
+import com.adamroughton.consentus.messaging.OutgoingEventHeader;
 import com.adamroughton.consentus.messaging.Publisher;
 import com.adamroughton.consentus.messaging.RouterSocketReactor;
 import com.adamroughton.consentus.messaging.SocketManager;
 import com.adamroughton.consentus.messaging.SocketPackage;
 import com.adamroughton.consentus.messaging.SocketSettings;
 import com.adamroughton.consentus.messaging.events.EventType;
-import com.adamroughton.consentus.messaging.patterns.PubSendQueueWriter;
-import com.adamroughton.consentus.messaging.patterns.RouterRecvQueueReader;
-import com.adamroughton.consentus.messaging.patterns.RouterSendQueueWriter;
-import com.adamroughton.consentus.messaging.patterns.SubRecvQueueReader;
+import com.adamroughton.consentus.messaging.patterns.SendQueue;
 import com.lmax.disruptor.MultiThreadedClaimStrategy;
 import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
@@ -65,7 +63,8 @@ public class ClientHandlerService implements ConsentusService {
 	private final Disruptor<byte[]> _recvDisruptor;
 	private final Disruptor<byte[]> _routerSendDisruptor;
 	private final Disruptor<byte[]> _pubSendDisruptor;
-	private final EventProcessingHeader _header;
+	private final OutgoingEventHeader _outgoingHeader; // both router and pub can share the same header
+	private final IncomingEventHeader _incomingHeader; // both router and sub can share the same header
 	
 	private Configuration _config;
 	private ConsentusProcessCallback _exHandler;
@@ -99,7 +98,8 @@ public class ClientHandlerService implements ConsentusService {
 				_executor, 
 				new SingleThreadedClaimStrategy(2048), 
 				new YieldingWaitStrategy());
-		_header = new EventProcessingHeader(0, 1);
+		_outgoingHeader = new OutgoingEventHeader(0, 2);
+		_incomingHeader = new IncomingEventHeader(0, 2);
 	}
 	
 	@Override
@@ -187,37 +187,34 @@ public class ClientHandlerService implements ConsentusService {
 		_socketManager.bindBoundSockets();
 		
 		// infrastructure for router socket
-		MessageFrameBufferMapping routerMapping = new MessageFrameBufferMapping(0, 16);
-		RouterSendQueueWriter routerSendQueue = new RouterSendQueueWriter(_header, _routerSendDisruptor, routerMapping);
-		RouterRecvQueueReader routerRecvQueueReader = new RouterRecvQueueReader(_header, routerMapping);
-		SocketPackage routerSocketPackage = _socketManager.createSocketPackage(_routerSocketId, routerMapping);
+		SendQueue routerSendQueue = new SendQueue(_outgoingHeader, _routerSendDisruptor);
+		SocketPackage routerSocketPackage = _socketManager.createSocketPackage(_routerSocketId);
 		SequenceBarrier routerSendBarrier = _routerSendDisruptor.getRingBuffer().newBarrier();
 		_routerReactor = new RouterSocketReactor(routerSocketPackage,
-				new NonblockingEventReceiver(_recvDisruptor.getRingBuffer(), _header),
-				new NonblockingEventSender(_routerSendDisruptor.getRingBuffer(), routerSendBarrier, _header), 
+				new NonblockingEventReceiver(_recvDisruptor.getRingBuffer(), _incomingHeader),
+				new NonblockingEventSender(_routerSendDisruptor.getRingBuffer(), routerSendBarrier, _outgoingHeader), 
 				_exHandler);
 		
 		// infrastructure for sub socket
-		SubRecvQueueReader subRecvQueueReader = new SubRecvQueueReader(_header);
-		SocketPackage subSocketPackage = _socketManager.createSocketPackage(_subSocketId, subRecvQueueReader.getMessageFrameBufferMapping());
-		_subListener = new EventListener(subSocketPackage, 
+		SocketPackage subSocketPackage = _socketManager.createSocketPackage(_subSocketId);
+		_subListener = new EventListener(
+				new EventReceiver(_incomingHeader, false),
+				subSocketPackage, 
 				_recvDisruptor.getRingBuffer(), 
 				_exHandler);
 
 		// infrastructure for pub socket
-		PubSendQueueWriter pubSendQueue = new PubSendQueueWriter(_header, _pubSendDisruptor);
-		SocketPackage pubSocketPackage = _socketManager.createSocketPackage(_pubSocketId, pubSendQueue.getMessagePartPolicy());
-		
+		SendQueue pubSendQueue = new SendQueue(_outgoingHeader, _pubSendDisruptor);
+		SocketPackage pubSocketPackage = _socketManager.createSocketPackage(_pubSocketId);
 		// event processing infrastructure
-		_processor = new ClientHandlerProcessor(_clientHandlerId, 
+		_processor = new ClientHandlerProcessor(
+				_clientHandlerId, 
 				_routerSocketId,
 				_subSocketId,
 				routerSendQueue, 
 				pubSendQueue, 
-				_header, 
-				subRecvQueueReader, 
-				routerRecvQueueReader);
-		_publisher = new Publisher(pubSocketPackage, _header);
+				_incomingHeader);
+		_publisher = new Publisher(pubSocketPackage, _outgoingHeader);
 		
 		_recvDisruptor.handleEventsWith(_processor);
 		_pubSendDisruptor.handleEventsWith(_publisher);
