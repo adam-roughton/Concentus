@@ -41,19 +41,19 @@ public class RouterPattern {
 		int socketIdSegmentMetaData = header.getSegmentMetaData(incomingBuffer, SOCKET_ID_SEGMENT_INDEX);
 		int socketIdLength = EventHeader.getSegmentLength(socketIdSegmentMetaData);
 		byte[] senderId = new byte[socketIdLength];
-		doCopySocketId(incomingBuffer, senderId, socketIdSegmentMetaData, socketIdLength);
+		doCopySocketId(incomingBuffer, socketIdSegmentMetaData, senderId, 0, socketIdLength);
 		return senderId;
 	}
 	
 	public static void copySocketId(byte[] incomingBuffer, final IncomingEventHeader header, byte[] dest, int offset, int length) {
 		int socketIdSegmentMetaData = header.getSegmentMetaData(incomingBuffer, SOCKET_ID_SEGMENT_INDEX);
-		doCopySocketId(incomingBuffer, dest, socketIdSegmentMetaData, length);
+		doCopySocketId(incomingBuffer, socketIdSegmentMetaData, dest, offset, length);
 	}
 	
-	private static void doCopySocketId(byte[] incomingBuffer, byte[] dest, int socketIdSegmentMetaData, int maxLengthToCopy) {
+	private static void doCopySocketId(byte[] incomingBuffer, int socketIdSegmentMetaData, byte[] dest, int destOffset, int maxLengthToCopy) {
 		int socketIdOffset = EventHeader.getSegmentOffset(socketIdSegmentMetaData);
 		int socketIdLength = EventHeader.getSegmentLength(socketIdSegmentMetaData);
-		System.arraycopy(incomingBuffer, socketIdOffset, dest, socketIdOffset, maxLengthToCopy > socketIdLength? socketIdLength : maxLengthToCopy);
+		System.arraycopy(incomingBuffer, socketIdOffset, dest, destOffset, maxLengthToCopy > socketIdLength? socketIdLength : maxLengthToCopy);
 	}
 	
 }

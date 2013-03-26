@@ -29,6 +29,7 @@ public abstract class EventHeader {
 	private final int _startOffset;
 	private final int _length;
 	private final int _segmentsStartOffset;
+	private final int _flagFieldLength;
 	private final int _additionalOffset;
 	
 	public EventHeader(final int startOffset, 
@@ -43,7 +44,8 @@ public abstract class EventHeader {
 		
 		if (additionalFlagCount < 0) throw new IllegalArgumentException("The additional flag count must be not be negative.");
 		int flagCount = additionalFlagCount + 1;
-		_segmentsStartOffset = (flagCount / 8) + (flagCount % 8 != 0? 1 : 0);
+		_flagFieldLength = (flagCount / 8) + (flagCount % 8 != 0? 1 : 0);
+		_segmentsStartOffset = _flagFieldLength;
 		
 		/*
 		 * We use the first byte for flags, (segment count) * 4 bytes for segment offset/length pairs (each pair is one
@@ -64,11 +66,11 @@ public abstract class EventHeader {
 	}
 	
 	protected final boolean getFlag(byte[] event, int flagIndex) {
-		return MessageBytesUtil.readFlagFromByte(event, _startOffset, 0);
+		return MessageBytesUtil.readFlag(event, 0, _flagFieldLength, flagIndex);
 	}
 	
 	protected final void setFlag(byte[] event, int flagIndex, boolean isRaised) {
-		MessageBytesUtil.writeFlagToByte(event, _startOffset, 0, isRaised);
+		MessageBytesUtil.writeFlag(event, 0, _flagFieldLength, flagIndex, isRaised);
 	}
 	
 	public final int getSegmentCount() {
