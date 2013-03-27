@@ -190,7 +190,7 @@ public class Util {
 		try {
 			CommandLine commandLine = parser.parse(cliOptions, args);
 			for (Entry<String, String> entry : new HashSet<>(parsedCommandLine.entrySet())) {
-				parsedCommandLine.put(entry.getKey(), commandLine.getOptionValue(entry.getKey()));
+				parsedCommandLine.put(entry.getKey(), commandLine.getOptionValue(entry.getKey()).trim());
 			}
 		} catch (ParseException eParse) {
 			HelpFormatter helpFormatter = new HelpFormatter();

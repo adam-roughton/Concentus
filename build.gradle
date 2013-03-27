@@ -1,9 +1,94 @@
 import org.gradle.api.tasks.Upload;
 
+import com.sun.tracing.dtrace.ArgsAttributes;
+
+apply plugin: 'base'
+
+ext {
+	targetDir = file('target')
+	workingDir = file('working')
+	configFile = file('config.yaml')
+	scripts = file('scripts')
+	readmeFile = file('README.md')
+	licenceFile = file('LICENCE.txt')
+}
+
+task makeTargetDir << {
+	if (!targetDir.isDirectory()) {
+		targetDir.mkdirs()
+	}
+}
+
+task removeTargetDir(type: Delete) {
+	if (targetDir.isDirectory()) {
+		delete targetDir
+	}
+}
+
+task makeWorkingDir << {
+	if (!workingDir.isDirectory()) {
+		workingDir.mkdirs()
+		copy {
+			from configFile
+			into workingDir
+		}
+	}
+}
+
+task removeWorkingDir(type: Delete) {
+	if (workingDir.isDirectory()) {
+		delete workingDir
+	}
+}
+
+clean.dependsOn removeTargetDir, removeWorkingDir
+
+/**
+ * Taken from http://gradle.1045684.n5.nabble.com/collecting-only-external-dependency-files-td5117615.html
+ * Attribution: Luke Daley
+ */
+task collectDeps(dependsOn: makeTargetDir, type: Copy) { task ->
+	gradle.taskGraph.whenReady { taskGraph ->
+		if (taskGraph.hasTask(':collectDeps')) {
+			def projectNames = rootProject.subprojects*.name
+			def artifacts = new HashSet()
+			subprojects.each { subproject ->
+				subproject.configurations.runtime.resolvedConfiguration.resolvedArtifacts.each { artifact ->
+					def dependency = artifact.moduleVersion.id
+					if (!projectNames.contains(dependency.name)) {
+						artifacts << artifact.file
+					}
+				}
+			}
+			task.from artifacts
+		}
+	}
+	into "$targetDir/dist/lib"
+}
+
+task createDist(type: Copy) {
+	from configFile, scripts, readmeFile, licenceFile
+	into "$targetDir/dist"
+}
+createDist.dependsOn collectDeps
+
+task distZip(dependsOn: createDist, type: Zip) {
+	from "$targetDir/dist"
+	destinationDir targetDir
+	baseName "consentusTestBed"
+}
+
+task install(dependsOn:'uploadArchives') << {
+	println "$targetDir/dist/lib"
+}
+
+def getLocalLib(fileName) {
+	new File(libDir.getAbsolutePath(), fileName)
+}
+
 allprojects {
 	ext {
 		libDir = rootProject.file('lib')
-		targetDir = rootProject.file('target')
 	}
 		
 	defaultTasks 'build'
@@ -12,13 +97,10 @@ allprojects {
 	version = '1.0-SNAPSHOT'
 }
 
-def getLocalLib(fileName) {
-	new File(libDir.getAbsolutePath(), fileName)
-}
-
 subprojects {
 	apply plugin: 'java'
 	sourceCompatibility = 1.7
+	archivesBaseName = 'consentus-' + project.name.toLowerCase() 
 
 	defaultTasks 'build'
 	
@@ -47,20 +129,16 @@ subprojects {
 			}
 		}
 	}
-	uploadArchives.dependsOn "makeTargetDir"
+	uploadArchives.dependsOn rootProject.makeTargetDir	
 	
-	task makeTargetDir << {
-		if (!targetDir.isDirectory()) {
-			targetDir.mkdirs()
+	task copyArtifactsToDist(type: Copy) { task ->
+		configurations.runtime.artifacts.each { artifact ->
+			task.from artifact.file
 		}
+		into "$targetDir/dist"
 	}
-	
-	task removeTargetDir(type: Delete) {
-		if (targetDir.isDirectory()) {
-			delete targetDir
-		}
-	}
-	clean.dependsOn removeTargetDir
+	copyArtifactsToDist.dependsOn jar, makeTargetDir
+	createDist.dependsOn copyArtifactsToDist
 }
 
 project(':Core') {
@@ -78,6 +156,13 @@ project(':Core') {
 		compile 'org.yaml:snakeyaml:1.11'
 		compile files(getLocalLib('asg.cliche-020310.jar')) // simple interactive shell
 	}
+	
+	task runTestZooKeeper(dependsOn: makeWorkingDir, type: JavaExec) {
+		main = "com.adamroughton.consentus.cluster.TestZooKeeperProcess"
+		classpath = sourceSets.main.runtimeClasspath
+		args "50000"
+		workingDir rootProject.workingDir
+	}
 }
 
 project(':Service') {
@@ -90,4 +175,32 @@ project(':CrowdHammer') {
 	dependencies {
 		compile project(':Service')
 	}
+	
+	def createLocalExecWorkerClosure = { serviceClassName, serviceArgs ->
+		{ ->
+			javaexec {
+				main = "com.adamroughton.consentus.crowdhammer.CrowdHammerWorker"
+				classpath = sourceSets.main.runtimeClasspath
+				args "-s" + serviceClassName, "-pconfig.yaml", "-a127.0.0.1", "-z127.0.0.1:50000"
+				serviceArgs.each { serviceArg ->
+					args serviceArg
+				} 
+				jvmArgs '-Djava.library.path=/usr/local/lib'
+				workingDir rootProject.workingDir
+			}
+		}
+	}
+	
+	task runLocalWorkerService(dependsOn: makeWorkingDir) << {
+		createLocalExecWorkerClosure('com.adamroughton.consentus.crowdhammer.worker.WorkerService', ["-n1000"]).call()
+	}
+	
+	task runLocalCoordinator(dependsOn: makeWorkingDir, type: JavaExec) {
+		main = "com.adamroughton.consentus.crowdhammer.CrowdHammerCoordinator"
+		classpath = sourceSets.main.runtimeClasspath
+		args "-pconfig.yaml", "-a127.0.0.1", "-z127.0.0.1:50000"
+		jvmArgs '-Djava.library.path=/usr/local/lib'
+		workingDir rootProject.workingDir
+	}
+	
 }

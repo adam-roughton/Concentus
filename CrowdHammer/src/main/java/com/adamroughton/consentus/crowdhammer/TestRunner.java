@@ -109,6 +109,7 @@ public final class TestRunner implements Runnable {
 			setAndWait(SHUTDOWN, participatingNodes);
 		} catch (InterruptedException eInterrupted) {
 			System.out.println("Test Interrupted");
+			setAndWait(SHUTDOWN, participatingNodes);
 		}		
 	}
 	
