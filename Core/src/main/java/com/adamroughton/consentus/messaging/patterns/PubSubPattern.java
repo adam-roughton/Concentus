@@ -10,13 +10,13 @@ public class PubSubPattern {
 
 	private static final int SUB_ID_SEGMENT_INDEX = 0;
 	
-	public static <TEvent extends ByteArrayBackedEvent> SendTask asTask(
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> SendTask<TSendHeader> asTask(
 			final TEvent eventHelper, 
-			final EventWriter<TEvent> eventWriter) {
-		return new SendTask() {
+			final EventWriter<TSendHeader, TEvent> eventWriter) {
+		return new SendTask<TSendHeader>() {
 
 			@Override
-			public void write(byte[] outgoingBuffer, OutgoingEventHeader header) {
+			public void write(byte[] outgoingBuffer, TSendHeader header) {
 				EventPattern.validate(header, 2);
 				writePubEvent(outgoingBuffer, header, eventHelper, eventWriter);
 			}
@@ -24,14 +24,14 @@ public class PubSubPattern {
 		};
 	}
 	
-	public static <TEvent extends ByteArrayBackedEvent> SendTask asTask(
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> SendTask<TSendHeader> asTask(
 			final int subId,
 			final TEvent eventHelper, 
-			final EventWriter<TEvent> eventWriter) {
-		return new SendTask() {
+			final EventWriter<TSendHeader, TEvent> eventWriter) {
+		return new SendTask<TSendHeader>() {
 
 			@Override
-			public void write(byte[] outgoingBuffer, OutgoingEventHeader header) {
+			public void write(byte[] outgoingBuffer, TSendHeader header) {
 				EventPattern.validate(header, 2);
 				writePubEvent(outgoingBuffer, header, subId, eventHelper, eventWriter);
 			}
@@ -39,20 +39,20 @@ public class PubSubPattern {
 		};
 	}
 	
-	public static <TEvent extends ByteArrayBackedEvent> void writePubEvent(
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> void writePubEvent(
 			final byte[] outgoingBuffer,
-			final OutgoingEventHeader header,
+			final TSendHeader header,
 			final TEvent eventHelper, 
-			final EventWriter<TEvent> eventWriter) {
+			final EventWriter<TSendHeader, TEvent> eventWriter) {
 		writePubEvent(outgoingBuffer, header, eventHelper.getEventTypeId(), eventHelper, eventWriter);
 	}
 	
-	public static <TEvent extends ByteArrayBackedEvent> void writePubEvent(
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> void writePubEvent(
 			final byte[] outgoingBuffer,
-			final OutgoingEventHeader header,
+			final TSendHeader header,
 			final int subId,
 			final TEvent eventHelper, 
-			final EventWriter<TEvent> eventWriter) {
+			final EventWriter<TSendHeader, TEvent> eventWriter) {
 		int cursor = header.getEventOffset();
 		MessageBytesUtil.writeInt(outgoingBuffer, cursor, subId);
 		header.setSegmentMetaData(outgoingBuffer, SUB_ID_SEGMENT_INDEX, cursor, 4);

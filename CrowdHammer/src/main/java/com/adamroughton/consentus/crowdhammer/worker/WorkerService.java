@@ -16,10 +16,8 @@
 package com.adamroughton.consentus.crowdhammer.worker;
 
 import java.net.InetAddress;
-import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
@@ -34,17 +32,22 @@ import com.adamroughton.consentus.cluster.worker.Cluster;
 import com.adamroughton.consentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.consentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.consentus.crowdhammer.config.CrowdHammerConfiguration;
-import com.adamroughton.consentus.messaging.EventHeader;
-import com.adamroughton.consentus.messaging.EventReceiver;
-import com.adamroughton.consentus.messaging.EventSender;
+import com.adamroughton.consentus.crowdhammer.metriclistener.MetricListenerService;
+import com.adamroughton.consentus.disruptor.DeadlineBasedEventProcessor;
+import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
+import com.adamroughton.consentus.disruptor.NonBlockingRingBufferReader;
+import com.adamroughton.consentus.disruptor.NonBlockingRingBufferWriter;
 import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
+import com.adamroughton.consentus.messaging.MultiSocketOutgoingEventHeader;
 import com.adamroughton.consentus.messaging.OutgoingEventHeader;
-import com.adamroughton.consentus.messaging.events.ClientConnectEvent;
-import com.adamroughton.consentus.messaging.events.ConnectResponseEvent;
-import com.adamroughton.consentus.messaging.patterns.EventPattern;
-import com.adamroughton.consentus.messaging.patterns.EventReader;
-import com.adamroughton.consentus.messaging.patterns.EventWriter;
+import com.adamroughton.consentus.messaging.Publisher;
+import com.adamroughton.consentus.messaging.SendRecvSocketReactor;
+import com.adamroughton.consentus.messaging.SocketManager;
+import com.adamroughton.consentus.messaging.SocketPackage;
+import com.adamroughton.consentus.messaging.SocketPollInSet;
+import com.adamroughton.consentus.messaging.patterns.SendQueue;
+import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 import com.lmax.disruptor.dsl.Disruptor;
@@ -58,30 +61,54 @@ public final class WorkerService implements CrowdHammerService {
 	public static final String SERVICE_TYPE = "CrowdHammerWorker";
 	private static final Logger LOG = Logger.getLogger(SERVICE_TYPE);
 	
-	private final ZMQ.Context _zmqContext;
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
-	private final Disruptor<byte[]> _metricSendQueue;
 	
+	private final Disruptor<byte[]> _clientRecvDisruptor;
+	private final Disruptor<byte[]> _clientSendDisruptor;
+	private final Disruptor<byte[]> _metricSendDisruptor;
+	
+	private final MultiSocketOutgoingEventHeader _clientSendHeader;
+	private final IncomingEventHeader _clientRecvHeader;
+	private final OutgoingEventHeader _metricSendHeader;
+	
+	private final SocketManager _socketManager = new SocketManager();
+	
+	private int _metricPubSocketId;
+		
 	// we allocate to the next power of 2 to make the wrapping around operation faster
 	private int _maxClients;
 	private int _clientCountForTest;
 	private StructuredArray<Client> _clients;
-	private ClientReactor _clientReactor;
+	private SimulatedClientProcessor _clientProcessor;
+	private Publisher _metricPublisher;
+	
+	private SendRecvSocketReactor _clientSocketReactor;
+	private int[] _handlerIds;
 	
 	private CrowdHammerConfiguration _config;
 	private FatalExceptionCallback _exHandler;
 	private InetAddress _networkAddress;
 	
-	private Future<?> _runningTest = null;
-	
 	public WorkerService() {
-		_metricSendQueue = new Disruptor<>(
+		_clientRecvDisruptor = new Disruptor<>(
+				Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), 
+				_executor, 
+				new SingleThreadedClaimStrategy(2048), 
+				new YieldingWaitStrategy());
+		_clientSendDisruptor = new Disruptor<>(
+				Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), 
+				_executor, 
+				new SingleThreadedClaimStrategy(2048), 
+				new YieldingWaitStrategy());
+		_metricSendDisruptor = new Disruptor<>(
 				Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), 
 				_executor, 
 				new SingleThreadedClaimStrategy(2048), 
 				new YieldingWaitStrategy());
 		
-		_zmqContext = ZMQ.context(1);
+		_clientSendHeader = new MultiSocketOutgoingEventHeader(0, 1);
+		_clientRecvHeader = new IncomingEventHeader(0, 1);
+		_metricSendHeader = new OutgoingEventHeader(0, 2);
 	}
 
 	@Override
@@ -90,6 +117,8 @@ public final class WorkerService implements CrowdHammerService {
 		LOG.info(String.format("Entering state %s", newClusterState.name()));
 		if (newClusterState == CrowdHammerServiceState.INIT) {
 			init(cluster);
+		} else if (newClusterState == CrowdHammerServiceState.CONNECT) {
+			connect(cluster);
 		} else if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
 			initTest(cluster);
 		} else if (newClusterState == CrowdHammerServiceState.SET_UP_TEST) {
@@ -119,17 +148,59 @@ public final class WorkerService implements CrowdHammerService {
 			ConsentusProcessCallback exHandler, 
 			InetAddress networkAddress) {
 		_config = config;
-		_exHandler = Objects.requireNonNull(exHandler);
+		_exHandler = exHandler;
 		_networkAddress = networkAddress;
+		
+		_clientRecvDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Client Recv Disruptor", exHandler));
+		_clientSendDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Client Send Disruptor", exHandler));
+		_metricSendDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Metric Send Disruptor", exHandler));
+		
+		/*
+		 * Configure fixed sockets
+		 */
+
+		// metric socket
+		_metricPubSocketId = _socketManager.create(ZMQ.PUB);
 	}
 	
 	public void setMaxClientCount(final int maxClientCount) {
 		_maxClients = maxClientCount;
 	}
 	
+	@SuppressWarnings("unchecked")
 	private void init(Cluster cluster) throws Exception {
-		_clients = StructuredArray.newInstance(nextPowerOf2(_maxClients), Client.class, new Class[] {ZMQ.Context.class}, _zmqContext);
-		_clientReactor = new ClientReactor(_clients, _metricSendQueue.getRingBuffer(), _metricSendQueue.getRingBuffer().newBarrier());
+		_socketManager.bindBoundSockets();
+		
+		_clients = StructuredArray.newInstance(nextPowerOf2(_maxClients), Client.class);
+		
+		// infrastructure for client socket
+		SequenceBarrier clientSendBarrier = _clientSendDisruptor.getRingBuffer().newBarrier();
+		SendQueue<MultiSocketOutgoingEventHeader> clientSendQueue = new SendQueue<>(_clientSendHeader, _clientSendDisruptor);
+		_clientSocketReactor = new SendRecvSocketReactor(
+				new NonBlockingRingBufferWriter<>(_clientRecvDisruptor.getRingBuffer()),
+				new NonBlockingRingBufferReader<>(_clientSendDisruptor.getRingBuffer(), clientSendBarrier), 
+				_exHandler);
+
+		// infrastructure for metric socket
+		SendQueue<OutgoingEventHeader> metricSendQueue = new SendQueue<>(_metricSendHeader, _metricSendDisruptor);
+		SocketPackage pubSocketPackage = _socketManager.createSocketPackage(_metricPubSocketId);
+		
+		// event processing infrastructure
+		SequenceBarrier recvBarrier = _clientRecvDisruptor.getRingBuffer().newBarrier();
+		_clientProcessor = new SimulatedClientProcessor(_clients, clientSendQueue, metricSendQueue, _clientRecvHeader);
+		_metricPublisher = new Publisher(pubSocketPackage, _metricSendHeader);
+		
+		_clientRecvDisruptor.handleEventsWith(new DeadlineBasedEventProcessor<>(_clientProcessor, _clientRecvDisruptor.getRingBuffer(), recvBarrier, _exHandler));
+		_clientSendDisruptor.handleEventsWith(_clientSocketReactor);
+		_metricSendDisruptor.handleEventsWith(_metricPublisher);		
+	}
+	
+	private void connect(Cluster cluster) throws Exception {
+		String metricListenerConnString = cluster.getServiceAtRandom(MetricListenerService.SERVICE_TYPE);
+		int metricSubPort = _config.getServices().get(MetricListenerService.SERVICE_TYPE).getPorts().get("input");
+		_socketManager.connectSocket(_metricPubSocketId, String.format("%s:%d", metricListenerConnString, metricSubPort));
+		
+		_metricSendDisruptor.start();
 	}
 	
 	private void initTest(Cluster cluster) throws Exception {
@@ -156,97 +227,77 @@ public final class WorkerService implements CrowdHammerService {
 		String[] clientHandlerConnStrings = cluster.getAllServices(ClientHandlerService.SERVICE_TYPE);
 		int clientHandlerPort = _config.getServices().get(ClientHandlerService.SERVICE_TYPE).getPorts().get("input");
 		
-		ClientConnectEvent connectEvent = new ClientConnectEvent();
-		ConnectResponseEvent resEvent = new ConnectResponseEvent();
-		IncomingEventHeader recvHeader = new IncomingEventHeader(0, 1);
-		OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, 1);
-		EventSender sender = new EventSender(sendHeader, false);
-		EventReceiver receiver = new EventReceiver(recvHeader, false);
-
-		byte[] buffer = new byte[Constants.MSG_BUFFER_LENGTH];
+		/*
+		 * connect client socket to all client handlers
+		 */
+		_handlerIds = new int[clientHandlerConnStrings.length];
+		for (int clientHandlerIndex = 0; clientHandlerIndex < clientHandlerConnStrings.length; clientHandlerIndex++) {
+			String connString = String.format("%s:%d", 
+					clientHandlerConnStrings[clientHandlerIndex],
+					clientHandlerPort);
+			int handlerSocketId = _socketManager.create(ZMQ.DEALER);
+			_socketManager.connectSocket(handlerSocketId, connString);
+			_handlerIds[clientHandlerIndex] = handlerSocketId;
+		}
 		
-		int nextConnString = 0;
-		Client client;
-		for (int i = 0; i < _clients.getLength(); i++) {
-			client = _clients.get(i);
-			if (i < _clientCountForTest) {
-				ZMQ.Socket clientSocket = client.getSocket();
-				String connString = String.format("%s:%d", 
-						clientHandlerConnStrings[nextConnString++ % clientHandlerConnStrings.length],
-						clientHandlerPort);
-				client.setClientHandlerConnString(connString);
-				clientSocket.connect(connString);
-				
-				// send a connect event
-				EventPattern.writeContent(buffer, sendHeader.getEventOffset(), sendHeader, connectEvent, 
-						new EventWriter<ClientConnectEvent>() {
-
-					@Override
-					public void write(ClientConnectEvent event)
-							throws Exception {
-						// currently no content for connect events
-					}
-					
-				});
-				boolean success = sender.send(clientSocket, buffer);
-				
-				// recv the connect response event
-				success = receiver.recv(clientSocket, 0, buffer);
-				if (!success) {
-					throw new RuntimeException("Failed to recv connect response for client. Aborting test");
-				}
-				final Client fixedClientRef = client;
-				EventPattern.readContent(buffer, recvHeader, resEvent, new EventReader<ConnectResponseEvent>() {
-
-					@Override
-					public void read(ConnectResponseEvent event) {
-						if (event.getResponseCode() != ConnectResponseEvent.RES_OK) {
-							throw new RuntimeException(String.format("The response code for a client connection was %d, expected %d (OK). Aborting test", 
-									event.getResponseCode(), ConnectResponseEvent.RES_OK));
-						}
-						fixedClientRef.setClientId(event.getClientIdBits());
-					}
-					
-				});
+		/*
+		 * assign client handler to each client and prepare clients
+		 */
+		int nextHandlerIndex = 0;
+		for (long clientIndex = 0; clientIndex < _clients.getLength(); clientIndex++) {
+			Client client = _clients.get(clientIndex);
+			if (clientIndex < _clientCountForTest) {
+				client.setHandlerId(_handlerIds[nextHandlerIndex++ % _handlerIds.length]);
 				client.setIsActive(true);
-				try {
-					Thread.sleep(10);
-				} catch (InterruptedException eInterrupt) {
-				}
 			} else {
 				client.setIsActive(false);
 			}
+			client.setIsConnecting(false);
 		}
+		
+		SocketPollInSet clientHandlerSet = _socketManager.createPollInSet(_handlerIds);
+		_clientSocketReactor.configure(clientHandlerSet, _clientSendHeader, _clientRecvHeader);
 	}
 	
 	private void executeTest(Cluster cluster) throws Exception {
-		_runningTest = _executor.submit(_clientReactor);
+		_clientRecvDisruptor.start();
+		_clientSendDisruptor.start();
 	}
 	
 	private void stopSendingInputEvents(Cluster cluster) throws Exception {
-		_clientReactor.stopSendingInput();
+		_clientProcessor.stopSendingInput();
 	}
 	
 	private void teardown(Cluster cluster) throws Exception {
-		_clientReactor.halt();
+		// must close first to stop incoming events
+		_clientSendDisruptor.shutdown();		
+		for (int handlerId : _handlerIds) {
+			_socketManager.closeSocket(handlerId);
+		}
+		_handlerIds = null;
+		
+		// stop generating load
+		_clientRecvDisruptor.shutdown();
+		
 		Client client;
 		for (int i = 0; i < _clients.getLength(); i++) {
 			client = _clients.get(i);
 			if (client.isActive()) {
-				String connString = _clients.get(i).getClientHandlerConnString();
-				_clients.get(i).getSocket().disconnect(connString);
+				client.setHandlerId(-1);
+				client.setIsConnecting(false);
 			}
 		}
 	}
 	
 	private void shutdown(Cluster cluster) throws Exception {
+		_metricSendDisruptor.shutdown();
 		_executor.shutdownNow();
 		try {
 			_executor.awaitTermination(5, TimeUnit.SECONDS);
 		} catch (InterruptedException eInterrupted) {
 			// ignore
 		}
-		_zmqContext.term();
+		_socketManager.close();
 	}
 
 	@Override

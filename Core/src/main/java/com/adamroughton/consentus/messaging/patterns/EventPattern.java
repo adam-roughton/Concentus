@@ -14,13 +14,13 @@ public class EventPattern {
 	 * @param eventWriter
 	 * @return
 	 */
-	public static <TEvent extends ByteArrayBackedEvent> SendTask asTask(
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> SendTask<TSendHeader> asTask(
 			final TEvent eventHelper, 
-			final EventWriter<TEvent> eventWriter) {
-		return new SendTask() {
+			final EventWriter<TSendHeader, TEvent> eventWriter) {
+		return new SendTask<TSendHeader>() {
 
 			@Override
-			public void write(byte[] outgoingBuffer, OutgoingEventHeader header) {
+			public void write(byte[] outgoingBuffer, TSendHeader header) {
 				validate(header, 1);
 				writeContent(outgoingBuffer, header.getEventOffset(), header, eventHelper, eventWriter);
 			}
@@ -38,16 +38,16 @@ public class EventPattern {
 	 * @param writer the writer to use to create the content
 	 * @return the number of bytes written into the buffer
 	 */
-	public static <TEvent extends ByteArrayBackedEvent> int writeContent(
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> int writeContent(
 			final byte[] outgoingBuffer,
 			final int offset,
-			final OutgoingEventHeader header,
+			final TSendHeader header,
 			final TEvent eventHelper, 
-			final EventWriter<TEvent> writer) {
+			final EventWriter<TSendHeader, TEvent> writer) {
 		try {
 			eventHelper.setBackingArray(outgoingBuffer, offset);
 			try {
-				writer.write(eventHelper);
+				writer.write(header, eventHelper);
 				int length = eventHelper.getEventSize();
 				int contentSegmentIndex = header.getSegmentCount() - 1;
 				header.setSegmentMetaData(outgoingBuffer, contentSegmentIndex, offset, length);
@@ -70,15 +70,15 @@ public class EventPattern {
 	 * @param eventHelper the helper to use to translate the event bytes
 	 * @param reader the reader to use to extract the event data
 	 */
-	public static <TEvent extends ByteArrayBackedEvent> void readContent(
+	public static <TRecvHeader extends IncomingEventHeader, TEvent extends ByteArrayBackedEvent> void readContent(
 			final byte[] incomingBuffer, 
-			final IncomingEventHeader header,
+			final TRecvHeader header,
 			final TEvent eventHelper,
-			final EventReader<TEvent> reader) {
+			final EventReader<TRecvHeader, TEvent> reader) {
 		int contentOffset = getContentOffset(incomingBuffer, header);
 		eventHelper.setBackingArray(incomingBuffer, contentOffset);
 		try {
-			reader.read(eventHelper);
+			reader.read(header, eventHelper);
 		} finally {
 			eventHelper.releaseBackingArray();
 		}

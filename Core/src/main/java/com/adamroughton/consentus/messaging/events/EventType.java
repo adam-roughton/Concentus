@@ -18,12 +18,13 @@ package com.adamroughton.consentus.messaging.events;
 public enum EventType {
 	NULL(0, null),
 	CLIENT_INPUT(1, ClientInputEvent.class),
-	STATE_INPUT(2, StateInputEvent.class),
-	STATE_UPDATE(3, StateUpdateEvent.class),
-	STATE_METRIC(4, StateMetricEvent.class),
-	STATE_INFO(5, StateUpdateInfoEvent.class),
-	CLIENT_CONNECT(6, ClientConnectEvent.class),
-	CONNECT_RES(7, ConnectResponseEvent.class)
+	CLIENT_UPDATE(2, ClientUpdateEvent.class),
+	STATE_INPUT(3, StateInputEvent.class),
+	STATE_UPDATE(4, StateUpdateEvent.class),
+	STATE_METRIC(5, StateMetricEvent.class),
+	STATE_INFO(6, StateUpdateInfoEvent.class),
+	CLIENT_CONNECT(7, ClientConnectEvent.class),
+	CONNECT_RES(8, ConnectResponseEvent.class)
 	;
 	private final int _id;
 	private final Class<?> _clazz;

@@ -23,33 +23,46 @@ package com.adamroughton.consentus.messaging;
  */
 public class OutgoingEventHeader extends EventHeader {
 	
+	private static final int NEXT_SEGMENT_LENGTH = 4;
+	private static final int FLAG_COUNT = 1;
+	
+	private final int _nextSegmentOffset;
+	private final int _isPartiallySentFlagIndex;
+	
 	public OutgoingEventHeader(final int startOffset, final int segmentCount) {
 		this(startOffset, segmentCount, 0, 0);
 	}
 	
 	protected OutgoingEventHeader(final int startOffset, final int segmentCount, final int additionalLength, final int additionalFlagCount) {
-		super(startOffset, segmentCount, additionalLength + 4, additionalFlagCount + 1);
+		super(startOffset, segmentCount, additionalLength + NEXT_SEGMENT_LENGTH, additionalFlagCount + FLAG_COUNT);
+		_nextSegmentOffset = super.getAdditionalOffset();
+		_isPartiallySentFlagIndex = super.getAdditionalFlagsStartIndex();
 	}
 	
 	@Override
 	protected int getAdditionalFlagsStartIndex() {
-		return super.getAdditionalFlagsStartIndex() + 1;
+		return super.getAdditionalFlagsStartIndex() + FLAG_COUNT;
+	}
+	
+	@Override
+	protected int getAdditionalOffset() {
+		return super.getAdditionalOffset() + NEXT_SEGMENT_LENGTH;
 	}
 
 	public final boolean isPartiallySent(byte[] event) {
-		return getFlag(event, super.getAdditionalFlagsStartIndex());
+		return getFlag(event, _isPartiallySentFlagIndex);
 	}
 	
 	public final void setIsPartiallySent(byte[] event, boolean isPartiallySent) {
-		setFlag(event, super.getAdditionalFlagsStartIndex(), isPartiallySent);
+		setFlag(event, _isPartiallySentFlagIndex, isPartiallySent);
 	}
 	
 	public final int getNextSegmentToSend(byte[] event) {
-		return MessageBytesUtil.readInt(event, getAdditionalOffset());
+		return MessageBytesUtil.readInt(event, _nextSegmentOffset);
 	}
 	
 	public final void setNextSegmentToSend(byte[] event, int segmentIndex) {
-		MessageBytesUtil.writeInt(event, getAdditionalOffset(), segmentIndex);
+		MessageBytesUtil.writeInt(event, _nextSegmentOffset, segmentIndex);
 	}
 	
 }

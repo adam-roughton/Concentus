@@ -21,6 +21,8 @@ public interface Cluster {
 	
 	void registerService(final String serviceType, final String address);
 	
+	void unregisterService(final String serviceType);
+	
 	String getServiceAtRandom(final String serviceType);
 	
 	String[] getAllServices(final String serviceType);

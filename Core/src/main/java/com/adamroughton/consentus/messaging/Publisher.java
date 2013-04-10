@@ -22,7 +22,7 @@ import com.lmax.disruptor.EventHandler;
 public class Publisher implements EventHandler<byte[]> {
 
 	private final SocketPackage _socketPackage;
-	private final EventSender _eventSender;
+	private final OutgoingEventHeader _header;
 	
 	public Publisher(final SocketPackage socketPackage,
 			final OutgoingEventHeader header) {
@@ -32,13 +32,13 @@ public class Publisher implements EventHandler<byte[]> {
 			throw new IllegalArgumentException(String.format("The socket type was %d, not PUB or XPUB", 
 					socket.getType()));
 		}
-		_eventSender = new EventSender(header, false);
+		_header = Objects.requireNonNull(header);
 	}
 
 	@Override
 	public void onEvent(byte[] event, long sequence, boolean endOfBatch)
 			throws Exception {
-		_eventSender.send(_socketPackage, event);
+		Messaging.send(_socketPackage, event, _header, true);
 	}
 
 }

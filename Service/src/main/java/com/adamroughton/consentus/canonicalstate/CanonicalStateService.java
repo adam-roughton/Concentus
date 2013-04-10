@@ -25,11 +25,13 @@ import java.util.logging.Logger;
 import com.adamroughton.consentus.ConsentusService;
 import com.adamroughton.consentus.ConsentusProcessCallback;
 import com.adamroughton.consentus.ConsentusServiceState;
+import com.adamroughton.consentus.StatefulRunnable;
+import com.adamroughton.consentus.Util;
 import com.adamroughton.consentus.cluster.worker.Cluster;
 import com.adamroughton.consentus.config.Configuration;
+import com.adamroughton.consentus.disruptor.DeadlineBasedEventProcessor;
 import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
 import com.adamroughton.consentus.messaging.EventListener;
-import com.adamroughton.consentus.messaging.EventReceiver;
 import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.OutgoingEventHeader;
 import com.adamroughton.consentus.messaging.Publisher;
@@ -63,7 +65,7 @@ public class CanonicalStateService implements ConsentusService {
 	private ConsentusProcessCallback _exCallback;
 	private InetAddress _networkAddress;
 	
-	private EventListener _subListener;
+	private StatefulRunnable<EventListener> _subListener;
 	private StateProcessor _stateProcessor;
 	private Publisher _publisher;	
 	
@@ -162,18 +164,19 @@ public class CanonicalStateService implements ConsentusService {
 		
 		// infrastructure for sub socket
 		SocketPackage subSocketPackage = _socketManager.createSocketPackage(_subSocketId);
-		_subListener = new EventListener(new EventReceiver(_subHeader, false), subSocketPackage, _inputDisruptor.getRingBuffer(), _exCallback);
+		_subListener = Util.asStateful(new EventListener(_subHeader, subSocketPackage, _inputDisruptor.getRingBuffer(), _exCallback));
+		_socketManager.addDependency(_subSocketId, _subListener);
 		
 		// infrastructure for pub socket
-		SendQueue pubSendQueue = new SendQueue(_pubHeader, _outputDisruptor);
+		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(_pubHeader, _outputDisruptor);
 		SocketPackage pubSocketPackage = _socketManager.createSocketPackage(_pubSocketId);
 		_publisher = new Publisher(pubSocketPackage, _pubHeader);
 		
 		SequenceBarrier inputBarrier = _inputDisruptor.getRingBuffer().newBarrier();
-		_stateProcessor = new StateProcessor(_stateLogic, _inputDisruptor.getRingBuffer(), inputBarrier, 
-				_subHeader, pubSendQueue, _exCallback);
+		_stateProcessor = new StateProcessor(_stateLogic, _subHeader, pubSendQueue);
 		
-		_inputDisruptor.handleEventsWith(_stateProcessor);
+		_inputDisruptor.handleEventsWith(new DeadlineBasedEventProcessor<byte[]>(
+				_stateProcessor, _inputDisruptor.getRingBuffer(), inputBarrier, _exCallback));
 		_outputDisruptor.handleEventsWith(_publisher);
 		
 		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _networkAddress.getHostAddress()));

@@ -6,18 +6,18 @@ import com.adamroughton.consentus.messaging.OutgoingEventHeader;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.dsl.Disruptor;
 
-public class SendQueue {
+public class SendQueue<TSendHeader extends OutgoingEventHeader> {
 
-	private final OutgoingEventHeader _header;
+	private final TSendHeader _header;
 	private final RingBuffer<byte[]> _ringBuffer;
 	
-	public SendQueue(final OutgoingEventHeader header, 
+	public SendQueue(final TSendHeader header, 
 			final Disruptor<byte[]> backingDisruptor) {
 		_header = Objects.requireNonNull(header);
 		_ringBuffer = Objects.requireNonNull(backingDisruptor).getRingBuffer();
 	}
 	
-	public final void send(SendTask task) {
+	public final void send(SendTask<TSendHeader> task) {
 		long seq = _ringBuffer.next();
 		try {
 			byte[] outgoingBuffer = _ringBuffer.get(seq);

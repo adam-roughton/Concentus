@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.logging.Logger;
 
 import com.adamroughton.consentus.ConsentusProcess;
 import com.adamroughton.consentus.ConsentusProcessCallback;
@@ -27,7 +28,9 @@ import com.adamroughton.consentus.ConsentusProcessConfiguration;
 import com.adamroughton.consentus.ConsentusProcessConfiguration.ClusterFactory;
 import com.adamroughton.consentus.DefaultProcessCallback;
 import com.adamroughton.consentus.Util;
+import com.adamroughton.consentus.cluster.coordinator.Cluster;
 import com.adamroughton.consentus.cluster.coordinator.CoordinatorClusterHandle;
+import com.adamroughton.consentus.cluster.coordinator.ParticipatingNodes;
 import com.adamroughton.consentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.esotericsoftware.minlog.Log;
 
@@ -39,15 +42,26 @@ public final class CrowdHammerCoordinator implements ConsentusProcess<Coordinato
 		ClusterFactory<CoordinatorClusterHandle> {
 
 	public static final String PROCESS_NAME = "CrowdHammer Coordinator";
+	private final static Logger LOG = Logger.getLogger("CrowdHammerCoordinator");
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	private Future<?> _currentTask = null;
+	private boolean _hasInitdTestInfrastructure = false;
+	private ParticipatingNodes _participatingNodes = null;
 	
 	private CrowdHammerConfiguration _config;
 	private CoordinatorClusterHandle _cluster;
 
 	@Command(name="start")
-	public void startRun(int... simClientCounts) {
+	public void startRun(int... simClientCounts) throws Exception {
+		if (!_hasInitdTestInfrastructure) {
+			_participatingNodes = _cluster.getNodeSnapshot();
+			System.out.println("Initialising test infrastructure");
+			setAndWait(CrowdHammerServiceState.BIND, _participatingNodes, _cluster);
+			setAndWait(CrowdHammerServiceState.CONNECT, _participatingNodes, _cluster);
+			_hasInitdTestInfrastructure = true;
+		}
+		
 		System.out.print("Starting test run with client counts: [");
 		for (int i = 0; i < simClientCounts.length; i++) {
 			if (i > 0) System.out.print(", ");
@@ -58,7 +72,7 @@ public final class CrowdHammerCoordinator implements ConsentusProcess<Coordinato
 		clearExisting();
 		int testExecDur = _config.getCrowdHammer().getTestRunDurationInSeconds();
 		
-		TestRunner runner = new TestRunner(_cluster, testExecDur, simClientCounts);
+		TestRunner runner = new TestRunner(_participatingNodes, _cluster, testExecDur, simClientCounts);
 		_currentTask = _executor.submit(runner);
 	}
 	
@@ -136,6 +150,15 @@ public final class CrowdHammerCoordinator implements ConsentusProcess<Coordinato
 			Log.error("Error while running:", e);
 			System.exit(1);
 		}
+	}
+	
+	public static void setAndWait(CrowdHammerServiceState newState, ParticipatingNodes participatingNodes, Cluster cluster) 
+			throws InterruptedException {
+		LOG.info(String.format("Setting state to %s", newState.name()));
+		cluster.setState(newState);
+		LOG.info("Waiting for nodes...");
+		while (!cluster.waitForReady(participatingNodes));
+		LOG.info("All nodes ready, proceeding...");
 	}
 	
 }

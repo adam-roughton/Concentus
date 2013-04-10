@@ -9,14 +9,14 @@ public class RouterPattern {
 	
 	private static final int SOCKET_ID_SEGMENT_INDEX = 0;
 	
-	public static <TEvent extends ByteArrayBackedEvent> SendTask asTask(
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> SendTask<TSendHeader> asTask(
 			final byte[] socketId,
 			final TEvent eventHelper, 
-			final EventWriter<TEvent> eventWriter) {
-		return new SendTask() {
+			final EventWriter<TSendHeader, TEvent> eventWriter) {
+		return new SendTask<TSendHeader>() {
 
 			@Override
-			public void write(byte[] outgoingBuffer, OutgoingEventHeader header) {
+			public void write(byte[] outgoingBuffer, TSendHeader header) {
 				EventPattern.validate(header, 2);
 				writeEvent(outgoingBuffer, header, socketId, eventHelper, eventWriter);
 			}
@@ -24,12 +24,12 @@ public class RouterPattern {
 		};
 	}
 	
-	public static <TEvent extends ByteArrayBackedEvent> void writeEvent(
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> void writeEvent(
 			final byte[] outgoingBuffer,
-			final OutgoingEventHeader header,
+			final TSendHeader header,
 			final byte[] socketId,
 			final TEvent eventHelper, 
-			final EventWriter<TEvent> eventWriter) {
+			final EventWriter<TSendHeader, TEvent> eventWriter) {
 		int cursor = header.getEventOffset();
 		System.arraycopy(socketId, 0, outgoingBuffer, cursor, socketId.length);
 		header.setSegmentMetaData(outgoingBuffer, SOCKET_ID_SEGMENT_INDEX, cursor, socketId.length);

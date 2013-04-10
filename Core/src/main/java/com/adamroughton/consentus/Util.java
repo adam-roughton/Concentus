@@ -81,6 +81,12 @@ public class Util {
 		return subId;
 	}
 	
+	public static byte[] intToBytes(int value) {
+		byte[] intBytes = new byte[4];
+		MessageBytesUtil.writeInt(intBytes, 0, value);
+		return intBytes;
+	}
+	
 	public static void writeSubscriptionBytes(EventType eventType, byte[] buffer, int offset) {
 		MessageBytesUtil.writeInt(buffer, offset, eventType.getId());
 	}
@@ -238,6 +244,10 @@ public class Util {
 		try (BufferedWriter writer = Files.newBufferedWriter(configPath, Charsets.UTF_8, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
 			yaml.dump(defaultConfig, writer);
 		}
+	}
+	
+	public static <TRunnable extends Runnable> StatefulRunnable<TRunnable> asStateful(TRunnable runnable) {
+		return new StatefulRunnable<TRunnable>(runnable);
 	}
 		
 }

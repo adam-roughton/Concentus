@@ -15,6 +15,9 @@
  */
 package com.adamroughton.consentus.crowdhammer.metriclistener;
 
+import it.unimi.dsi.fastutil.ints.IntArraySet;
+import it.unimi.dsi.fastutil.ints.IntSet;
+
 import java.net.InetAddress;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -24,6 +27,8 @@ import java.util.logging.Logger;
 
 import com.adamroughton.consentus.ConsentusProcessCallback;
 import com.adamroughton.consentus.Constants;
+import com.adamroughton.consentus.StatefulRunnable;
+import com.adamroughton.consentus.StatefulRunnable.State;
 import com.adamroughton.consentus.Util;
 import com.adamroughton.consentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.consentus.cluster.worker.Cluster;
@@ -32,7 +37,6 @@ import com.adamroughton.consentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.consentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
 import com.adamroughton.consentus.messaging.EventListener;
-import com.adamroughton.consentus.messaging.EventReceiver;
 import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.SocketManager;
 import com.adamroughton.consentus.messaging.SocketPackage;
@@ -56,10 +60,11 @@ public class MetricListenerService implements CrowdHammerService {
 	private final IncomingEventHeader _header;
 	
 	private MetricProcessor _metricProcessor;
-	private EventListener _eventListener;
+	private StatefulRunnable<EventListener> _eventListener;
 	private Future<?> _eventListenerTask;
 	
 	private int _subSocketId;
+	private final IntSet _sutMetricConnIdSet = new IntArraySet();
 	
 	private CrowdHammerConfiguration _config;
 	private InetAddress _networkAddress;
@@ -81,8 +86,8 @@ public class MetricListenerService implements CrowdHammerService {
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
 			Cluster cluster) throws Exception {
 		LOG.info(String.format("Entering state %s", newClusterState.name()));
-		if (newClusterState == CrowdHammerServiceState.SET_UP_TEST) {
-			onSetUpTest(cluster);
+		if (newClusterState == CrowdHammerServiceState.BIND) {
+			onBind(cluster);
 		} else if (newClusterState == CrowdHammerServiceState.CONNECT_SUT) {
 			onConnectSUT(cluster);
 		} else if (newClusterState == CrowdHammerServiceState.TEAR_DOWN) {
@@ -116,11 +121,12 @@ public class MetricListenerService implements CrowdHammerService {
 	}
 	
 	@SuppressWarnings("unchecked")
-	private void onSetUpTest(Cluster cluster) throws Exception {
+	private void onBind(Cluster cluster) throws Exception {
 		_socketManager.bindBoundSockets();
 		
 		SocketPackage socketPackage = _socketManager.createSocketPackage(_subSocketId);
-		_eventListener = new EventListener(new EventReceiver(_header, false), socketPackage, _inputDisruptor.getRingBuffer(), _exHandler);
+		_eventListener = Util.asStateful(new EventListener(_header, socketPackage, _inputDisruptor.getRingBuffer(), _exHandler));
+		_socketManager.addDependency(_subSocketId, _eventListener);
 		
 		_metricProcessor = new MetricProcessor(_header);
 		_inputDisruptor.handleEventsWith(_metricProcessor);
@@ -131,7 +137,7 @@ public class MetricListenerService implements CrowdHammerService {
 	private void onConnectSUT(Cluster cluster) {
 		int metricsPort = _config.getServices().get(CanonicalStateService.SERVICE_TYPE).getPorts().get("pub");
 		for (String service : cluster.getAllServices(CanonicalStateService.SERVICE_TYPE)) {
-			_socketManager.connectSocket(_subSocketId, String.format("%s:%d", service, metricsPort));
+			_sutMetricConnIdSet.add(_socketManager.connectSocket(_subSocketId, String.format("%s:%d", service, metricsPort)));
 		}
 		_eventListenerTask = _executor.submit(_eventListener);
 		_inputDisruptor.start();
@@ -139,11 +145,24 @@ public class MetricListenerService implements CrowdHammerService {
 	
 	private void onTearDown(Cluster cluster) {
 		_eventListenerTask.cancel(true);
+		try {
+			_eventListener.waitForState(State.STOPPED, 30, TimeUnit.SECONDS);
+			if (_eventListener.getState() != State.STOPPED) {
+				throw new RuntimeException("The event listener did not stop within the timeout.");
+			}
+		} catch (InterruptedException eInterrupted) {
+			throw new RuntimeException("Interrupted while stopping the event listener - listener is now in an undefined state");
+		}
 		
 		// persist results to file
 		
 		_inputDisruptor.shutdown();
-		_socketManager.closeManagedSockets();		
+		
+		// disconnect from the SUT
+		for (int connId : _sutMetricConnIdSet) {
+			_socketManager.disconnectSocket(_subSocketId, connId);
+		}
+		_sutMetricConnIdSet.clear();
 	}
 	
 	

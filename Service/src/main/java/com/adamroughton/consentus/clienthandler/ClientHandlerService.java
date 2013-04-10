@@ -26,19 +26,20 @@ import org.zeromq.ZMQ;
 import com.adamroughton.consentus.ConsentusProcessCallback;
 import com.adamroughton.consentus.ConsentusService;
 import com.adamroughton.consentus.ConsentusServiceState;
+import com.adamroughton.consentus.StatefulRunnable;
+import com.adamroughton.consentus.Util;
 import com.adamroughton.consentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.consentus.cluster.worker.Cluster;
 import com.adamroughton.consentus.config.Configuration;
 import com.adamroughton.consentus.disruptor.FailFastExceptionHandler;
+import com.adamroughton.consentus.disruptor.NonBlockingRingBufferReader;
+import com.adamroughton.consentus.disruptor.NonBlockingRingBufferWriter;
 import com.adamroughton.consentus.messaging.EventListener;
-import com.adamroughton.consentus.messaging.EventReceiver;
 import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.MessageBytesUtil;
-import com.adamroughton.consentus.messaging.NonblockingEventReceiver;
-import com.adamroughton.consentus.messaging.NonblockingEventSender;
 import com.adamroughton.consentus.messaging.OutgoingEventHeader;
 import com.adamroughton.consentus.messaging.Publisher;
-import com.adamroughton.consentus.messaging.RouterSocketReactor;
+import com.adamroughton.consentus.messaging.SendRecvSocketReactor;
 import com.adamroughton.consentus.messaging.SocketManager;
 import com.adamroughton.consentus.messaging.SocketPackage;
 import com.adamroughton.consentus.messaging.SocketSettings;
@@ -70,8 +71,8 @@ public class ClientHandlerService implements ConsentusService {
 	private ConsentusProcessCallback _exHandler;
 	private InetAddress _networkAddress;
 	
-	private EventListener _subListener;
-	private RouterSocketReactor _routerReactor;
+	private StatefulRunnable<EventListener> _subListener;
+	private SendRecvSocketReactor _routerReactor;
 	private ClientHandlerProcessor _processor;
 	private Publisher _publisher;
 	
@@ -187,24 +188,27 @@ public class ClientHandlerService implements ConsentusService {
 		_socketManager.bindBoundSockets();
 		
 		// infrastructure for router socket
-		SendQueue routerSendQueue = new SendQueue(_outgoingHeader, _routerSendDisruptor);
+		SendQueue<OutgoingEventHeader> routerSendQueue = new SendQueue<>(_outgoingHeader, _routerSendDisruptor);
 		SocketPackage routerSocketPackage = _socketManager.createSocketPackage(_routerSocketId);
 		SequenceBarrier routerSendBarrier = _routerSendDisruptor.getRingBuffer().newBarrier();
-		_routerReactor = new RouterSocketReactor(routerSocketPackage,
-				new NonblockingEventReceiver(_recvDisruptor.getRingBuffer(), _incomingHeader),
-				new NonblockingEventSender(_routerSendDisruptor.getRingBuffer(), routerSendBarrier, _outgoingHeader), 
+		_routerReactor = new SendRecvSocketReactor(
+				new NonBlockingRingBufferWriter<>(_recvDisruptor.getRingBuffer()),
+				new NonBlockingRingBufferReader<>(_routerSendDisruptor.getRingBuffer(), routerSendBarrier), 
 				_exHandler);
+		_routerReactor.configure(routerSocketPackage, _outgoingHeader, _incomingHeader);
 		
 		// infrastructure for sub socket
 		SocketPackage subSocketPackage = _socketManager.createSocketPackage(_subSocketId);
-		_subListener = new EventListener(
-				new EventReceiver(_incomingHeader, false),
+		_subListener = Util.asStateful(new EventListener(
+				_incomingHeader,
 				subSocketPackage, 
 				_recvDisruptor.getRingBuffer(), 
-				_exHandler);
+				_exHandler));
+		_socketManager.addDependency(_subSocketId, _subListener);
+		
 
 		// infrastructure for pub socket
-		SendQueue pubSendQueue = new SendQueue(_outgoingHeader, _pubSendDisruptor);
+		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(_outgoingHeader, _pubSendDisruptor);
 		SocketPackage pubSocketPackage = _socketManager.createSocketPackage(_pubSocketId);
 		// event processing infrastructure
 		_processor = new ClientHandlerProcessor(
@@ -217,6 +221,7 @@ public class ClientHandlerService implements ConsentusService {
 		_publisher = new Publisher(pubSocketPackage, _outgoingHeader);
 		
 		_recvDisruptor.handleEventsWith(_processor);
+		_routerSendDisruptor.handleEventsWith(_routerReactor);
 		_pubSendDisruptor.handleEventsWith(_publisher);
 		
 		// register the service
@@ -239,9 +244,9 @@ public class ClientHandlerService implements ConsentusService {
 	}
 	
 	private void onStart(Cluster cluster) throws Exception {
+		_recvDisruptor.start();
 		_routerSendDisruptor.start();
 		_pubSendDisruptor.start();
-		_recvDisruptor.start();
 		_executor.submit(_subListener);
 		_executor.submit(_routerReactor);
 	}

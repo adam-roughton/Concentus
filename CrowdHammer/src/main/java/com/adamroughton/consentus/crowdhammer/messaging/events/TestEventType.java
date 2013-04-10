@@ -19,6 +19,7 @@ import com.adamroughton.consentus.messaging.events.EventType;
 
 public enum TestEventType {
 	CLIENT_INPUT(EventType.CLIENT_INPUT.getId(), EventType.CLIENT_INPUT.getEventClass()),
+	CLIENT_UPDATE(EventType.CLIENT_UPDATE.getId(), EventType.CLIENT_UPDATE.getEventClass()),
 	STATE_INPUT(EventType.STATE_INPUT.getId(), EventType.STATE_INPUT.getEventClass()),
 	STATE_UPDATE(EventType.STATE_UPDATE.getId(), EventType.STATE_UPDATE.getEventClass()),
 	STATE_METRIC(EventType.STATE_METRIC.getId(), EventType.STATE_METRIC.getEventClass()),

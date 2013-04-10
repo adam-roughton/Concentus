@@ -54,8 +54,8 @@ public class StateUpdateEvent extends ByteArrayBackedEvent {
 	
 	public final void copyUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
 		byte[] backingArray = getBackingArray();
-		int updateLength = backingArray.length - UPDATE_BUFFER_OFFSET;
-		System.arraycopy(getBackingArray(), UPDATE_BUFFER_OFFSET, exBuffer, 0, 
+		int updateLength = backingArray.length - getOffset(UPDATE_BUFFER_OFFSET);
+		System.arraycopy(getBackingArray(), getOffset(UPDATE_BUFFER_OFFSET), exBuffer, 0, 
 				length < updateLength? length : updateLength);
 	}
 	

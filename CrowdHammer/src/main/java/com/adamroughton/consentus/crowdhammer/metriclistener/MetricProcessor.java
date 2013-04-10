@@ -46,10 +46,10 @@ public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 			throws Exception {
 		int eventType = EventPattern.getEventType(eventBytes, _subHeader);
 		if (eventType == EventType.STATE_METRIC.getId()) {
-			EventPattern.readContent(eventBytes, _subHeader, _metricEvent, new EventReader<StateMetricEvent>() {
+			EventPattern.readContent(eventBytes, _subHeader, _metricEvent, new EventReader<IncomingEventHeader, StateMetricEvent>() {
 
 				@Override
-				public void read(StateMetricEvent event) {
+				public void read(IncomingEventHeader header, StateMetricEvent event) {
 					processStateMetric(event);
 				}
 				

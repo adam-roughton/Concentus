@@ -25,55 +25,67 @@ public enum CrowdHammerServiceState implements ClusterStateValue {
 	INIT(0, null),
 	
 	/**
+	 * Test components should read assignments, bind to sockets, 
+	 * and advertise their services.
+	 */
+	BIND(1, null),
+	
+	/**
+	 * Test components should look up dependent services and connect
+	 * to them.
+	 */
+	CONNECT(2, null),
+	
+	/**
 	 * The first phase of a test. Workers should request assignments. The system under test (SUT)
 	 * should also be configured as if it were the {@link ConsentusServiceState#INIT}
 	 * state.
 	 */
-	INIT_TEST(1, ConsentusServiceState.INIT),
+	INIT_TEST(3, ConsentusServiceState.INIT),
 	
 	/**
 	 * Workers should get their assignments and prepare for the test. The system under test (SUT)
 	 * should also be configured as if it were the {@link ConsentusServiceState#BIND}
 	 * state.
 	 */
-	SET_UP_TEST(2, ConsentusServiceState.BIND),
+	SET_UP_TEST(4, ConsentusServiceState.BIND),
 	
 	/**
 	 * The system under test (SUT) should internally connect all components
 	 * as if the state were {@link ConsentusServiceState#CONNECT}.
 	 */
-	CONNECT_SUT(3, ConsentusServiceState.CONNECT),
+	CONNECT_SUT(5, ConsentusServiceState.CONNECT),
 	
 	/**
 	 * The system under test (SUT) should be started and be ready for
 	 * the test as if the state were {@link ConsentusServiceState#START}.
 	 */
-	START_SUT(4, ConsentusServiceState.START),
+	START_SUT(6, ConsentusServiceState.START),
 	
 	/**
 	 * The test bed should start sending events to the system under test (SUT)
 	 * and recording test metrics.
 	 */
-	EXEC_TEST(5, null),
+	EXEC_TEST(7, null),
 	
 	/**
 	 * The test bed should stop sending events and finalise the collection of metrics.
 	 * Metrics should be written to persistent storage if not already done so.
 	 */
-	STOP_SENDING_EVENTS(6, null),
+	STOP_SENDING_EVENTS(8, null),
 	
 	/**
-	 * The test bed should be torn down.
+	 * The current test should be torn down.
 	 * Metrics should be written to persistent storage if not already done so. The 
 	 * system under test (SUT) should be shutdown as if
 	 * the state were {@link ConsentusServiceState#SHUTDOWN}.
 	 */
-	TEAR_DOWN(7, ConsentusServiceState.SHUTDOWN),
+	TEAR_DOWN(9, ConsentusServiceState.SHUTDOWN),
 	
 	/**
 	 * The test harness should be shutdown.
 	 */
-	SHUTDOWN(8, null)
+	SHUTDOWN(10, null)
 	;
 	private final int _code;
 	private final ConsentusServiceState _SUTState;

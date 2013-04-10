@@ -17,9 +17,10 @@ package com.adamroughton.consentus.cluster.worker;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 
@@ -35,7 +36,7 @@ import static com.adamroughton.consentus.cluster.ClusterPath.*;
 
 public final class WorkerClusterHandle extends ClusterParticipant implements Cluster, Closeable {
 	
-	private final List<String> _hostedServices;
+	private final Set<String> _hostedServices;
 	
 	private final Disruptor<byte[]> _stateUpdateDisruptor;
 	private final ClusterStateNodeListener _clusterStateNodeListener;
@@ -59,7 +60,7 @@ public final class WorkerClusterHandle extends ClusterParticipant implements Clu
 			final ExecutorService executor,
 			final FatalExceptionCallback exHandler) {
 		super(zooKeeperAddress, root, clusterId, exHandler);
-		_hostedServices = new ArrayList<>(1);
+		_hostedServices = new HashSet<>(1);
 		_executor = Objects.requireNonNull(executor);
 		
 		_stateUpdateDisruptor = new Disruptor<>(new EventFactory<byte[]>() {
@@ -97,6 +98,12 @@ public final class WorkerClusterHandle extends ClusterParticipant implements Clu
 		String serviceTypePath = ZKPaths.makePath(getPath(SERVICES), serviceType);
 		createServiceNode(serviceTypePath, address.getBytes());
 		_hostedServices.add(serviceTypePath);
+	}
+	
+	public void unregisterService(final String serviceType) {
+		String serviceTypePath = ZKPaths.makePath(getPath(SERVICES), serviceType);
+		deleteServiceNode(serviceTypePath);
+		_hostedServices.remove(serviceTypePath);
 	}
 	
 	public String getServiceAtRandom(final String serviceType) {

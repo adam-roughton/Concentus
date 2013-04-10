@@ -29,35 +29,35 @@ public class StateMetricEvent extends ByteArrayBackedEvent {
 		super(EventType.STATE_METRIC.getId(), EVENT_SIZE);
 	}
 	
-	public long getUpdateId() {
+	public final long getUpdateId() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET));
 	}
 	
-	public void setUpdateId(long updateId) {
+	public final void setUpdateId(long updateId) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET), updateId);
 	}
 	
-	public long getInputActionsProcessed() {
+	public final long getInputActionsProcessed() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(INPUT_ACTIONS_OFFSET));
 	}
 
-	public void setInputActionsProcessed(long inputActionsProcessed) {
+	public final void setInputActionsProcessed(long inputActionsProcessed) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(INPUT_ACTIONS_OFFSET), inputActionsProcessed);
 	}
 
-	public long getDurationInMs() {
+	public final long getDurationInMs() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(DURATION_OFFSET));
 	}
 
-	public void setDurationInMs(long durationInMs) {
+	public final void setDurationInMs(long durationInMs) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(DURATION_OFFSET), durationInMs);
 	}
 	
-	public int getEventErrorCount() {
+	public final int getEventErrorCount() {
 		return MessageBytesUtil.readInt(getBackingArray(), getOffset(EVENT_ERROR_COUNT_OFFSET));
 	}
 
-	public void setEventErrorCount(int eventErrorCount) {
+	public final void setEventErrorCount(int eventErrorCount) {
 		MessageBytesUtil.writeInt(getBackingArray(), getOffset(EVENT_ERROR_COUNT_OFFSET), eventErrorCount);
 	}
 	

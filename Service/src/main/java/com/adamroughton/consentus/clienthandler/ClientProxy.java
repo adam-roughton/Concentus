@@ -15,12 +15,19 @@
  */
 package com.adamroughton.consentus.clienthandler;
 
+import com.adamroughton.consentus.SlidingWindowLongMap;
+
 public class ClientProxy {
 
 	private final long _clientId;
 	private byte[] _clientSocketId;
 	private long _lastMsgTime;
 	private long _lastUpdateId;
+	
+	/**
+	 * Store the last 128 input actions -> client action ID mappings for this client
+	 */
+	private final SlidingWindowLongMap _actionIdMap = new SlidingWindowLongMap(128);
 	
 	public ClientProxy(final long clientId) {
 		_clientId = clientId;
@@ -69,4 +76,8 @@ public class ClientProxy {
 	public void setLastUpdateId(final long updateId) {
 		_lastUpdateId = updateId;
 	}
+	
+	
+	
+	
 }

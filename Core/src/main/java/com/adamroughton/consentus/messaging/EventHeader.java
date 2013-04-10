@@ -57,7 +57,7 @@ public abstract class EventHeader {
 		_length = baseLength + additionalLength;
 	}
 	
-	protected final int getAdditionalOffset() {
+	protected int getAdditionalOffset() {
 		return _additionalOffset;
 	}
 	

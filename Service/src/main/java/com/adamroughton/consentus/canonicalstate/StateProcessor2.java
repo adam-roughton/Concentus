@@ -21,9 +21,11 @@ import it.unimi.dsi.fastutil.ints.IntIterator;
 
 import java.nio.ByteBuffer;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.consentus.Constants;
-import com.adamroughton.consentus.disruptor.DeadlineBasedEventHandler;
+import com.adamroughton.consentus.FatalExceptionCallback;
 import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.OutgoingEventHeader;
 import com.adamroughton.consentus.messaging.events.ClientHandlerEntry;
@@ -36,99 +38,147 @@ import com.adamroughton.consentus.messaging.patterns.EventReader;
 import com.adamroughton.consentus.messaging.patterns.EventWriter;
 import com.adamroughton.consentus.messaging.patterns.PubSubPattern;
 import com.adamroughton.consentus.messaging.patterns.SendQueue;
+import com.lmax.disruptor.AlertException;
+import com.lmax.disruptor.EventProcessor;
+import com.lmax.disruptor.RingBuffer;
+import com.lmax.disruptor.Sequence;
+import com.lmax.disruptor.SequenceBarrier;
 
-public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
+public class StateProcessor2 implements EventProcessor {
 	
+	private final AtomicBoolean _running = new AtomicBoolean(false);
 	private final StateInputEvent _inputEvent = new StateInputEvent();
 	private final StateUpdateEvent _updateEvent = new StateUpdateEvent();
 	private final StateMetricEvent _metricEvent = new StateMetricEvent();
 	private final StateUpdateInfoEvent _updateInfoEvent = new StateUpdateInfoEvent();
 	
 	private final StateLogic _stateLogic;
+	private final RingBuffer<byte[]> _inputRingBuffer;
+	private final SequenceBarrier _inputBarrier;
 	private final IncomingEventHeader _subHeader;
 	private final SendQueue<OutgoingEventHeader> _pubSendQueue;
+	private final FatalExceptionCallback _exCallback;
 
+	private final Sequence _sequence;
+	
 	private final Int2LongMap _clientHandlerEventTracker;
 	
-	private long _lastTickTime = -1;
-	private long _nextTickTime = -1;
-	private long _simTime = 0;
-	private long _accumulator = 0; // Carry over left over sim time from last update
+	private long _lastTickTime;
+	private long _simTime;
+	private long _accumulator; // Carry over left over sim time from last update
 	
-	private long _updateId = 0;
-	private int _processedCount = 0;
-	private int _eventErrorCount = 0;
-	private int _forcedEventCount = 0;
+	private long _updateId;
+	private long _seqStart;
+	private int _eventErrorCount;
 
-	public StateProcessor(
+	public StateProcessor2(
 			StateLogic stateLogic,
+			RingBuffer<byte[]> inputRingBuffer,
+			SequenceBarrier inputBarrier,
 			IncomingEventHeader subHeader,
-			SendQueue<OutgoingEventHeader> pubSendQueue) {
+			SendQueue<OutgoingEventHeader> pubSendQueue, 
+			FatalExceptionCallback exceptionCallback) {
 		_stateLogic = Objects.requireNonNull(stateLogic);
+		_inputRingBuffer = Objects.requireNonNull(inputRingBuffer);
+		_inputBarrier = Objects.requireNonNull(inputBarrier);
 		_subHeader = Objects.requireNonNull(subHeader);
 		_pubSendQueue = Objects.requireNonNull(pubSendQueue);
+		_exCallback = Objects.requireNonNull(exceptionCallback);
 
 		_clientHandlerEventTracker = new Int2LongOpenHashMap(50);
+		
+		_sequence = new Sequence();
+	}
+
+	@Override
+	public void run() {
+		if (!_running.compareAndSet(false, true)) {
+			throw new IllegalStateException("The state processor can only be started once.");
+		}
+		_inputBarrier.clearAlert();
+		
+		_lastTickTime = System.currentTimeMillis();
+		_simTime = 0;
+		_updateId = 0;
+		_accumulator = 0;
+		_seqStart = -1;
+		
+		long nextSequence = _sequence.get() + 1;
+		while(true) {
+			try {
+				tickIfNeeded();
+				
+				final long availableSequence = _inputBarrier.waitFor(nextSequence, 
+						getTimeUntilNextTick(), TimeUnit.MILLISECONDS);
+				while (nextSequence <= availableSequence) {
+					byte[] nextInput = _inputRingBuffer.get(nextSequence++);
+					boolean wasValid = _subHeader.isValid(nextInput);
+					if (wasValid) {
+						EventPattern.readContent(nextInput, _subHeader, _inputEvent, new EventReader<IncomingEventHeader, StateInputEvent>() {
+
+							@Override
+							public void read(IncomingEventHeader header, StateInputEvent event) {
+								processInput(event);
+							}
+							
+						});
+					} else {
+						_eventErrorCount++;
+					}
+				}
+				_sequence.set(availableSequence);
+				
+			} catch (final AlertException eAlert) {
+				if (!_running.get()) {
+					break;
+				}
+			} catch (final Throwable e) {
+				_exCallback.signalFatalException(e);
+			}
+		}
 	}
 	
 	@Override
-	public void onEvent(byte[] event, long sequence, long nextDeadline)
-			throws Exception {
-		_processedCount++;
-		boolean wasValid = _subHeader.isValid(event);
-		if (wasValid) {
-			EventPattern.readContent(event, _subHeader, _inputEvent, new EventReader<IncomingEventHeader, StateInputEvent>() {
-
-				@Override
-				public void read(IncomingEventHeader header, StateInputEvent event) {
-					processInput(event);
-				}
-				
-			});
-		} else {
-			_eventErrorCount++;
-		}
+	public Sequence getSequence() {
+		return _sequence;
 	}
 
 	@Override
-	public void onDeadline() {
-		long now = System.currentTimeMillis();
-		long frameTime = now - _lastTickTime;
-		_accumulator += frameTime;
-		
-		long dt = Constants.TIME_STEP_IN_MS;
-		while (_accumulator >= dt) {
-			_stateLogic.tick(_simTime, dt);
-			_simTime += dt;
-			_accumulator -= dt;
-		}
-		_lastTickTime = now;
-		
-		_updateId++;
-		sendUpdateEvent(_updateId, _simTime);
-		sendMetricEvent(_updateId, frameTime);
-		sendClientHandlerEvents(_updateId);
-		
-		_processedCount = 0;
-		_eventErrorCount = 0;
-		_forcedEventCount = 0;
-		_clientHandlerEventTracker.clear();
+	public void halt() {
+		_running.set(false);
+		_inputBarrier.alert();
 	}
-
-	@Override
-	public long moveToNextDeadline(long forcedEventCount) {
-		if (_lastTickTime == -1) {
-			_nextTickTime = System.currentTimeMillis();
-		} else {
-			_nextTickTime = _lastTickTime + Constants.TIME_STEP_IN_MS;
+	
+	private void tickIfNeeded() {
+		long nextTickTime = System.currentTimeMillis();
+		if (nextTickTime >= _lastTickTime + Constants.TIME_STEP_IN_MS) {
+			long frameTime = nextTickTime - _lastTickTime;
+			_accumulator += frameTime;
+			
+			long dt = Constants.TIME_STEP_IN_MS;
+			while (_accumulator >= dt) {
+				_stateLogic.tick(_simTime, dt);
+				_simTime += dt;
+				_accumulator -= dt;
+			}
+			_lastTickTime = nextTickTime;
+			
+			_updateId++;
+			sendUpdateEvent(_updateId, _simTime);
+			sendMetricEvent(_updateId, frameTime);
+			sendClientHandlerEvents(_updateId);
+			
+			_seqStart = _sequence.get();
+			_eventErrorCount = 0;
+			_clientHandlerEventTracker.clear();
 		}
-		_forcedEventCount += forcedEventCount;
-		return _nextTickTime;
 	}
-
-	@Override
-	public long getDeadline() {
-		return _nextTickTime;
+	
+	private long getTimeUntilNextTick() {
+		long remainingTime = _lastTickTime + Constants.TIME_STEP_IN_MS - System.currentTimeMillis();
+		if (remainingTime < 0)
+			remainingTime = 0;
+		return remainingTime;
 	}
 	
 	private void processInput(StateInputEvent event) {
@@ -162,7 +212,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 			@Override
 			public void write(OutgoingEventHeader header, StateMetricEvent event) {
 				event.setUpdateId(updateId);
-				event.setInputActionsProcessed(_processedCount);
+				event.setInputActionsProcessed(_sequence.get() - _seqStart);
 				event.setDurationInMs(timeSinceLastInMs);
 				event.setEventErrorCount(_eventErrorCount);
 			}
@@ -195,5 +245,6 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 			}));
 		}
 	}
+	
 	
 }

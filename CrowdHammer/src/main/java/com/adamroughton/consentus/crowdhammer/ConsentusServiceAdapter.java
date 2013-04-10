@@ -16,7 +16,9 @@
 package com.adamroughton.consentus.crowdhammer;
 
 import java.net.InetAddress;
+import java.util.HashSet;
 import java.util.Objects;
+import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Logger;
 
@@ -46,6 +48,8 @@ public class ConsentusServiceAdapter implements CrowdHammerService {
 	@Override
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
 			Cluster cluster) throws Exception {
+		SignalReadyDisabledCluster clusterWrapper = new SignalReadyDisabledCluster(cluster);
+		
 		_log.info(String.format("Entering state %s", newClusterState.name()));
 		if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
 			try {
@@ -57,9 +61,10 @@ public class ConsentusServiceAdapter implements CrowdHammerService {
 		}
 		ConsentusServiceState consentusState = newClusterState.getEquivalentSUTState();
 		if (consentusState != null) {
-			_currentInstance.onStateChanged(consentusState, new SignalReadyDisabledCluster(cluster));
+			_currentInstance.onStateChanged(consentusState, clusterWrapper);
 		}
 		if (newClusterState == CrowdHammerServiceState.TEAR_DOWN) {
+			clusterWrapper.clearServiceRegistrations();
 			_currentInstance = null;
 		}
 		_log.info("Signalling ready for next state");
@@ -88,6 +93,7 @@ public class ConsentusServiceAdapter implements CrowdHammerService {
 	private class SignalReadyDisabledCluster implements Cluster {
 
 		private final Cluster _wrappedCluster;
+		private Set<String> _registeredServiceNames = new HashSet<>();
 		
 		public SignalReadyDisabledCluster(final Cluster wrappedCluster) {
 			_wrappedCluster = Objects.requireNonNull(wrappedCluster);
@@ -95,7 +101,14 @@ public class ConsentusServiceAdapter implements CrowdHammerService {
 		
 		@Override
 		public void registerService(String serviceType, String address) {
+			_registeredServiceNames.add(serviceType);
 			_wrappedCluster.registerService(serviceType, address);
+		}
+		
+		@Override
+		public void unregisterService(String serviceType) {
+			_wrappedCluster.unregisterService(serviceType);
+			_registeredServiceNames.remove(serviceType);
 		}
 
 		@Override
@@ -132,6 +145,15 @@ public class ConsentusServiceAdapter implements CrowdHammerService {
 		public UUID getMyId() {
 			return _wrappedCluster.getMyId();
 		}
+		
+		public void clearServiceRegistrations() {
+			for (String serviceReg : _registeredServiceNames) {
+				_wrappedCluster.unregisterService(serviceReg);
+			}
+			_registeredServiceNames.clear();
+		}
+
+
 		
 	}
 

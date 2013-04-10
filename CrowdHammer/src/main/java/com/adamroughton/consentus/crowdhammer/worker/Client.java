@@ -15,47 +15,35 @@
  */
 package com.adamroughton.consentus.crowdhammer.worker;
 
-import java.util.concurrent.TimeUnit;
-
-import org.zeromq.ZMQ;
-
-import com.adamroughton.consentus.Constants;
+import com.adamroughton.consentus.SlidingWindowLongMap;
 import com.adamroughton.consentus.Util;
+import static com.adamroughton.consentus.Constants.TIME_STEP_IN_MS;;
 
 public final class Client {
 
 	/**
-	 * Buffer 10 seconds worth of send actions time stamps, count as no response
+	 * Buffer 10 seconds worth of sent actions or received update time stamps, count as no response
 	 * if not received within this window.
 	 */
-	public final static int SEND_BUFFER_SIZE = Util.nextPowerOf2((int)(10000 / Constants.TIME_STEP_IN_MS));
-	private final static int SEND_BUFFER_MASK = SEND_BUFFER_SIZE - 1;
+	public final static int WINDOW_SIZE = Util.nextPowerOf2((int)(10000 / TIME_STEP_IN_MS));	
 	
-	private final static long TIME_STEP_IN_NANOS = TimeUnit.MILLISECONDS.toNanos(Constants.TIME_STEP_IN_MS);
+	private final SlidingWindowLongMap _inputIdToSentTimeLookup = new SlidingWindowLongMap(WINDOW_SIZE);
+	private final SlidingWindowLongMap _updateIdToRecvTimeLookup = new SlidingWindowLongMap(WINDOW_SIZE);
 	
-	private final ZMQ.Socket _socket;
+	private int _dataReceived;
+	private int _dataSent;
+	
 	//private final long[] _neighbourJointActionIds = new long[25];
 	
-	private long _nextSendTimeInNanos = 0;
+	private long _nextSendTimeInMillis = 0;
 	//private long _lastClientUpdateId = -1;
-	
-	private long _currentInputAction = -1;
-	private int _currentInputActionCursor = -1;
-	private long[] _inputActionSendTimes = new long[SEND_BUFFER_SIZE];
 	
 	//private long _currentJointActionId = -1;
 	private long _clientId = -1;
-	private String _clientHandlerConnString;
+	private int _handlerId = -1;
 	
 	private boolean _isActive = false;
-	
-	public Client(ZMQ.Context zmqContext) {
-		_socket = zmqContext.socket(ZMQ.DEALER);
-	}
-	
-	public ZMQ.Socket getSocket() {
-		return _socket;
-	}
+	private boolean _isConnecting = false;
 	
 	public boolean isActive() {
 		return _isActive;
@@ -65,34 +53,29 @@ public final class Client {
 		_isActive = isActive;
 	}
 	
-	public long getSentTime(long inputActionId) {
-		int relIndex = (int) (_currentInputAction - inputActionId);
-		if (outOfActionRange(relIndex)) {
-			return -1;
-		}
-		return _inputActionSendTimes[(_currentInputActionCursor - relIndex) & SEND_BUFFER_MASK];
+	public boolean isConnecting() {
+		return _isConnecting;
 	}
 	
-	public long addSentAction(long sentTime) {
-		_currentInputAction++;
-		_currentInputActionCursor++;
-		_currentInputActionCursor &= SEND_BUFFER_MASK;
-		_inputActionSendTimes[_currentInputActionCursor] = sentTime;
-		return _currentInputAction;
+	public void setIsConnecting(final boolean isConnecting) {
+		_isConnecting = isConnecting;
 	}
 	
-	public boolean outOfActionRange(long relIndex) {
-		return relIndex < 0 || 
-				relIndex >= _inputActionSendTimes.length;
+	public SlidingWindowLongMap getSentIdToSentTimeMap() {
+		return _inputIdToSentTimeLookup;
+	}
+	
+	public SlidingWindowLongMap getUpdateIdToRecvTimeMap() {
+		return _updateIdToRecvTimeLookup;
 	}
 	
 	public long advanceSendTime() {
-		_nextSendTimeInNanos = System.nanoTime() + TIME_STEP_IN_NANOS;
-		return _nextSendTimeInNanos;
+		_nextSendTimeInMillis = System.currentTimeMillis() + TIME_STEP_IN_MS;
+		return _nextSendTimeInMillis;
 	}
 	
-	public long getNextSendTimeInNanos() {
-		return _nextSendTimeInNanos;
+	public long getNextSendTimeInMillis() {
+		return _nextSendTimeInMillis;
 	}
 	
 	public long getClientId() {
@@ -103,16 +86,20 @@ public final class Client {
 		_clientId = clientId;
 	}
 	
-	public String getClientHandlerConnString() {
-		return _clientHandlerConnString;
+	public int getHandlerId() {
+		return _handlerId;
 	}
 	
-	public void setClientHandlerConnString(final String connString) {
-		_clientHandlerConnString = connString;
+	public void setHandlerId(final int handlerId) {
+		_handlerId = handlerId;;
 	}
 	
 	public boolean hasConnected() {
 		return _clientId != -1;
+	}
+	
+	public void clearMetrics() {
+		
 	}
 
 }

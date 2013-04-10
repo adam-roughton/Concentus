@@ -16,7 +16,6 @@
 package com.adamroughton.consentus.messaging;
 
 import java.util.Objects;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 import org.zeromq.ZMQ;
 import org.zeromq.ZMQException;
@@ -25,47 +24,41 @@ import com.adamroughton.consentus.FatalExceptionCallback;
 import com.lmax.disruptor.RingBuffer;
 
 public final class EventListener implements Runnable {
-	private final AtomicBoolean _isRunning = new AtomicBoolean(false);
 	
-	private final EventReceiver _eventReceiver;
+	private final IncomingEventHeader _header;
 	private final RingBuffer<byte[]> _ringBuffer;
 	private final FatalExceptionCallback _exCallback;
 	private ListenerLogic _listenerLogic;
 		
 	public EventListener(
-			final EventReceiver eventReceiver,
+			final IncomingEventHeader header,
 			final SocketPackage socketPackage,
 			final RingBuffer<byte[]> ringBuffer, 
 			final FatalExceptionCallback exCallback) {
-		this(eventReceiver, ringBuffer, exCallback);
+		this(header, ringBuffer, exCallback);
 		_listenerLogic = new SingleSocketListener(socketPackage);
 	}
 	
 	public EventListener(
-			final EventReceiver eventReceiver,
+			final IncomingEventHeader header,
 			final SocketPollInSet pollInSet,
 			final RingBuffer<byte[]> ringBuffer, 
 			final FatalExceptionCallback exCallback) {
-		this(eventReceiver, ringBuffer, exCallback);
+		this(header, ringBuffer, exCallback);
 		_listenerLogic = new MultiSocketListener(pollInSet);
-		
 	}
 	
 	private EventListener(
-			final EventReceiver eventReceiver,
+			final IncomingEventHeader header,
 			final RingBuffer<byte[]> ringBuffer, 
 			final FatalExceptionCallback exCallback) {
-		_eventReceiver = Objects.requireNonNull(eventReceiver);
+		_header = Objects.requireNonNull(header);
 		_ringBuffer = Objects.requireNonNull(ringBuffer);
 		_exCallback = Objects.requireNonNull(exCallback);
 	}
 
 	@Override
 	public void run() {	
-		if (!_isRunning.compareAndSet(false, true)) {
-			_exCallback.signalFatalException(new RuntimeException("The event listener can only be started once."));
-		}
-		
 		try {
 			try {		
 				_listenerLogic.listen();
@@ -82,9 +75,9 @@ public final class EventListener implements Runnable {
 	
 	private void nextEvent(final SocketPackage socketPackage) {
 		final long seq = _ringBuffer.next();
-		final byte[] outgoingBuffer = _ringBuffer.get(seq);
+		final byte[] incomingBuffer = _ringBuffer.get(seq);
 		try {
-			_eventReceiver.recv(socketPackage, outgoingBuffer);
+			Messaging.recv(socketPackage, incomingBuffer, _header, true);
 		} finally {
 			_ringBuffer.publish(seq);
 		}

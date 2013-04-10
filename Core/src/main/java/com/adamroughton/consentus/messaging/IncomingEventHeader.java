@@ -23,20 +23,30 @@ package com.adamroughton.consentus.messaging;
  */
 public class IncomingEventHeader extends EventHeader {
 	
+	private final static int SOCKET_ID_LENGTH = 4;
+	
+	private final int _socketIdOffset;
+	
 	public IncomingEventHeader(final int startOffset, final int segmentCount) {
 		this(startOffset, segmentCount, 0, 0);
 	}
 	
 	protected IncomingEventHeader(final int startOffset, final int segmentCount, final int additionalLength, final int additionalFlagCount) {
-		super(startOffset, segmentCount, additionalLength + 4, additionalFlagCount);
+		super(startOffset, segmentCount, additionalLength + SOCKET_ID_LENGTH, additionalFlagCount);
+		_socketIdOffset = super.getAdditionalOffset();
 	}
 	
+	@Override
+	protected int getAdditionalOffset() {
+		return super.getAdditionalOffset() + SOCKET_ID_LENGTH;
+	}
+
 	public final int getSocketId(byte[] event) {
-		return MessageBytesUtil.readInt(event, getAdditionalOffset());
+		return MessageBytesUtil.readInt(event, _socketIdOffset);
 	}
 	
 	public final void setSocketId(byte[] event, int socketId) {
-		MessageBytesUtil.writeInt(event, getAdditionalOffset(), socketId);
+		MessageBytesUtil.writeInt(event, _socketIdOffset, socketId);
 	}
 	
 }
