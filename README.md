@@ -1,3 +1,3 @@
-# Consentus - Virtual Crowd Application Framework
+# Concentus - Virtual Crowd Application Framework
 
 

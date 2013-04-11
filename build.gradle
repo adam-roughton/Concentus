@@ -75,7 +75,7 @@ createDist.dependsOn collectDeps
 task distZip(dependsOn: createDist, type: Zip) {
 	from "$targetDir/dist"
 	destinationDir targetDir
-	baseName "consentusTestBed"
+	baseName "concentusTestBed"
 }
 
 task install(dependsOn:'uploadArchives') << {
@@ -100,7 +100,7 @@ allprojects {
 subprojects {
 	apply plugin: 'java'
 	sourceCompatibility = 1.7
-	archivesBaseName = 'consentus-' + project.name.toLowerCase() 
+	archivesBaseName = 'concentus-' + project.name.toLowerCase() 
 
 	defaultTasks 'build'
 	
@@ -158,7 +158,7 @@ project(':Core') {
 	}
 	
 	task runTestZooKeeper(dependsOn: makeWorkingDir, type: JavaExec) {
-		main = "com.adamroughton.consentus.cluster.TestZooKeeperProcess"
+		main = "com.adamroughton.concentus.cluster.TestZooKeeperProcess"
 		classpath = sourceSets.main.runtimeClasspath
 		args "50000"
 		workingDir rootProject.workingDir
@@ -179,7 +179,7 @@ project(':CrowdHammer') {
 	def createLocalExecWorkerClosure = { serviceClassName, serviceArgs ->
 		{ ->
 			javaexec {
-				main = "com.adamroughton.consentus.crowdhammer.CrowdHammerWorker"
+				main = "com.adamroughton.concentus.crowdhammer.CrowdHammerWorker"
 				classpath = sourceSets.main.runtimeClasspath
 				args "-s" + serviceClassName, "-pconfig.yaml", "-a127.0.0.1", "-z127.0.0.1:50000"
 				serviceArgs.each { serviceArg ->
@@ -192,11 +192,11 @@ project(':CrowdHammer') {
 	}
 	
 	task runLocalWorkerService(dependsOn: makeWorkingDir) << {
-		createLocalExecWorkerClosure('com.adamroughton.consentus.crowdhammer.worker.WorkerService', ["-n1000"]).call()
+		createLocalExecWorkerClosure('com.adamroughton.concentus.crowdhammer.worker.WorkerService', ["-n1000"]).call()
 	}
 	
 	task runLocalCoordinator(dependsOn: makeWorkingDir, type: JavaExec) {
-		main = "com.adamroughton.consentus.crowdhammer.CrowdHammerCoordinator"
+		main = "com.adamroughton.concentus.crowdhammer.CrowdHammerCoordinator"
 		classpath = sourceSets.main.runtimeClasspath
 		args "-pconfig.yaml", "-a127.0.0.1", "-z127.0.0.1:50000"
 		jvmArgs '-Djava.library.path=/usr/local/lib'
