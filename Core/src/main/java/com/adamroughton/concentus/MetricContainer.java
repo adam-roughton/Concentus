@@ -20,7 +20,7 @@ public class MetricContainer<T> {
 	}
 	
 	public T getMetricEntry() {
-		long bucketId = Util.getCurrentMetricBucketId();
+		long bucketId = getCurrentMetricBucketId();
 		return getMetricEntry(bucketId);
 	}
 	
@@ -43,6 +43,18 @@ public class MetricContainer<T> {
 	
 	public interface MetricLamda<T> {
 		void call(T metricEntry);
+	}
+	
+	public static long getCurrentMetricBucketId() {
+		return System.currentTimeMillis() / Constants.METRIC_TICK;
+	}
+	
+	public static long getMetricBucketStartTime(long metricBucketId) {
+		return metricBucketId * Constants.METRIC_TICK;
+	}
+	
+	public static long getMetricBucketEndTime(long metricBucketId) {
+		return (metricBucketId + 1) * Constants.METRIC_TICK;
 	}
 	
 }
