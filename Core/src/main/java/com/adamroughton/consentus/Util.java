@@ -250,4 +250,16 @@ public class Util {
 		return new StatefulRunnable<TRunnable>(runnable);
 	}
 		
+	public static long getCurrentMetricBucketId() {
+		return System.currentTimeMillis() / Constants.METRIC_TICK;
+	}
+	
+	public static long getMetricBucketStartTime(long metricBucketId) {
+		return metricBucketId * Constants.METRIC_TICK;
+	}
+	
+	public static long getMetricBucketEndTime(long metricBucketId) {
+		return (metricBucketId + 1) * Constants.METRIC_TICK;
+	}
+	
 }

@@ -75,7 +75,11 @@ public final class Client {
 	}
 	
 	public long getNextSendTimeInMillis() {
-		return _nextSendTimeInMillis;
+		if (!hasConnected()) {
+			return System.currentTimeMillis() + 30;
+		} else {
+			return _nextSendTimeInMillis;
+		}
 	}
 	
 	public long getClientId() {

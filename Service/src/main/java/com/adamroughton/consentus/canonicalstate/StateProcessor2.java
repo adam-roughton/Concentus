@@ -213,7 +213,7 @@ public class StateProcessor2 implements EventProcessor {
 			public void write(OutgoingEventHeader header, StateMetricEvent event) {
 				event.setUpdateId(updateId);
 				event.setInputActionsProcessed(_sequence.get() - _seqStart);
-				event.setDurationInMs(timeSinceLastInMs);
+				event.setActualBucketDurationInMs(timeSinceLastInMs);
 				event.setEventErrorCount(_eventErrorCount);
 			}
 			

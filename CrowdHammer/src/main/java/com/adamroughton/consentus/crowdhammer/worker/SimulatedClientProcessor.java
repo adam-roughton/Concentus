@@ -20,6 +20,7 @@ import it.unimi.dsi.fastutil.longs.Long2LongMap;
 
 import java.util.Objects;
 
+import com.adamroughton.consentus.Util;
 import com.adamroughton.consentus.disruptor.DeadlineBasedEventHandler;
 import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.MultiSocketOutgoingEventHeader;
@@ -57,7 +58,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	private final ClientUpdateEvent _updateEvent = new ClientUpdateEvent();
 	
 	private long _nextClientIndex = -1;
-	private long _nextMetricTime = -1;
+	private long _nextMetricBucketId;
 	private boolean _sendMetric = false;
 	
 	// metrics
@@ -87,6 +88,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	@Override
 	public void onStart() {
 		_isSendingInput = true;
+		_nextMetricBucketId = Util.getCurrentMetricBucketId();
 	}
 
 	@Override
@@ -124,10 +126,8 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 
 	@Override
 	public void onDeadline() {
-		long now = System.currentTimeMillis();
 		if (_sendMetric) {
 			sendMetricEvent();
-			_nextMetricTime = now + METRIC_TICK;
 		} else if (_isSendingInput) {
 			Client client = _clients.get(_nextClientIndex);	
 			if (client.hasConnected()) {		
@@ -153,18 +153,11 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 			} while(!_clients.get(_nextClientIndex).isActive());
 		}
 		
-		Client nextClient = _clients.get(_nextClientIndex);
-		long nextClientDeadline;
-		if (!nextClient.hasConnected()) {
-			// we artificially space the connection attempts
-			nextClientDeadline = System.currentTimeMillis() + 30;
-		} else {
-			nextClientDeadline = _clients.get(_nextClientIndex).getNextSendTimeInMillis();
-		}
-		
-		if (_nextMetricTime < nextClientDeadline) {
+		long nextClientDeadline = _clients.get(_nextClientIndex).getNextSendTimeInMillis();
+		long nextMetricDeadline = Util.getMetricBucketEndTime(_nextMetricBucketId);
+		if (nextMetricDeadline < nextClientDeadline) {
 			_sendMetric = true;
-			return _nextMetricTime;
+			return nextMetricDeadline;
 		} else {
 			_sendMetric = false;
 			return nextClientDeadline;
@@ -174,7 +167,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	@Override
 	public long getDeadline() {
 		if (_sendMetric) {
-			return _nextMetricTime;
+			return Util.getMetricBucketEndTime(_nextMetricBucketId);
 		} else {
 			return _clients.get(_nextClientIndex).getNextSendTimeInMillis();
 		}

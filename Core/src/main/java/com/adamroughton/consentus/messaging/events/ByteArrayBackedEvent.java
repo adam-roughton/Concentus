@@ -27,14 +27,14 @@ public abstract class ByteArrayBackedEvent {
 	private byte[] _backingArray;
 	private int _offset;
 	private int _eventSize;
-		
+	
 	protected ByteArrayBackedEvent(int typeId) {
 		this(typeId, 0);
 	}
 	
 	/**
 	 * Creates a new instance with the given typeId. The default event
-	 * size allows implementors to avoid calling {@link ByteArrayBackedEvent#setBackingArray(byte[], int)}
+	 * size allows implementors to avoid calling {@link ByteArrayBackedEvent#setEventSize(int)}
 	 * each time they set a new backing array.
 	 * @param typeId
 	 * @param defaultEventSize the default size of the event <b><u>not including the typeId</u></b>. This class

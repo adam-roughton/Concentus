@@ -16,8 +16,9 @@
 package com.adamroughton.consentus.crowdhammer.metriclistener;
 
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 
+import com.adamroughton.consentus.crowdhammer.messaging.events.TestEventType;
+import com.adamroughton.consentus.crowdhammer.messaging.events.WorkerMetricEvent;
 import com.adamroughton.consentus.messaging.IncomingEventHeader;
 import com.adamroughton.consentus.messaging.events.EventType;
 import com.adamroughton.consentus.messaging.events.StateMetricEvent;
@@ -31,11 +32,12 @@ import com.lmax.disruptor.collections.Histogram;
 public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 
 	private final IncomingEventHeader _subHeader;
+	
 	private final StateMetricEvent _metricEvent = new StateMetricEvent();
+	private final WorkerMetricEvent _workerMetricEvent = new WorkerMetricEvent();
+	
 	private long _lastUpdateId = -1;
 	private Histogram _histogram;
-	
-	private long _lastPrintTime = -1;
 	
 	public MetricProcessor(final IncomingEventHeader subHeader) {
 		_subHeader = Objects.requireNonNull(subHeader);
@@ -51,6 +53,15 @@ public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 				@Override
 				public void read(IncomingEventHeader header, StateMetricEvent event) {
 					processStateMetric(event);
+				}
+				
+			});
+		} else if (eventType == TestEventType.WORKER_METRIC.getId()) {
+			EventPattern.readContent(eventBytes, _subHeader, _workerMetricEvent, new EventReader<IncomingEventHeader, WorkerMetricEvent>() {
+
+				@Override
+				public void read(IncomingEventHeader header, WorkerMetricEvent event) {
+					processWorkerMetric(event);
 				}
 				
 			});
@@ -72,7 +83,7 @@ public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 	
 	private void processStateMetric(final StateMetricEvent event) {
 		long actionsProcessed = event.getInputActionsProcessed();
-		long duration = event.getDurationInMs();
+		long duration = event.getActualBucketDurationInMs();
 		
 		double throughput = 0;
 		if (duration > 0) {
@@ -87,11 +98,17 @@ public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 		}
 		_lastUpdateId = updateId;
 		
-		if (System.nanoTime() > _lastPrintTime + TimeUnit.SECONDS.toNanos(1)) {
-			Log.info(String.format("Throughput: %f per second. Missed event count: %d", throughput, missedEventCount));
-			
-			_lastPrintTime = System.nanoTime();
+		Log.info(String.format("StateMetric (B%d): %f actionsProc/s, %d missed events", event.getMetricBucketId(), throughput, missedEventCount));
+	}
+	
+	private void processWorkerMetric(final WorkerMetricEvent event) {
+		long actionsSent = event.getSentInputActionsCount();
+		long duration = event.getActualBucketDurationInMs();
+		double throughput = 0;
+		if (duration > 0) {
+			throughput = ((double) actionsSent / (double) duration) * 1000;
 		}
+		Log.info(String.format("WorkerMetric (B%d,%d): %f input/s, %d errors", event.getMetricBucketId(), event.getWorkerId(), throughput, event.getEventErrorCount()));
 	}
 
 }

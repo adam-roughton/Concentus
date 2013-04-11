@@ -21,12 +21,14 @@ import com.adamroughton.consentus.messaging.events.ByteArrayBackedEvent;
 public class WorkerMetricEvent extends ByteArrayBackedEvent {
 
 	private final static int WORKER_ID_OFFSET = 0;
-	private final static int INPUT_ACTIONS_OFFSET = 8;
-	private final static int DURATION_OFFSET = 16;
-	private final static int EVENT_ERROR_COUNT_OFFSET = 24;
+	private final static int METRIC_BUCKET_ID_OFFSET = 8;
+	private final static int ACTUAL_BUCKET_DURATION_OFFSET = 16;
+	private final static int INPUT_ACTIONS_OFFSET = 24;
+	private final static int EVENT_ERROR_COUNT_OFFSET = 32;
+	private final static int CONNECTED_CLIENT_COUNT_OFFSET = 36;
 
 	public WorkerMetricEvent() {
-		super(TestEventType.STATE_METRIC.getId());
+		super(TestEventType.WORKER_METRIC.getId());
 	}
 	
 	// metrics:
@@ -36,28 +38,36 @@ public class WorkerMetricEvent extends ByteArrayBackedEvent {
 	 */
 	
 	
-	public long getUpdateId() {
+	public long getWorkerId() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(WORKER_ID_OFFSET));
 	}
 	
-	public void setUpdateId(long updateId) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(WORKER_ID_OFFSET), updateId);
+	public void setWorkerId(long workerId) {
+		MessageBytesUtil.writeLong(getBackingArray(), getOffset(WORKER_ID_OFFSET), workerId);
 	}
 	
-	public long getInputActionsProcessed() {
+	public long getMetricBucketId() {
+		return MessageBytesUtil.readLong(getBackingArray(), getOffset(METRIC_BUCKET_ID_OFFSET));
+	}
+	
+	public void setMetricBucketId(long metricBucketId) {
+		MessageBytesUtil.writeLong(getBackingArray(), getOffset(METRIC_BUCKET_ID_OFFSET), metricBucketId);
+	}
+	
+	public long getSentInputActionsCount() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(INPUT_ACTIONS_OFFSET));
 	}
 
-	public void setInputActionsProcessed(long inputActionsProcessed) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(INPUT_ACTIONS_OFFSET), inputActionsProcessed);
+	public void setSentInputActionsCount(long sentInputActionsCount) {
+		MessageBytesUtil.writeLong(getBackingArray(), getOffset(INPUT_ACTIONS_OFFSET), sentInputActionsCount);
 	}
 
-	public long getDurationInMs() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(DURATION_OFFSET));
+	public long getActualBucketDurationInMs() {
+		return MessageBytesUtil.readLong(getBackingArray(), getOffset(ACTUAL_BUCKET_DURATION_OFFSET));
 	}
 
-	public void setDurationInMs(long durationInMs) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(DURATION_OFFSET), durationInMs);
+	public void setActualBucketDurationInMs(long durationInMs) {
+		MessageBytesUtil.writeLong(getBackingArray(), getOffset(ACTUAL_BUCKET_DURATION_OFFSET), durationInMs);
 	}
 	
 	public int getEventErrorCount() {
@@ -66,6 +76,14 @@ public class WorkerMetricEvent extends ByteArrayBackedEvent {
 
 	public void setEventErrorCount(int eventErrorCount) {
 		MessageBytesUtil.writeInt(getBackingArray(), getOffset(EVENT_ERROR_COUNT_OFFSET), eventErrorCount);
+	}
+	
+	public int getConnectedClientCount() {
+		return MessageBytesUtil.readInt(getBackingArray(), getOffset(CONNECTED_CLIENT_COUNT_OFFSET));
+	}
+
+	public void setConnectedClientCount(int connectedClientCount) {
+		MessageBytesUtil.writeInt(getBackingArray(), getOffset(CONNECTED_CLIENT_COUNT_OFFSET), connectedClientCount);
 	}
 	
 }

@@ -25,7 +25,8 @@ public enum ClusterPath {
 	ASSIGN_REQ	(STATE, "assignments/req"),
 	ASSIGN_RES	(STATE, "assignments/res"),
 	SERVICES	("services"),
-	READY		(STATE, "ready");
+	READY		(STATE, "ready"),
+	METRIC_TIME ("metricStart");
 	
 	private final String _relativePathToRoot;
 	

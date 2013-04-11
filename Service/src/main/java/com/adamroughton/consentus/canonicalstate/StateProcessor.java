@@ -163,7 +163,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 			public void write(OutgoingEventHeader header, StateMetricEvent event) {
 				event.setUpdateId(updateId);
 				event.setInputActionsProcessed(_processedCount);
-				event.setDurationInMs(timeSinceLastInMs);
+				event.setActualBucketDurationInMs(timeSinceLastInMs);
 				event.setEventErrorCount(_eventErrorCount);
 			}
 			

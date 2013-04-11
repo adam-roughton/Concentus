@@ -20,9 +20,10 @@ import com.adamroughton.consentus.messaging.MessageBytesUtil;
 public class StateMetricEvent extends ByteArrayBackedEvent {
 
 	private final static int UPDATE_ID_OFFSET = 0;
-	private final static int INPUT_ACTIONS_OFFSET = 8;
-	private final static int DURATION_OFFSET = 16;
-	private final static int EVENT_ERROR_COUNT_OFFSET = 24;
+	private final static int METRIC_BUCKET_ID_OFFSET = 8;
+	private final static int ACTUAL_BUCKET_DURATION_OFFSET = 16;
+	private final static int INPUT_ACTIONS_OFFSET = 24;
+	private final static int EVENT_ERROR_COUNT_OFFSET = 32;
 	private static final int EVENT_SIZE = EVENT_ERROR_COUNT_OFFSET + 4;
 
 	public StateMetricEvent() {
@@ -37,6 +38,22 @@ public class StateMetricEvent extends ByteArrayBackedEvent {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET), updateId);
 	}
 	
+	public final long getMetricBucketId() {
+		return MessageBytesUtil.readLong(getBackingArray(), getOffset(METRIC_BUCKET_ID_OFFSET));
+	}
+	
+	public final void setMetricBucketId(long metricBucketId) {
+		MessageBytesUtil.writeLong(getBackingArray(), getOffset(METRIC_BUCKET_ID_OFFSET), metricBucketId);
+	}
+
+	public final long getActualBucketDurationInMs() {
+		return MessageBytesUtil.readLong(getBackingArray(), getOffset(ACTUAL_BUCKET_DURATION_OFFSET));
+	}
+	
+	public final void setActualBucketDurationInMs(long durationInMs) {
+		MessageBytesUtil.writeLong(getBackingArray(), getOffset(ACTUAL_BUCKET_DURATION_OFFSET), durationInMs);
+	}
+	
 	public final long getInputActionsProcessed() {
 		return MessageBytesUtil.readLong(getBackingArray(), getOffset(INPUT_ACTIONS_OFFSET));
 	}
@@ -45,14 +62,6 @@ public class StateMetricEvent extends ByteArrayBackedEvent {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(INPUT_ACTIONS_OFFSET), inputActionsProcessed);
 	}
 
-	public final long getDurationInMs() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(DURATION_OFFSET));
-	}
-
-	public final void setDurationInMs(long durationInMs) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(DURATION_OFFSET), durationInMs);
-	}
-	
 	public final int getEventErrorCount() {
 		return MessageBytesUtil.readInt(getBackingArray(), getOffset(EVENT_ERROR_COUNT_OFFSET));
 	}

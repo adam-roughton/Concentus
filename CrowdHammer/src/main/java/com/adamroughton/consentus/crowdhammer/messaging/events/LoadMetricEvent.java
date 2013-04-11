@@ -26,7 +26,7 @@ public class LoadMetricEvent extends ByteArrayBackedEvent {
 	private final static int EVENT_ERROR_COUNT_OFFSET = 24;
 
 	public LoadMetricEvent() {
-		super(TestEventType.STATE_METRIC.getId());
+		super(TestEventType.LOAD_METRIC.getId());
 	}
 	
 	public long getUpdateId() {

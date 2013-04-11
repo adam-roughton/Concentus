@@ -27,7 +27,7 @@ public final class Constants {
 	 * The best effort time between metric events 
 	 * from metric providers.
 	 */
-	public static final long METRIC_TICK = 100L;
+	public static final long METRIC_TICK = 1000L;
 	
 	/**
 	 * The number of bytes used to uniquely identify

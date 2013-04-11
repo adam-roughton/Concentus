@@ -152,8 +152,6 @@ public class ConsentusServiceAdapter implements CrowdHammerService {
 			}
 			_registeredServiceNames.clear();
 		}
-
-
 		
 	}
 
