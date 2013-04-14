@@ -13,53 +13,56 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.adamroughton.concentus.crowdhammer;
+package com.adamroughton.concentus.crowdhammer.concentushost;
 
-import java.net.InetAddress;
+import java.util.Collections;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.logging.Logger;
 
-import com.adamroughton.concentus.ConcentusProcessCallback;
-import com.adamroughton.concentus.ConsentusService;
-import com.adamroughton.concentus.ConsentusServiceState;
-import com.adamroughton.concentus.cluster.worker.Cluster;
+import com.adamroughton.concentus.ConcentusHandle;
+import com.adamroughton.concentus.ConcentusProcessFactory;
+import com.adamroughton.concentus.ConcentusService;
+import com.adamroughton.concentus.ConcentusServiceState;
+import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
+import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
 
 public class ConcentusServiceAdapter implements CrowdHammerService {
 
 	private final Logger _log;
 	
-	private final Class<? extends ConsentusService> _serviceClass;
-	private Configuration _configuration;
-	private ConcentusProcessCallback _processCallback;
-	private InetAddress _networkAddress;
+	private final ConcentusProcessFactory<ConcentusService, Configuration> _serviceFactory;
+	private final Map<String, String> _commandLineOptions;
+	private final ConcentusHandle<? extends CrowdHammerConfiguration> _concentusHandle;
 	
-	private ConsentusService _currentInstance;
+	private ConcentusService _currentInstance;
 	
-	public ConcentusServiceAdapter(final Class<? extends ConsentusService> consentusServiceClass) {
-		_serviceClass = Objects.requireNonNull(consentusServiceClass);
-		_log = Logger.getLogger(String.format("CrowdHammer wrapping '%s'", _serviceClass.getName()));
+	public ConcentusServiceAdapter(
+			final ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle,
+			final ConcentusProcessFactory<ConcentusService, Configuration> serviceFactory, 
+			final Map<String, String> commandLineOptions) {
+		_concentusHandle = Objects.requireNonNull(concentusHandle);
+		_serviceFactory = Objects.requireNonNull(serviceFactory);
+		_commandLineOptions = Collections.unmodifiableMap(Objects.requireNonNull(commandLineOptions));
+		_log = Logger.getLogger(String.format("CrowdHammer wrapping '%s'", _serviceFactory.getProcessName()));
 	}
 
 	@Override
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
-			Cluster cluster) throws Exception {
+			ClusterWorkerHandle cluster) throws Exception {
 		SignalReadyDisabledCluster clusterWrapper = new SignalReadyDisabledCluster(cluster);
 		
 		_log.info(String.format("Entering state %s", newClusterState.name()));
 		if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
-			try {
-				_currentInstance = _serviceClass.newInstance();
-				_currentInstance.configure(_configuration, _processCallback, _networkAddress);
-			} catch (InstantiationException | IllegalAccessException | SecurityException e) {
-				throw new RuntimeException(String.format("Could not instantiate service class %1$s."), e);
-			}
+			_currentInstance = _serviceFactory.create(_concentusHandle, _commandLineOptions);
 		}
-		ConsentusServiceState consentusState = newClusterState.getEquivalentSUTState();
+		ConcentusServiceState consentusState = newClusterState.getEquivalentSUTState();
 		if (consentusState != null) {
 			_currentInstance.onStateChanged(consentusState, clusterWrapper);
 		}
@@ -75,27 +78,13 @@ public class ConcentusServiceAdapter implements CrowdHammerService {
 	public Class<CrowdHammerServiceState> getStateValueClass() {
 		return CrowdHammerServiceState.class;
 	}
-
-	@Override
-	public void configure(CrowdHammerConfiguration config,
-			ConcentusProcessCallback exHandler, 
-			InetAddress networkAddress) {
-		_configuration = config;
-		_processCallback = exHandler;
-		_networkAddress = networkAddress;
-	}
-
-	@Override
-	public String name() {
-		return String.format("CrowdHammer Wrapping '%s'.", _serviceClass.getName());
-	}
 	
-	private class SignalReadyDisabledCluster implements Cluster {
+	private class SignalReadyDisabledCluster implements ClusterWorkerHandle {
 
-		private final Cluster _wrappedCluster;
+		private final ClusterWorkerHandle _wrappedCluster;
 		private Set<String> _registeredServiceNames = new HashSet<>();
 		
-		public SignalReadyDisabledCluster(final Cluster wrappedCluster) {
+		public SignalReadyDisabledCluster(final ClusterWorkerHandle wrappedCluster) {
 			_wrappedCluster = Objects.requireNonNull(wrappedCluster);
 		}
 		

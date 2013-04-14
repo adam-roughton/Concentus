@@ -15,7 +15,7 @@
  */
 package com.adamroughton.concentus.clienthandler;
 
-import com.adamroughton.concentus.SlidingWindowLongMap;
+import com.adamroughton.concentus.util.SlidingWindowLongMap;
 
 public class ClientProxy {
 
@@ -31,7 +31,7 @@ public class ClientProxy {
 	
 	public ClientProxy(final long clientId) {
 		_clientId = clientId;
-		_lastMsgTime = System.nanoTime();
+		_lastMsgTime = 0;
 		_clientSocketId = new byte[0];
 		_lastUpdateId = -1;
 	}
@@ -61,12 +61,12 @@ public class ClientProxy {
 		return clientSocketId;
 	}
 	
-	public long getLastMsgNanoTime() {
+	public long getLastMsgTime() {
 		return _lastMsgTime;
 	}
 	
-	public void setLastMsgNanoTime(final long timeInNanos) {
-		_lastMsgTime = timeInNanos;
+	public void setLastMsgTime(final long msgTime) {
+		_lastMsgTime = msgTime;
 	}
 	
 	public long getLastUpdateId() {
@@ -76,8 +76,5 @@ public class ClientProxy {
 	public void setLastUpdateId(final long updateId) {
 		_lastUpdateId = updateId;
 	}
-	
-	
-	
 	
 }

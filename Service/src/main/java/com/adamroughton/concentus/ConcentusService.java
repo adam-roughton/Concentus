@@ -15,14 +15,8 @@
  */
 package com.adamroughton.concentus;
 
-import java.util.Map;
+import com.adamroughton.concentus.cluster.worker.ClusterListener;
 
-import org.apache.commons.cli.Option;
-
-public interface CommandLineConfiguration<T> {
-
-	Iterable<Option> getCommandLineOptions();
+public interface ConcentusService extends ClusterListener<ConcentusServiceState> {
 	
-	void configure(final T dependant, 
-			final Map<String, String> cmdLineValues);
 }

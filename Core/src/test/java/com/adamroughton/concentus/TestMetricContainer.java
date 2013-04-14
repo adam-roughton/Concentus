@@ -1,194 +1,180 @@
 package com.adamroughton.concentus;
 
 import java.util.ArrayList;
-import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 
 import org.junit.Before;
 import org.junit.Test;
 
 import com.adamroughton.concentus.MetricContainer.MetricLamda;
+import com.adamroughton.concentus.InitialiseDelegate;
 
 import uk.co.real_logic.intrinsics.ComponentFactory;
 
 import static org.junit.Assert.*;
-import static com.adamroughton.concentus.Constants.METRIC_TICK;
 
 public class TestMetricContainer {
 
 	private static final int WINDOW_SIZE = 8;
 	
 	private MetricContainer<MetricEntry> _container;
+	private DrivableClock _clock;
 	
 	@Before
 	public void setUp() {
-		_container = new MetricContainer<>(WINDOW_SIZE, new ComponentFactory<MetricEntry>() {
+		_clock = new DrivableClock();
+		_clock.setTime(235262444, TimeUnit.MILLISECONDS);
+		
+		_container = new MetricContainer<>(
+			_clock,
+			WINDOW_SIZE, 
+			new ComponentFactory<MetricEntry>() {
 
-			@Override
-			public MetricEntry newInstance(Object[] initArgs) {
-				return new MetricEntry();
-			}
-		});
+				@Override
+				public MetricEntry newInstance(Object[] initArgs) {
+					return new MetricEntry();
+				}
+			},
+			new InitialiseDelegate<MetricEntry>() {
+	
+				@Override
+				public void initialise(MetricEntry content) {
+					content.metric1 = 0;
+				}
+				
+			});
 	}
 	
 	@Test
-	public void testSingle() {
-		List<Long> expected = Arrays.asList(5l);
-		
-		MetricEntry entry = _container.getMetricEntry();
-		entry.metric1 = 5;
-		
-		final List<Long> actual = new ArrayList<>();
-		_container.forEachPending(new MetricLamda<MetricEntry>() {
-
-			@Override
-			public void call(MetricEntry metricEntry) {
-				actual.add(metricEntry.metric1);
-			}
-			
-		});
-		assertEquals(expected, actual);
+	public void single() {
+		doSetAndGetPendingTest(
+				usingBucketIds(0), 
+				expectingPendingBucketIds(0));
 	}
 	
 	@Test
-	public void testSequentialLessThanWindow() {
-		List<Long> expected = Arrays.asList(0l, 1l, 2l, 3l);
-		
-		long startTime = 235265243;
-		int index = 0;
-		for (long time = startTime; time < startTime + METRIC_TICK * WINDOW_SIZE / 2; time += METRIC_TICK) {
-			long bucketId = time / METRIC_TICK;
+	public void sequentialLessThanWindow() {
+		doSetAndGetPendingTest(
+				usingBucketIdsBetween(0, WINDOW_SIZE / 2),
+				expectedPendingBucketIdsBetween(0, WINDOW_SIZE / 2));	
+	}
+	
+	@Test
+	public void sequentialGreaterThanWindow() {
+		doSetAndGetPendingTest(
+				usingBucketIdsBetween(0, WINDOW_SIZE * 2 - 1),
+				expectedPendingBucketIdsBetween(WINDOW_SIZE, WINDOW_SIZE * 2 - 1));		
+	}
+	
+	@Test
+	public void sequential_StepSmallerThanTick_GreaterThanWindow() {
+		doSetAndGetPendingTest(
+				usingBucketIds(0, 0, 1, 1, 2, 2, 3, 3, 4, 4, 5, 5), 
+				expectingPendingBucketIds(0, 1, 2, 3, 4, 5));		
+	}
+	
+	@Test
+	public void skipSmallerThanWindow() {
+		doSetAndGetPendingTest(
+				usingBucketIds(0, 5, 6), 
+				expectingPendingBucketIds(0, 5, 6));		
+	}
+	
+	@Test
+	public void skipWindowEdges() {
+		doSetAndGetPendingTest(
+				usingBucketIds(0, (WINDOW_SIZE - 1)), 
+				expectingPendingBucketIds(0, (WINDOW_SIZE - 1)));
+	}
+	
+	@Test
+	public void skipGreaterThanWindow() {
+		doSetAndGetPendingTest(
+				usingBucketIds(0, 15, 19),
+				expectingPendingBucketIds(15, 19));	
+	}
+	
+	@Test
+	public void currentNotInPendingSet_CentreOfBucket() throws InterruptedException {
+		long centredBucketTime = (Constants.METRIC_TICK * 20) / 15;
+		_clock.setTime(centredBucketTime, TimeUnit.MILLISECONDS);
+		long currentBucketId = _container.getCurrentMetricBucketId();
+		doSetAndGetPendingTest(
+				usingBucketIds(currentBucketId - 4, currentBucketId - 1, currentBucketId), 
+				expectingPendingBucketIds(currentBucketId - 4, currentBucketId - 1));
+	}
+	
+	@Test
+	public void currentNotInPendingSet_StartOfBucket() throws InterruptedException {
+		long startBucketTime = Constants.METRIC_TICK * 20000;
+		_clock.setTime(startBucketTime, TimeUnit.MILLISECONDS);
+		long currentBucketId = _container.getCurrentMetricBucketId();
+		doSetAndGetPendingTest(
+				usingBucketIds(currentBucketId - 4, currentBucketId - 1, currentBucketId), 
+				expectingPendingBucketIds(currentBucketId - 4, currentBucketId - 1));
+	}
+	
+	@Test
+	public void currentNotInPendingSet_endOfBucket() throws InterruptedException {
+		long endBucketTime = Constants.METRIC_TICK * 20000 - 1;
+		_clock.setTime(endBucketTime, TimeUnit.MILLISECONDS);
+		long currentBucketId = _container.getCurrentMetricBucketId();
+		doSetAndGetPendingTest(
+				usingBucketIds(currentBucketId - 4, currentBucketId - 1, currentBucketId), 
+				expectingPendingBucketIds(currentBucketId - 4, currentBucketId - 1));
+	}
+	
+	private void doSetAndGetPendingTest(List<Long> bucketIds, List<Long> expectedPendingIds) {
+		for (long bucketId : bucketIds) {
 			MetricEntry entry = _container.getMetricEntry(bucketId);
-			entry.metric1 = index++;
+			entry.metric1 = bucketId;
 		}
 		
-		final List<Long> actual = new ArrayList<>();
+		final List<Long> actualPendingIds = new ArrayList<>();
 		_container.forEachPending(new MetricLamda<MetricEntry>() {
 
 			@Override
-			public void call(MetricEntry metricEntry) {
-				actual.add(metricEntry.metric1);
+			public void call(long bucketId, MetricEntry metricEntry) {
+				assertEquals(bucketId, metricEntry.metric1);
+				actualPendingIds.add(bucketId);
 			}
 			
 		});
-		assertEquals(expected, actual);		
+		assertEquals(expectedPendingIds, actualPendingIds);
 	}
 	
-	@Test
-	public void testSequentialGreaterThanWindow() {
-		List<Long> expected = Arrays.asList(8l, 9l, 10l, 11l, 12l, 13l, 14l, 15l);
-		
-		long startTime = 235265243;
-		int index = 0;
-		for (long time = startTime; time < startTime + METRIC_TICK * WINDOW_SIZE * 2; time += METRIC_TICK) {
-			long bucketId = time / METRIC_TICK;
-			MetricEntry entry = _container.getMetricEntry(bucketId);
-			entry.metric1 = index++;
+	private List<Long> usingBucketIdsBetween(long first, long last) {
+		return range(first, last);
+	}
+	
+	private List<Long> usingBucketIds(long... ids) {
+		return arrayToList(ids);
+	}
+	
+	private List<Long> expectedPendingBucketIdsBetween(long first, long last) {
+		return range(first, last);
+	}
+	
+	private List<Long> expectingPendingBucketIds(long... expectedValues) {
+		return arrayToList(expectedValues);
+	}
+	
+	private List<Long> arrayToList(long[] array) {
+		List<Long> list = new ArrayList<>(array.length);
+		for (long element : array) {
+			list.add(element);
 		}
-		final List<Long> actual = new ArrayList<>();
-		_container.forEachPending(new MetricLamda<MetricEntry>() {
-
-			@Override
-			public void call(MetricEntry metricEntry) {
-				actual.add(metricEntry.metric1);
-			}
-			
-		});
-		assertEquals(expected, actual);		
+		return list;
 	}
 	
-	@Test
-	public void testSequential_StepSmallerThanTick_GreaterThanWindow() {
-		List<Long> expected = Arrays.asList(17l, 19l, 21l, 23l, 25l, 27l, 29l, 31l);
-		
-		long startTime = 235265243;
-		int index = 0;
-		for (long time = startTime; time < startTime + METRIC_TICK * WINDOW_SIZE * 2; time += METRIC_TICK / 2) {
-			long bucketId = time / METRIC_TICK;
-			MetricEntry entry = _container.getMetricEntry(bucketId);
-			entry.metric1 = index++;
+	private List<Long> range(Long first, Long last) {
+		List<Long> rangeList = new ArrayList<>();
+		for (Long id = first; id <= last; id++) {
+			rangeList.add(id);
 		}
-		final List<Long> actual = new ArrayList<>();
-		_container.forEachPending(new MetricLamda<MetricEntry>() {
-
-			@Override
-			public void call(MetricEntry metricEntry) {
-				actual.add(metricEntry.metric1);
-			}
-			
-		});
-		assertEquals(expected, actual);		
+		return rangeList;
 	}
-	
-	@Test
-	public void testSkipSmallerThanWindow() {
-		List<Long> expected = Arrays.asList(0l, 1l, 2l);
-		long baseTime = 235265243;
-		int index = 0;
-		for (long time : Arrays.asList(baseTime, baseTime + METRIC_TICK * 5, baseTime + METRIC_TICK * 6)) {
-			long bucketId = time / METRIC_TICK;
-			MetricEntry entry = _container.getMetricEntry(bucketId);
-			entry.metric1 = index++;
-		}
-		
-		final List<Long> actual = new ArrayList<>();
-		_container.forEachPending(new MetricLamda<MetricEntry>() {
-
-			@Override
-			public void call(MetricEntry metricEntry) {
-				actual.add(metricEntry.metric1);
-			}
-			
-		});
-		assertEquals(expected, actual);		
-	}
-	
-	@Test
-	public void testSkipWindowEdges() {
-		List<Long> expected = Arrays.asList(0l, 1l);
-		long baseTime = 235265243;
-		int index = 0;
-		for (long time : Arrays.asList(baseTime, baseTime + METRIC_TICK * (WINDOW_SIZE - 1))) {
-			long bucketId = time / METRIC_TICK;
-			MetricEntry entry = _container.getMetricEntry(bucketId);
-			entry.metric1 = index++;
-		}
-		
-		final List<Long> actual = new ArrayList<>();
-		_container.forEachPending(new MetricLamda<MetricEntry>() {
-
-			@Override
-			public void call(MetricEntry metricEntry) {
-				actual.add(metricEntry.metric1);
-			}
-			
-		});
-		assertEquals(expected, actual);		
-	}
-	
-	@Test
-	public void testSkipGreaterThanWindow() {
-		List<Long> expected = Arrays.asList(1l, 2l);
-		long baseTime = 235265243;
-		int index = 0;
-		for (long time : Arrays.asList(baseTime, baseTime + METRIC_TICK * 15, baseTime + METRIC_TICK * 19)) {
-			long bucketId = time / METRIC_TICK;
-			MetricEntry entry = _container.getMetricEntry(bucketId);
-			entry.metric1 = index++;
-		}
-		
-		final List<Long> actual = new ArrayList<>();
-		_container.forEachPending(new MetricLamda<MetricEntry>() {
-
-			@Override
-			public void call(MetricEntry metricEntry) {
-				actual.add(metricEntry.metric1);
-			}
-			
-		});
-		assertEquals(expected, actual);		
-	}
-	
 	
 	public static class MetricEntry {
 		public long metric1;

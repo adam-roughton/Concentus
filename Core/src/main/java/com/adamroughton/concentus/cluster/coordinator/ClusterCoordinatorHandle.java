@@ -18,6 +18,7 @@ package com.adamroughton.concentus.cluster.coordinator;
 import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -41,19 +42,18 @@ import com.netflix.curator.utils.ZKPaths;
 
 import static com.adamroughton.concentus.cluster.ClusterPath.*;
 
-public final class CoordinatorClusterHandle extends ClusterParticipant implements Cluster, Closeable {
+public final class ClusterCoordinatorHandle extends ClusterParticipant implements Closeable {
 
-	public CoordinatorClusterHandle(String zooKeeperAddress, String root,
+	public ClusterCoordinatorHandle(String zooKeeperAddress, String root,
 			FatalExceptionCallback exHandler) {
 		this(zooKeeperAddress, root, UUID.randomUUID(), exHandler);
 	}
 	
-	public CoordinatorClusterHandle(String zooKeeperAddress, String root, UUID clusterId,
+	public ClusterCoordinatorHandle(String zooKeeperAddress, String root, UUID clusterId,
 			FatalExceptionCallback exHandler) {
 		super(zooKeeperAddress, root, clusterId, exHandler);
 	}
 	
-	@Override
 	public List<String> getAssignmentRequestServiceTypes() {
 		List<String> serviceTypes = null;
 		try {
@@ -66,7 +66,6 @@ public final class CoordinatorClusterHandle extends ClusterParticipant implement
 		return serviceTypes;
 	}
 	
-	@Override
 	public List<AssignmentRequest> getAssignmentRequests(String serviceType) {
 		List<AssignmentRequest> assignmentRequests = null;
 		try {
@@ -85,7 +84,6 @@ public final class CoordinatorClusterHandle extends ClusterParticipant implement
 		return assignmentRequests;
 	}
 
-	@Override
 	public void setAssignment(String serviceType, UUID serviceId,
 			byte[] assignment) {
 		String serviceTypeAssignmentPath = ZKPaths.makePath(getPath(ASSIGN_RES), serviceType);
@@ -94,7 +92,6 @@ public final class CoordinatorClusterHandle extends ClusterParticipant implement
 		createOrSetEphemeral(serviceAssignmentPath, assignment);
 	}
 
-	@Override
 	public void setState(ClusterStateValue state) {
 		try {
 			ensurePathCreated(getPath(STATE));
@@ -123,7 +120,11 @@ public final class CoordinatorClusterHandle extends ClusterParticipant implement
 		}
 	}
 
-	@Override	
+	/**
+	 * Takes a snapshot of all of the participating nodes, allowing
+	 * them to be tracked for operations such as {@link Cluster#waitForReady(ParticipatingNodes))}.
+	 * @return an entity that can be used to track nodes.
+	 */
 	public ParticipatingNodes getNodeSnapshot() {
 		ParticipatingNodes participatingNodes = ParticipatingNodes.create();
 		try {
@@ -139,12 +140,10 @@ public final class CoordinatorClusterHandle extends ClusterParticipant implement
 		return participatingNodes;
 	}
 	
-	@Override
 	public boolean waitForReady(ParticipatingNodes participatingNodes) {		
 		return waitForReadyInternal(participatingNodes, false, 0, TimeUnit.SECONDS);
 	}
 
-	@Override
 	public boolean waitForReady(final ParticipatingNodes participatingNodes, long time, TimeUnit unit) {
 		return waitForReadyInternal(participatingNodes, true, time, unit);
 	}
@@ -230,6 +229,26 @@ public final class CoordinatorClusterHandle extends ClusterParticipant implement
 			}
 			
 		};
+	}
+	
+	public static class AssignmentRequest {
+		private final String _serviceId;
+		private final byte[] _requestBytes;
+		
+		public AssignmentRequest(String serviceId, byte[] requestBytes) {
+			_serviceId = Objects.requireNonNull(serviceId);
+			_requestBytes = Objects.requireNonNull(requestBytes);
+		}
+		
+		public String getServiceId() {
+			return _serviceId;
+		}
+		
+		public byte[] getRequestBytes() {
+			byte[] copy = new byte[_requestBytes.length];
+			System.arraycopy(_requestBytes, 0, copy, 0, copy.length);
+			return copy;
+		}
 	}
 	
 }

@@ -23,7 +23,7 @@ public interface ClusterListener<S extends Enum<S> & ClusterStateValue> {
 	 * @param cluster
 	 * @throws Exception
 	 */
-	void onStateChanged(S newClusterState, Cluster cluster) throws Exception;
+	void onStateChanged(S newClusterState, ClusterWorkerHandle cluster) throws Exception;
 	
 	Class<S> getStateValueClass();
 	

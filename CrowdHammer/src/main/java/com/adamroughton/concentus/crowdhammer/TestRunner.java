@@ -26,23 +26,23 @@ import java.util.concurrent.TimeUnit;
 import java.util.Objects;
 
 import com.adamroughton.concentus.clienthandler.ClientHandlerService;
-import com.adamroughton.concentus.cluster.coordinator.CoordinatorClusterHandle;
+import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle;
 import com.adamroughton.concentus.cluster.coordinator.ParticipatingNodes;
-import com.adamroughton.concentus.cluster.coordinator.Cluster.AssignmentRequest;
+import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle.AssignmentRequest;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 
-import static com.adamroughton.concentus.crowdhammer.CrowdHammerCoordinator.setAndWait;
+import static com.adamroughton.concentus.crowdhammer.CrowdHammerCoordinatorNode.setAndWait;
 import static com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState.*;
 
 public final class TestRunner implements Runnable {
 	
 	private final ParticipatingNodes _participatingNodes;
-	private final CoordinatorClusterHandle _cluster;
+	private final ClusterCoordinatorHandle _cluster;
 	private final int _testRunDuration;
 	private final int[] _testClientCounts;
 	
-	public TestRunner(ParticipatingNodes participatingNodes, CoordinatorClusterHandle cluster, int testRunDuration, int[] testClientCounts) {
+	public TestRunner(ParticipatingNodes participatingNodes, ClusterCoordinatorHandle cluster, int testRunDuration, int[] testClientCounts) {
 		_participatingNodes = Objects.requireNonNull(participatingNodes);
 		_cluster = Objects.requireNonNull(cluster);
 		_testRunDuration = testRunDuration;

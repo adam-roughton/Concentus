@@ -23,10 +23,10 @@ import java.util.Map;
 import org.apache.commons.io.FileUtils;
 import org.junit.*;
 
-import com.adamroughton.concentus.Util;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.config.Service;
 import com.adamroughton.concentus.config.ZooKeeper;
+import com.adamroughton.concentus.util.Util;
 
 import static org.junit.Assert.*;
 

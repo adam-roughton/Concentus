@@ -22,7 +22,12 @@ import it.unimi.dsi.fastutil.ints.IntIterator;
 import java.nio.ByteBuffer;
 import java.util.Objects;
 
+import uk.co.real_logic.intrinsics.ComponentFactory;
+
+import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.Constants;
+import com.adamroughton.concentus.MetricContainer;
+import com.adamroughton.concentus.MetricContainer.MetricLamda;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
@@ -36,8 +41,11 @@ import com.adamroughton.concentus.messaging.patterns.EventReader;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.PubSubPattern;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.InitialiseDelegate;
 
 public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
+	
+	private final Clock _clock;
 	
 	private final StateInputEvent _inputEvent = new StateInputEvent();
 	private final StateUpdateEvent _updateEvent = new StateUpdateEvent();
@@ -50,31 +58,57 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 
 	private final Int2LongMap _clientHandlerEventTracker;
 	
+	private final MetricContainer<MetricEntry> _metricContainer;
+	
 	private long _lastTickTime = -1;
 	private long _nextTickTime = -1;
 	private long _simTime = 0;
 	private long _accumulator = 0; // Carry over left over sim time from last update
 	
+	private static class MetricEntry {
+		public int processedCount;
+		public int errorCount;
+		public int forcedEventCount;
+	}
+	
 	private long _updateId = 0;
-	private int _processedCount = 0;
-	private int _eventErrorCount = 0;
-	private int _forcedEventCount = 0;
+	private long _lastSentMetricBucketId = -1;
+	private boolean _sendMetric = false;
 
 	public StateProcessor(
+			Clock clock,
 			StateLogic stateLogic,
 			IncomingEventHeader subHeader,
 			SendQueue<OutgoingEventHeader> pubSendQueue) {
+		_clock = Objects.requireNonNull(clock);
 		_stateLogic = Objects.requireNonNull(stateLogic);
 		_subHeader = Objects.requireNonNull(subHeader);
 		_pubSendQueue = Objects.requireNonNull(pubSendQueue);
 
 		_clientHandlerEventTracker = new Int2LongOpenHashMap(50);
+		
+		_metricContainer = new MetricContainer<>(clock, 8, 
+			new ComponentFactory<MetricEntry>() {
+		
+				@Override
+				public MetricEntry newInstance(Object[] initArgs) {
+					return new MetricEntry();
+				}
+			}, 
+			new InitialiseDelegate<MetricEntry>() {
+		
+				@Override
+				public void initialise(MetricEntry content) {
+					content.processedCount = 0;
+					content.errorCount = 0;
+					content.forcedEventCount = 0;
+				}
+			});
 	}
 	
 	@Override
 	public void onEvent(byte[] event, long sequence, long nextDeadline)
 			throws Exception {
-		_processedCount++;
 		boolean wasValid = _subHeader.isValid(event);
 		if (wasValid) {
 			EventPattern.readContent(event, _subHeader, _inputEvent, new EventReader<IncomingEventHeader, StateInputEvent>() {
@@ -85,45 +119,55 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 				}
 				
 			});
-		} else {
-			_eventErrorCount++;
 		}
+		MetricEntry entry = _metricContainer.getMetricEntry();
+		entry.processedCount++;
+		if (!wasValid) entry.errorCount++;
 	}
 
 	@Override
 	public void onDeadline() {
-		long now = System.currentTimeMillis();
-		long frameTime = now - _lastTickTime;
-		_accumulator += frameTime;
-		
-		long dt = Constants.TIME_STEP_IN_MS;
-		while (_accumulator >= dt) {
-			_stateLogic.tick(_simTime, dt);
-			_simTime += dt;
-			_accumulator -= dt;
+		if (_sendMetric) {
+			sendMetricEvents();
+		} else {
+			long now = _clock.currentMillis();
+			long frameTime = now - _lastTickTime;
+			_accumulator += frameTime;
+			
+			long dt = Constants.TIME_STEP_IN_MS;
+			while (_accumulator >= dt) {
+				_stateLogic.tick(_simTime, dt);
+				_simTime += dt;
+				_accumulator -= dt;
+			}
+			_lastTickTime = now;
+			
+			_updateId++;
+			sendUpdateEvent(_updateId, _simTime);
+			sendClientHandlerEvents(_updateId);
+			
+			_clientHandlerEventTracker.clear();
 		}
-		_lastTickTime = now;
-		
-		_updateId++;
-		sendUpdateEvent(_updateId, _simTime);
-		sendMetricEvent(_updateId, frameTime);
-		sendClientHandlerEvents(_updateId);
-		
-		_processedCount = 0;
-		_eventErrorCount = 0;
-		_forcedEventCount = 0;
-		_clientHandlerEventTracker.clear();
 	}
 
 	@Override
 	public long moveToNextDeadline(long forcedEventCount) {
+		_metricContainer.getMetricEntry().forcedEventCount += forcedEventCount;
+		
 		if (_lastTickTime == -1) {
-			_nextTickTime = System.currentTimeMillis();
+			_nextTickTime = _clock.currentMillis();
 		} else {
 			_nextTickTime = _lastTickTime + Constants.TIME_STEP_IN_MS;
 		}
-		_forcedEventCount += forcedEventCount;
-		return _nextTickTime;
+		
+		long nextMetricDeadline = _metricContainer.getMetricBucketEndTime(_lastSentMetricBucketId + 1);
+		if (nextMetricDeadline < _nextTickTime) {
+			_sendMetric = true;
+			return nextMetricDeadline;
+		} else {
+			_sendMetric = false;
+			return _nextTickTime;
+		}
 	}
 
 	@Override
@@ -156,18 +200,26 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 		}));
 	}
 	
-	private void sendMetricEvent(final long updateId, final long timeSinceLastInMs) {
-		_pubSendQueue.send(PubSubPattern.asTask(_metricEvent, new EventWriter<OutgoingEventHeader, StateMetricEvent>() {
+	private void sendMetricEvents() {
+		_metricContainer.forEachPending(new MetricLamda<MetricEntry>() {
 
 			@Override
-			public void write(OutgoingEventHeader header, StateMetricEvent event) {
-				event.setUpdateId(updateId);
-				event.setInputActionsProcessed(_processedCount);
-				event.setActualBucketDurationInMs(timeSinceLastInMs);
-				event.setEventErrorCount(_eventErrorCount);
+			public void call(final long bucketId, final MetricEntry metricEntry) {
+				_pubSendQueue.send(PubSubPattern.asTask(_metricEvent, new EventWriter<OutgoingEventHeader, StateMetricEvent>() {
+
+					@Override
+					public void write(OutgoingEventHeader header, StateMetricEvent event) {
+						event.setMetricBucketId(bucketId);
+						event.setInputActionsProcessed(metricEntry.processedCount);
+						event.setBucketDuration(_metricContainer.getBucketDuration());
+						event.setEventErrorCount(metricEntry.errorCount);
+					}
+					
+				}));
+				_lastSentMetricBucketId = bucketId;
 			}
 			
-		}));
+		});
 	}
 	
 	private void sendClientHandlerEvents(final long updateId) {	

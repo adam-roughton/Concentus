@@ -15,7 +15,7 @@
  */
 package com.adamroughton.concentus.cluster;
 
-import com.adamroughton.concentus.Util;
+import com.adamroughton.concentus.util.Util;
 import com.netflix.curator.test.TestingServer;
 
 /**

@@ -15,7 +15,7 @@
  */
 package com.adamroughton.concentus.messaging;
 
-import static com.adamroughton.concentus.Util.toHexStringSegment;
+import static com.adamroughton.concentus.util.Util.toHexStringSegment;
 
 import java.nio.ByteBuffer;
 

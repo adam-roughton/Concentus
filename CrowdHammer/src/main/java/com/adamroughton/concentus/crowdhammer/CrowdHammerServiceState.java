@@ -15,7 +15,7 @@
  */
 package com.adamroughton.concentus.crowdhammer;
 
-import com.adamroughton.concentus.ConsentusServiceState;
+import com.adamroughton.concentus.ConcentusServiceState;
 import com.adamroughton.concentus.cluster.worker.ClusterStateValue;
 
 public enum CrowdHammerServiceState implements ClusterStateValue {
@@ -41,26 +41,26 @@ public enum CrowdHammerServiceState implements ClusterStateValue {
 	 * should also be configured as if it were the {@link ConsentusServiceState#INIT}
 	 * state.
 	 */
-	INIT_TEST(3, ConsentusServiceState.INIT),
+	INIT_TEST(3, ConcentusServiceState.INIT),
 	
 	/**
 	 * Workers should get their assignments and prepare for the test. The system under test (SUT)
 	 * should also be configured as if it were the {@link ConsentusServiceState#BIND}
 	 * state.
 	 */
-	SET_UP_TEST(4, ConsentusServiceState.BIND),
+	SET_UP_TEST(4, ConcentusServiceState.BIND),
 	
 	/**
 	 * The system under test (SUT) should internally connect all components
 	 * as if the state were {@link ConsentusServiceState#CONNECT}.
 	 */
-	CONNECT_SUT(5, ConsentusServiceState.CONNECT),
+	CONNECT_SUT(5, ConcentusServiceState.CONNECT),
 	
 	/**
 	 * The system under test (SUT) should be started and be ready for
 	 * the test as if the state were {@link ConsentusServiceState#START}.
 	 */
-	START_SUT(6, ConsentusServiceState.START),
+	START_SUT(6, ConcentusServiceState.START),
 	
 	/**
 	 * The test bed should start sending events to the system under test (SUT)
@@ -80,7 +80,7 @@ public enum CrowdHammerServiceState implements ClusterStateValue {
 	 * system under test (SUT) should be shutdown as if
 	 * the state were {@link ConsentusServiceState#SHUTDOWN}.
 	 */
-	TEAR_DOWN(9, ConsentusServiceState.SHUTDOWN),
+	TEAR_DOWN(9, ConcentusServiceState.SHUTDOWN),
 	
 	/**
 	 * The test harness should be shutdown.
@@ -88,9 +88,9 @@ public enum CrowdHammerServiceState implements ClusterStateValue {
 	SHUTDOWN(10, null)
 	;
 	private final int _code;
-	private final ConsentusServiceState _SUTState;
+	private final ConcentusServiceState _SUTState;
 	
-	private CrowdHammerServiceState(final int code, final ConsentusServiceState equivalentSUTState) {
+	private CrowdHammerServiceState(final int code, final ConcentusServiceState equivalentSUTState) {
 		_code = code;
 		_SUTState = equivalentSUTState;
 	}
@@ -103,7 +103,7 @@ public enum CrowdHammerServiceState implements ClusterStateValue {
 		return 1;
 	}
 	
-	public ConsentusServiceState getEquivalentSUTState() {
+	public ConcentusServiceState getEquivalentSUTState() {
 		return _SUTState;
 	}
 }

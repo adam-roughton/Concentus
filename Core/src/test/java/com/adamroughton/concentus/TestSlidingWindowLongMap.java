@@ -17,7 +17,7 @@ package com.adamroughton.concentus;
 
 import org.junit.*;
 
-import com.adamroughton.concentus.SlidingWindowLongMap;
+import com.adamroughton.concentus.util.SlidingWindowLongMap;
 
 import static org.junit.Assert.*;
 

@@ -34,7 +34,7 @@ import com.adamroughton.concentus.cluster.ClusterState;
 import com.adamroughton.concentus.cluster.ExceptionCallback;
 import com.adamroughton.concentus.cluster.TestClusterBase;
 import com.adamroughton.concentus.cluster.TestState1;
-import com.adamroughton.concentus.cluster.worker.WorkerClusterHandle;
+import com.adamroughton.concentus.cluster.worker.ClusterWorkerContainer;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.utils.ZKPaths;
@@ -48,7 +48,7 @@ public class TestClusterWorker extends TestClusterBase {
 	private ExecutorService _executor;
 	private ExceptionCallback _exCallback;
 	private ClusterListenerStateCapturer<TestState1> _stateChangeCapturer;
-	private WorkerClusterHandle _clusterWorker;
+	private ClusterWorkerContainer _clusterWorker;
 	
 	@Before
 	public void setUp() {
@@ -56,7 +56,7 @@ public class TestClusterWorker extends TestClusterBase {
 		_exCallback = new ExceptionCallback();
 		_stateChangeCapturer = new ClusterListenerStateCapturer<>(TestState1.class);
 		
-		_clusterWorker = new WorkerClusterHandle(getZooKeeperAddress(), ROOT, WORKER_ID, _stateChangeCapturer, _executor, _exCallback);
+		_clusterWorker = new ClusterWorkerContainer(getZooKeeperAddress(), ROOT, WORKER_ID, _stateChangeCapturer, _executor, _exCallback);
 	}
 	
 	@After

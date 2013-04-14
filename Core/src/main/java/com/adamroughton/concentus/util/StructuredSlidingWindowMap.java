@@ -1,4 +1,8 @@
-package com.adamroughton.concentus;
+package com.adamroughton.concentus.util;
+
+import java.util.Objects;
+
+import com.adamroughton.concentus.InitialiseDelegate;
 
 import uk.co.real_logic.intrinsics.ComponentFactory;
 import uk.co.real_logic.intrinsics.StructuredArray;
@@ -16,6 +20,7 @@ public class StructuredSlidingWindowMap<T> {
 		
 	private final int _mask;
 	private final StructuredArray<Entry> _window;
+	private final InitialiseDelegate<T> _initialiseDelegate;
 	
 	private long _currentIndex = -1;
 	
@@ -23,16 +28,19 @@ public class StructuredSlidingWindowMap<T> {
 	 * Creates a new sliding window with the given window length.
 	 * @param windowLength the window length, which must be a power of 2
 	 */
-	public StructuredSlidingWindowMap(final int windowLength, ComponentFactory<T> dataFactory) {
+	public StructuredSlidingWindowMap(final int windowLength, 
+			ComponentFactory<T> dataFactory, 
+			InitialiseDelegate<T> initialiseDelegate) {
 		if (Integer.bitCount(windowLength) != 1)
 			throw new IllegalArgumentException("The window length must be a power of 2");
 		_mask = windowLength - 1;
 		_window = StructuredArray.newInstance(windowLength, Entry.class, new EntryFactory<T>(dataFactory));
+		_initialiseDelegate = Objects.requireNonNull(initialiseDelegate);
 	}
 	
 	public final long advance() {
-		int windowIndex = (int) ++_currentIndex & _mask;
-		_window.get(windowIndex).isValid = true;
+		_currentIndex++;
+		prepareEntry(_currentIndex);
 		return _currentIndex;
 	}
 	
@@ -44,7 +52,7 @@ public class StructuredSlidingWindowMap<T> {
 		}
 		long prevIndex = _currentIndex;
 		_currentIndex = index;
-		_window.get(_currentIndex & _mask).isValid = true;
+		prepareEntry(_currentIndex);
 		
 		long skippedCount = (_currentIndex - prevIndex) - 1;
 		if (skippedCount >= _window.getLength()) 
@@ -57,6 +65,13 @@ public class StructuredSlidingWindowMap<T> {
 				}
 			}
 		} 
+	}
+	
+	@SuppressWarnings("unchecked")
+	private void prepareEntry(long index) {
+		Entry entry = _window.get((int)index & _mask);
+		_initialiseDelegate.initialise((T)entry.content);
+		entry.isValid = true;
 	}
 	
 	/**
@@ -134,5 +149,4 @@ public class StructuredSlidingWindowMap<T> {
 		}
 		
 	}
-	
 }

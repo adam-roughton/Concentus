@@ -20,8 +20,8 @@ import java.util.Objects;
 
 import org.zeromq.ZMQ;
 
-import com.adamroughton.concentus.Util;
 import com.adamroughton.concentus.messaging.events.EventType;
+import com.adamroughton.concentus.util.Util;
 
 public final class SocketSettings {
 

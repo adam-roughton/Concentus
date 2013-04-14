@@ -23,7 +23,7 @@ import java.util.UUID;
 import org.apache.zookeeper.CreateMode;
 
 import com.adamroughton.concentus.FatalExceptionCallback;
-import com.adamroughton.concentus.Util;
+import com.adamroughton.concentus.util.Util;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.CuratorFrameworkFactory;
 import com.netflix.curator.retry.ExponentialBackoffRetry;

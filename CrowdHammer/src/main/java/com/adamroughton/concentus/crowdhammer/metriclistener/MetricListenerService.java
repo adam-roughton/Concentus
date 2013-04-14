@@ -18,20 +18,17 @@ package com.adamroughton.concentus.crowdhammer.metriclistener;
 import it.unimi.dsi.fastutil.ints.IntArraySet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 
-import java.net.InetAddress;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
-import com.adamroughton.concentus.ConcentusProcessCallback;
+import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
-import com.adamroughton.concentus.StatefulRunnable;
-import com.adamroughton.concentus.Util;
-import com.adamroughton.concentus.StatefulRunnable.State;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
-import com.adamroughton.concentus.cluster.worker.Cluster;
+import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
@@ -42,6 +39,9 @@ import com.adamroughton.concentus.messaging.SocketManager;
 import com.adamroughton.concentus.messaging.SocketPackage;
 import com.adamroughton.concentus.messaging.SocketSettings;
 import com.adamroughton.concentus.messaging.events.EventType;
+import com.adamroughton.concentus.util.StatefulRunnable;
+import com.adamroughton.concentus.util.Util;
+import com.adamroughton.concentus.util.StatefulRunnable.State;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 import com.lmax.disruptor.dsl.Disruptor;
@@ -55,6 +55,7 @@ public class MetricListenerService implements CrowdHammerService {
 	private static final Logger LOG = Logger.getLogger(MetricListenerService.class.getName());
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
+	private final ConcentusHandle<? extends CrowdHammerConfiguration> _concentusHandle;
 	private final SocketManager _socketManager;
 	private final Disruptor<byte[]> _inputDisruptor;
 	private final IncomingEventHeader _header;
@@ -63,28 +64,28 @@ public class MetricListenerService implements CrowdHammerService {
 	private StatefulRunnable<EventListener> _eventListener;
 	private Future<?> _eventListenerTask;
 	
-	private int _subSocketId;
+	private final int _subSocketId;
 	private final IntSet _sutMetricConnIdSet = new IntArraySet();
 	
-	private CrowdHammerConfiguration _config;
-	private InetAddress _networkAddress;
-	private ConcentusProcessCallback _exHandler;
-	
-	public MetricListenerService() {
+	public MetricListenerService(ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle) {
+		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_socketManager = new SocketManager();
 		_inputDisruptor = new Disruptor<>(Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), _executor, 
 				new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
 		_header = new IncomingEventHeader(0, 2);
-	}
-	
-	@Override
-	public String name() {
-		return "Metric Listener Service";
+		
+		_inputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Input Disruptor", _concentusHandle));
+		
+		int testMetricsSubPort = _concentusHandle.getConfig().getServices().get(SERVICE_TYPE).getPorts().get("input");
+		SocketSettings subSocketSettings = SocketSettings.create()
+				.bindToPort(testMetricsSubPort)
+				.subscribeTo(EventType.STATE_METRIC);
+		_subSocketId = _socketManager.create(ZMQ.SUB, subSocketSettings);
 	}
 
 	@Override
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
-			Cluster cluster) throws Exception {
+			ClusterWorkerHandle cluster) throws Exception {
 		LOG.info(String.format("Entering state %s", newClusterState.name()));
 		if (newClusterState == CrowdHammerServiceState.BIND) {
 			onBind(cluster);
@@ -103,39 +104,23 @@ public class MetricListenerService implements CrowdHammerService {
 	public Class<CrowdHammerServiceState> getStateValueClass() {
 		return CrowdHammerServiceState.class;
 	}
-
-	@Override
-	public void configure(CrowdHammerConfiguration config,
-			ConcentusProcessCallback exHandler, InetAddress networkAddress) {
-		_config = config;
-		_exHandler = exHandler;
-		_networkAddress = networkAddress;
-		
-		_inputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Input Disruptor", exHandler));
-		
-		int testMetricsSubPort = config.getServices().get(SERVICE_TYPE).getPorts().get("input");
-		SocketSettings subSocketSettings = SocketSettings.create()
-				.bindToPort(testMetricsSubPort)
-				.subscribeTo(EventType.STATE_METRIC);
-		_subSocketId = _socketManager.create(ZMQ.SUB, subSocketSettings);
-	}
 	
 	@SuppressWarnings("unchecked")
-	private void onBind(Cluster cluster) throws Exception {
+	private void onBind(ClusterWorkerHandle cluster) throws Exception {
 		_socketManager.bindBoundSockets();
 		
 		SocketPackage socketPackage = _socketManager.createSocketPackage(_subSocketId);
-		_eventListener = Util.asStateful(new EventListener(_header, socketPackage, _inputDisruptor.getRingBuffer(), _exHandler));
+		_eventListener = Util.asStateful(new EventListener(_header, socketPackage, _inputDisruptor.getRingBuffer(), _concentusHandle));
 		_socketManager.addDependency(_subSocketId, _eventListener);
 		
 		_metricProcessor = new MetricProcessor(_header);
 		_inputDisruptor.handleEventsWith(_metricProcessor);
 		
-		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _networkAddress.getHostAddress()));
+		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _concentusHandle.getNetworkAddress().getHostAddress()));
 	}
 	
-	private void onConnectSUT(Cluster cluster) {
-		int metricsPort = _config.getServices().get(CanonicalStateService.SERVICE_TYPE).getPorts().get("pub");
+	private void onConnectSUT(ClusterWorkerHandle cluster) {
+		int metricsPort = _concentusHandle.getConfig().getServices().get(CanonicalStateService.SERVICE_TYPE).getPorts().get("pub");
 		for (String service : cluster.getAllServices(CanonicalStateService.SERVICE_TYPE)) {
 			_sutMetricConnIdSet.add(_socketManager.connectSocket(_subSocketId, String.format("%s:%d", service, metricsPort)));
 		}
@@ -143,7 +128,7 @@ public class MetricListenerService implements CrowdHammerService {
 		_inputDisruptor.start();
 	}
 	
-	private void onTearDown(Cluster cluster) {
+	private void onTearDown(ClusterWorkerHandle cluster) {
 		_eventListenerTask.cancel(true);
 		try {
 			_eventListener.waitForState(State.STOPPED, 30, TimeUnit.SECONDS);
@@ -166,7 +151,7 @@ public class MetricListenerService implements CrowdHammerService {
 	}
 	
 	
-	private void onShutdown(Cluster cluster) {
+	private void onShutdown(ClusterWorkerHandle cluster) {
 		_executor.shutdownNow();
 		try {
 			_executor.awaitTermination(5, TimeUnit.SECONDS);

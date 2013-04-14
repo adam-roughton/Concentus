@@ -19,23 +19,14 @@ import com.adamroughton.concentus.messaging.MessageBytesUtil;
 
 public class StateMetricEvent extends ByteArrayBackedEvent {
 
-	private final static int UPDATE_ID_OFFSET = 0;
-	private final static int METRIC_BUCKET_ID_OFFSET = 8;
-	private final static int ACTUAL_BUCKET_DURATION_OFFSET = 16;
-	private final static int INPUT_ACTIONS_OFFSET = 24;
-	private final static int EVENT_ERROR_COUNT_OFFSET = 32;
+	private final static int METRIC_BUCKET_ID_OFFSET = 0;
+	private final static int BUCKET_DURATION_OFFSET = 8;
+	private final static int INPUT_ACTIONS_OFFSET = 16;
+	private final static int EVENT_ERROR_COUNT_OFFSET = 24;
 	private static final int EVENT_SIZE = EVENT_ERROR_COUNT_OFFSET + 4;
 
 	public StateMetricEvent() {
 		super(EventType.STATE_METRIC.getId(), EVENT_SIZE);
-	}
-	
-	public final long getUpdateId() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET));
-	}
-	
-	public final void setUpdateId(long updateId) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET), updateId);
 	}
 	
 	public final long getMetricBucketId() {
@@ -46,12 +37,12 @@ public class StateMetricEvent extends ByteArrayBackedEvent {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(METRIC_BUCKET_ID_OFFSET), metricBucketId);
 	}
 
-	public final long getActualBucketDurationInMs() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(ACTUAL_BUCKET_DURATION_OFFSET));
+	public final long getBucketDuration() {
+		return MessageBytesUtil.readLong(getBackingArray(), getOffset(BUCKET_DURATION_OFFSET));
 	}
 	
-	public final void setActualBucketDurationInMs(long durationInMs) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(ACTUAL_BUCKET_DURATION_OFFSET), durationInMs);
+	public final void setBucketDuration(long durationInMs) {
+		MessageBytesUtil.writeLong(getBackingArray(), getOffset(BUCKET_DURATION_OFFSET), durationInMs);
 	}
 	
 	public final long getInputActionsProcessed() {

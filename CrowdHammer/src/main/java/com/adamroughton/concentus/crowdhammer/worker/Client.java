@@ -15,8 +15,11 @@
  */
 package com.adamroughton.concentus.crowdhammer.worker;
 
-import com.adamroughton.concentus.SlidingWindowLongMap;
-import com.adamroughton.concentus.Util;
+import java.util.Objects;
+
+import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.util.SlidingWindowLongMap;
+import com.adamroughton.concentus.util.Util;
 
 import static com.adamroughton.concentus.Constants.TIME_STEP_IN_MS;
 
@@ -31,8 +34,7 @@ public final class Client {
 	private final SlidingWindowLongMap _inputIdToSentTimeLookup = new SlidingWindowLongMap(WINDOW_SIZE);
 	private final SlidingWindowLongMap _updateIdToRecvTimeLookup = new SlidingWindowLongMap(WINDOW_SIZE);
 	
-	private int _dataReceived;
-	private int _dataSent;
+	private final Clock _clock;
 	
 	//private final long[] _neighbourJointActionIds = new long[25];
 	
@@ -45,6 +47,10 @@ public final class Client {
 	
 	private boolean _isActive = false;
 	private boolean _isConnecting = false;
+	
+	public Client(Clock clock) {
+		_clock = Objects.requireNonNull(clock);
+	}
 	
 	public boolean isActive() {
 		return _isActive;
@@ -71,13 +77,13 @@ public final class Client {
 	}
 	
 	public long advanceSendTime() {
-		_nextSendTimeInMillis = System.currentTimeMillis() + TIME_STEP_IN_MS;
+		_nextSendTimeInMillis = _clock.currentMillis() + TIME_STEP_IN_MS;
 		return _nextSendTimeInMillis;
 	}
 	
 	public long getNextSendTimeInMillis() {
 		if (!hasConnected()) {
-			return System.currentTimeMillis() + 30;
+			return _clock.currentMillis() + 30;
 		} else {
 			return _nextSendTimeInMillis;
 		}
@@ -101,10 +107,6 @@ public final class Client {
 	
 	public boolean hasConnected() {
 		return _clientId != -1;
-	}
-	
-	public void clearMetrics() {
-		
 	}
 
 }

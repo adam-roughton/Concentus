@@ -15,19 +15,17 @@
  */
 package com.adamroughton.concentus.canonicalstate;
 
-import java.net.InetAddress;
 import java.nio.ByteBuffer;
+import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.logging.Logger;
 
-import com.adamroughton.concentus.ConcentusProcessCallback;
-import com.adamroughton.concentus.ConsentusService;
-import com.adamroughton.concentus.ConsentusServiceState;
-import com.adamroughton.concentus.StatefulRunnable;
-import com.adamroughton.concentus.Util;
-import com.adamroughton.concentus.cluster.worker.Cluster;
+import com.adamroughton.concentus.ConcentusHandle;
+import com.adamroughton.concentus.ConcentusService;
+import com.adamroughton.concentus.ConcentusServiceState;
+import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventProcessor;
 import com.adamroughton.concentus.disruptor.FailFastExceptionHandler;
@@ -39,6 +37,8 @@ import com.adamroughton.concentus.messaging.SocketManager;
 import com.adamroughton.concentus.messaging.SocketPackage;
 import com.adamroughton.concentus.messaging.SocketSettings;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.util.StatefulRunnable;
+import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
@@ -47,12 +47,14 @@ import com.lmax.disruptor.dsl.Disruptor;
 import org.zeromq.*;
 
 import static com.adamroughton.concentus.Constants.MSG_BUFFER_LENGTH;
-import static com.adamroughton.concentus.Util.msgBufferFactory;
+import static com.adamroughton.concentus.util.Util.msgBufferFactory;
 
-public class CanonicalStateService implements ConsentusService {
+public class CanonicalStateService implements ConcentusService {
 	
 	public final static String SERVICE_TYPE = "CanonicalState";
 	private final static Logger LOG = Logger.getLogger(SERVICE_TYPE);
+
+	private final ConcentusHandle<? extends Configuration> _concentusHandle;
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	private final SocketManager _socketManager;
@@ -62,17 +64,15 @@ public class CanonicalStateService implements ConsentusService {
 	private final IncomingEventHeader _subHeader;
 	private final StateLogic _stateLogic;
 	
-	private ConcentusProcessCallback _exCallback;
-	private InetAddress _networkAddress;
-	
 	private StatefulRunnable<EventListener> _subListener;
 	private StateProcessor _stateProcessor;
 	private Publisher _publisher;	
 	
-	private int _pubSocketId;
-	private int _subSocketId;
+	private final int _pubSocketId;
+	private final int _subSocketId;
 	
-	public CanonicalStateService() {
+	public CanonicalStateService(ConcentusHandle<? extends Configuration> concentusHandle) {
+		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_socketManager = new SocketManager();
 		
 		_inputDisruptor = new Disruptor<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
@@ -104,26 +104,15 @@ public class CanonicalStateService implements ConsentusService {
 			}
 			
 		};
-	}
-	
-	@Override
-	public String name() {
-		return "Canonical State Service";
-	}
-
-	@Override
-	public void configure(Configuration config, ConcentusProcessCallback exHandler, InetAddress networkAddress) {
-		_exCallback = exHandler;
-		_networkAddress = networkAddress;
 		
-		_inputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Input Disruptor", exHandler));
-		_outputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Output Disruptor", exHandler));
+		_inputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Input Disruptor", _concentusHandle));
+		_outputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Output Disruptor", _concentusHandle));
 		
 		/*
 		 * Configure sockets
 		 */
 		// sub socket
-		int subPort = config.getServices().get(SERVICE_TYPE).getPorts().get("sub");
+		int subPort = _concentusHandle.getConfig().getServices().get(SERVICE_TYPE).getPorts().get("sub");
 		SocketSettings subSocketSettings = SocketSettings.create()
 				.bindToPort(subPort)
 				.setHWM(1000)
@@ -131,7 +120,7 @@ public class CanonicalStateService implements ConsentusService {
 		_subSocketId = _socketManager.create(ZMQ.SUB, subSocketSettings);
 		
 		// pub socket
-		int pubPort = config.getServices().get(SERVICE_TYPE).getPorts().get("pub");
+		int pubPort = _concentusHandle.getConfig().getServices().get(SERVICE_TYPE).getPorts().get("pub");
 		SocketSettings pubSocketSettings = SocketSettings.create()
 				.bindToPort(pubPort)
 				.setHWM(1000);
@@ -139,8 +128,8 @@ public class CanonicalStateService implements ConsentusService {
 	}
 
 	@Override
-	public void onStateChanged(ConsentusServiceState newClusterState,
-			Cluster cluster) throws Exception {
+	public void onStateChanged(ConcentusServiceState newClusterState,
+			ClusterWorkerHandle cluster) throws Exception {
 		LOG.info(String.format("Entering state %s", newClusterState.name()));
 		switch (newClusterState) {
 			case BIND:
@@ -159,12 +148,12 @@ public class CanonicalStateService implements ConsentusService {
 	}
 	
 	@SuppressWarnings("unchecked")
-	private void onBind(Cluster cluster) throws Exception {
+	private void onBind(ClusterWorkerHandle cluster) throws Exception {
 		_socketManager.bindBoundSockets();
 		
 		// infrastructure for sub socket
 		SocketPackage subSocketPackage = _socketManager.createSocketPackage(_subSocketId);
-		_subListener = Util.asStateful(new EventListener(_subHeader, subSocketPackage, _inputDisruptor.getRingBuffer(), _exCallback));
+		_subListener = Util.asStateful(new EventListener(_subHeader, subSocketPackage, _inputDisruptor.getRingBuffer(), _concentusHandle));
 		_socketManager.addDependency(_subSocketId, _subListener);
 		
 		// infrastructure for pub socket
@@ -173,23 +162,23 @@ public class CanonicalStateService implements ConsentusService {
 		_publisher = new Publisher(pubSocketPackage, _pubHeader);
 		
 		SequenceBarrier inputBarrier = _inputDisruptor.getRingBuffer().newBarrier();
-		_stateProcessor = new StateProcessor(_stateLogic, _subHeader, pubSendQueue);
+		_stateProcessor = new StateProcessor(_concentusHandle.getClock(), _stateLogic, _subHeader, pubSendQueue);
 		
 		_inputDisruptor.handleEventsWith(new DeadlineBasedEventProcessor<byte[]>(
-				_stateProcessor, _inputDisruptor.getRingBuffer(), inputBarrier, _exCallback));
+				_concentusHandle.getClock(), _stateProcessor, _inputDisruptor.getRingBuffer(), inputBarrier, _concentusHandle));
 		_outputDisruptor.handleEventsWith(_publisher);
 		
-		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _networkAddress.getHostAddress()));
+		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _concentusHandle.getNetworkAddress().getHostAddress()));
 	}
 
 
-	private void onStart(Cluster cluster) {
+	private void onStart(ClusterWorkerHandle cluster) {
 		_outputDisruptor.start();
 		_inputDisruptor.start();
 		_executor.submit(_subListener);
 	}
 
-	private void onShutdown(Cluster cluster) {
+	private void onShutdown(ClusterWorkerHandle cluster) {
 		_executor.shutdownNow();
 		try {
 			_executor.awaitTermination(5, TimeUnit.SECONDS);
@@ -200,8 +189,8 @@ public class CanonicalStateService implements ConsentusService {
 	}
 
 	@Override
-	public Class<ConsentusServiceState> getStateValueClass() {
-		return ConsentusServiceState.class;
+	public Class<ConcentusServiceState> getStateValueClass() {
+		return ConcentusServiceState.class;
 	}
 	
 }

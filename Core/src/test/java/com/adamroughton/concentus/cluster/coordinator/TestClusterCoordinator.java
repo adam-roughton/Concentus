@@ -39,9 +39,9 @@ import com.adamroughton.concentus.cluster.ClusterUtil;
 import com.adamroughton.concentus.cluster.ExceptionCallback;
 import com.adamroughton.concentus.cluster.TestClusterBase;
 import com.adamroughton.concentus.cluster.TestState1;
-import com.adamroughton.concentus.cluster.coordinator.CoordinatorClusterHandle;
+import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle;
 import com.adamroughton.concentus.cluster.coordinator.ParticipatingNodes;
-import com.adamroughton.concentus.cluster.coordinator.Cluster.AssignmentRequest;
+import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle.AssignmentRequest;
 import com.adamroughton.concentus.cluster.coordinator.ParticipatingNodes.ParticipatingNodesLatch;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.google.common.collect.Sets;
@@ -56,7 +56,7 @@ public class TestClusterCoordinator extends TestClusterBase {
 
 	private final static UUID COORDINATOR_ID = UUID.fromString("abababab-abab-abab-abab-abababababab");
 	
-	private CoordinatorClusterHandle _clusterCoordinator;
+	private ClusterCoordinatorHandle _clusterCoordinator;
 	private CuratorFramework _client;
 	private ExceptionCallback _exCallback;
 	
@@ -65,7 +65,7 @@ public class TestClusterCoordinator extends TestClusterBase {
 		_client = CuratorFrameworkFactory.newClient(getZooKeeperAddress(), new ExponentialBackoffRetry(1000, 3));
 		_client.start();
 		_exCallback = new ExceptionCallback();
-		_clusterCoordinator = new CoordinatorClusterHandle(getZooKeeperAddress(), ROOT, COORDINATOR_ID, _exCallback);
+		_clusterCoordinator = new ClusterCoordinatorHandle(getZooKeeperAddress(), ROOT, COORDINATOR_ID, _exCallback);
 	}
 	
 	@After
@@ -586,7 +586,7 @@ public class TestClusterCoordinator extends TestClusterBase {
 		UUID serviceId = new UUID(23, 37);
 		final ParticipatingNodes participatingNodes = ParticipatingNodes.create().add(serviceId);
 		
-		final CoordinatorClusterHandle clusterCoordinator = _clusterCoordinator;
+		final ClusterCoordinatorHandle clusterCoordinator = _clusterCoordinator;
 		ExecutorService executor = Executors.newCachedThreadPool();
 		Future<Boolean> waitingTaskFuture = executor.submit(new Callable<Boolean>() {
 			@Override
@@ -613,7 +613,7 @@ public class TestClusterCoordinator extends TestClusterBase {
 			participatingNodes = participatingNodes.add(serviceId);
 		}
 		
-		final CoordinatorClusterHandle clusterCoordinator = _clusterCoordinator;
+		final ClusterCoordinatorHandle clusterCoordinator = _clusterCoordinator;
 		final ParticipatingNodes partNodes = participatingNodes;
 		ExecutorService executor = Executors.newCachedThreadPool();
 		Future<Boolean> waitingTaskFuture = executor.submit(new Callable<Boolean>() {
@@ -639,7 +639,7 @@ public class TestClusterCoordinator extends TestClusterBase {
 		
 		final ParticipatingNodes participatingNodes = ParticipatingNodes.create();
 		
-		final CoordinatorClusterHandle clusterCoordinator = _clusterCoordinator;
+		final ClusterCoordinatorHandle clusterCoordinator = _clusterCoordinator;
 		ExecutorService executor = Executors.newCachedThreadPool();
 		Future<Boolean> waitingTaskFuture = executor.submit(new Callable<Boolean>() {
 			@Override
@@ -665,7 +665,7 @@ public class TestClusterCoordinator extends TestClusterBase {
 			participatingNodes = participatingNodes.add(serviceId);
 		}
 		
-		final CoordinatorClusterHandle clusterCoordinator = _clusterCoordinator;
+		final ClusterCoordinatorHandle clusterCoordinator = _clusterCoordinator;
 		final ParticipatingNodes partNodes = participatingNodes;
 		ExecutorService executor = Executors.newCachedThreadPool();
 		Future<Boolean> waitingTaskFuture = executor.submit(new Callable<Boolean>() {
@@ -697,7 +697,7 @@ public class TestClusterCoordinator extends TestClusterBase {
 			participatingNodes = participatingNodes.add(serviceId);
 		}
 		
-		final CoordinatorClusterHandle clusterCoordinator = _clusterCoordinator;
+		final ClusterCoordinatorHandle clusterCoordinator = _clusterCoordinator;
 		final ParticipatingNodes partNodes = participatingNodes;
 		ExecutorService executor = Executors.newCachedThreadPool();
 		Future<Boolean> waitingTaskFuture = executor.submit(new Callable<Boolean>() {

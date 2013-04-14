@@ -20,6 +20,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 
 import java.util.Objects;
 
+import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.events.ClientConnectEvent;
@@ -43,6 +44,8 @@ import static com.adamroughton.concentus.messaging.events.EventType.*;
 
 public class ClientHandlerProcessor implements EventHandler<byte[]> {
 	
+	private final Clock _clock;
+	
 	private final int _clientHandlerId;
 	private final int _routerSocketId;
 	private final int _subSocketId;
@@ -65,12 +68,14 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 	private final ClientInputEvent _clientInputEvent = new ClientInputEvent();
 	
 	public ClientHandlerProcessor(
+			final Clock clock,
 			final int clientHandlerId,
 			final int routerSocketId,
 			final int subSocketId,
 			final SendQueue<OutgoingEventHeader> routerSendQueue,
 			final SendQueue<OutgoingEventHeader> pubSendQueue,
 			final IncomingEventHeader incomingQueueHeader) {
+		_clock = Objects.requireNonNull(clock);
 		_clientHandlerId = clientHandlerId;
 		_routerSocketId = routerSocketId;
 		_subSocketId = subSocketId;
@@ -143,7 +148,7 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 		final long newClientId = _nextClientId++;
 		ClientProxy newClient = new ClientProxy(newClientId);
 		
-		newClient.setLastMsgNanoTime(System.nanoTime());
+		newClient.setLastMsgTime(_clock.currentMillis());
 		newClient.setSocketId(clientSocketId);
 		
 		_clientLookup.put(newClientId, newClient);

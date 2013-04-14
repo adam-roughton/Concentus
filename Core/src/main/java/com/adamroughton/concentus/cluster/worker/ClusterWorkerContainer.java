@@ -34,7 +34,7 @@ import com.netflix.curator.utils.ZKPaths;
 
 import static com.adamroughton.concentus.cluster.ClusterPath.*;
 
-public final class WorkerClusterHandle extends ClusterParticipant implements Cluster, Closeable {
+public final class ClusterWorkerContainer extends ClusterParticipant implements ClusterWorkerHandle, Closeable {
 	
 	private final Set<String> _hostedServices;
 	
@@ -42,7 +42,7 @@ public final class WorkerClusterHandle extends ClusterParticipant implements Clu
 	private final ClusterStateNodeListener _clusterStateNodeListener;
 	private final ExecutorService _executor;
 	
-	public <S extends Enum<S> & ClusterStateValue> WorkerClusterHandle(
+	public <S extends Enum<S> & ClusterStateValue> ClusterWorkerContainer(
 			final String zooKeeperAddress, 
 			final String root, 
 			final ClusterListener<S> clusterListener,
@@ -52,7 +52,7 @@ public final class WorkerClusterHandle extends ClusterParticipant implements Clu
 	}
 	
 	@SuppressWarnings("unchecked")
-	public <S extends Enum<S> & ClusterStateValue> WorkerClusterHandle(
+	public <S extends Enum<S> & ClusterStateValue> ClusterWorkerContainer(
 			final String zooKeeperAddress, 
 			final String root, 
 			final UUID clusterId,

@@ -15,16 +15,8 @@
  */
 package com.adamroughton.concentus.crowdhammer;
 
-import java.net.InetAddress;
-
-import com.adamroughton.concentus.ConcentusProcessCallback;
 import com.adamroughton.concentus.cluster.worker.ClusterListener;
-import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
 
 public interface CrowdHammerService extends ClusterListener<CrowdHammerServiceState> {
-
-	void configure(CrowdHammerConfiguration config, ConcentusProcessCallback exHandler, InetAddress networkAddress);
-	
-	String name();
 	
 }

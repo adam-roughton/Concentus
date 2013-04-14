@@ -26,12 +26,12 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
-import com.adamroughton.concentus.Util;
 import com.adamroughton.concentus.cluster.ClusterPath;
 import com.adamroughton.concentus.cluster.ClusterState;
 import com.adamroughton.concentus.cluster.ExceptionCallback;
 import com.adamroughton.concentus.cluster.TestClusterBase;
 import com.adamroughton.concentus.cluster.worker.ClusterStateNodeListener;
+import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.dsl.Disruptor;
 import com.netflix.curator.framework.CuratorFramework;

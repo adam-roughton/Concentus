@@ -17,9 +17,9 @@ import java.util.logging.Logger;
 
 import org.zeromq.ZMQ;
 
-import com.adamroughton.concentus.StatefulRunnable;
-import com.adamroughton.concentus.Util;
-import com.adamroughton.concentus.StatefulRunnable.State;
+import com.adamroughton.concentus.util.StatefulRunnable;
+import com.adamroughton.concentus.util.Util;
+import com.adamroughton.concentus.util.StatefulRunnable.State;
 
 public class SocketManager implements Closeable {
 

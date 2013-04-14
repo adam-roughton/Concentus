@@ -16,6 +16,7 @@
 package com.adamroughton.concentus.crowdhammer.metriclistener;
 
 import java.util.Objects;
+import java.util.UUID;
 
 import com.adamroughton.concentus.crowdhammer.messaging.events.TestEventType;
 import com.adamroughton.concentus.crowdhammer.messaging.events.WorkerMetricEvent;
@@ -36,7 +37,6 @@ public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 	private final StateMetricEvent _metricEvent = new StateMetricEvent();
 	private final WorkerMetricEvent _workerMetricEvent = new WorkerMetricEvent();
 	
-	private long _lastUpdateId = -1;
 	private Histogram _histogram;
 	
 	public MetricProcessor(final IncomingEventHeader subHeader) {
@@ -83,7 +83,7 @@ public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 	
 	private void processStateMetric(final StateMetricEvent event) {
 		long actionsProcessed = event.getInputActionsProcessed();
-		long duration = event.getActualBucketDurationInMs();
+		long duration = event.getBucketDuration();
 		
 		double throughput = 0;
 		if (duration > 0) {
@@ -91,24 +91,22 @@ public class MetricProcessor implements EventHandler<byte[]>, LifecycleAware {
 			_histogram.addObservation((long)throughput);
 		}
 		
-		long missedEventCount = 0;
-		long updateId = event.getUpdateId();
-		if (updateId > _lastUpdateId + 1) {
-			missedEventCount = updateId - _lastUpdateId;
-		}
-		_lastUpdateId = updateId;
-		
-		Log.info(String.format("StateMetric (B%d): %f actionsProc/s, %d missed events", event.getMetricBucketId(), throughput, missedEventCount));
+		Log.info(String.format("StateMetric (B%d): %f actionsProc/s, %s", event.getMetricBucketId(), throughput, UUID.randomUUID().toString()));
 	}
 	
 	private void processWorkerMetric(final WorkerMetricEvent event) {
 		long actionsSent = event.getSentInputActionsCount();
-		long duration = event.getActualBucketDurationInMs();
+		long duration = event.getBucketDuration();
 		double throughput = 0;
 		if (duration > 0) {
 			throughput = ((double) actionsSent / (double) duration) * 1000;
 		}
-		Log.info(String.format("WorkerMetric (B%d,%d): %f input/s, %d errors", event.getMetricBucketId(), event.getWorkerId(), throughput, event.getEventErrorCount()));
+		Log.info(String.format("WorkerMetric (B%d,%d): %f input/s, %d clients, %d errors", 
+				event.getMetricBucketId(), 
+				event.getWorkerId(), 
+				throughput, 
+				event.getConnectedClientCount(), 
+				event.getEventErrorCount()));
 	}
 
 }

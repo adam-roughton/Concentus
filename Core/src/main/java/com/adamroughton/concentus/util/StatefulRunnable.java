@@ -1,4 +1,4 @@
-package com.adamroughton.concentus;
+package com.adamroughton.concentus.util;
 
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;

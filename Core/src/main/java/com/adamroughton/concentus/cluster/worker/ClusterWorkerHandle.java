@@ -13,10 +13,28 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.adamroughton.concentus;
+package com.adamroughton.concentus.cluster.worker;
 
-public interface ConcentusProcessCallback extends FatalExceptionCallback {
+import java.util.UUID;
+
+public interface ClusterWorkerHandle {
 	
-	void shutdown();
+	void registerService(final String serviceType, final String address);
+	
+	void unregisterService(final String serviceType);
+	
+	String getServiceAtRandom(final String serviceType);
+	
+	String[] getAllServices(final String serviceType);
+	
+	void requestAssignment(final String serviceType, final byte[] requestBytes);
+	
+	byte[] getAssignment(final String serviceType);
+	
+	void deleteAssignmentRequest(final String serviceType);
+	
+	void signalReady();
+	
+	UUID getMyId();
 	
 }

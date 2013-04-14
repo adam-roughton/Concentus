@@ -19,37 +19,21 @@ import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.Objects;
 
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.OptionBuilder;
 
-import com.adamroughton.concentus.cluster.ClusterParticipant;
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.util.Util;
 
-public class ConcentusProcessConfiguration<TCluster extends ClusterParticipant, TConfig extends Configuration> 
-		implements CommandLineConfiguration<ConcentusProcess<TCluster, TConfig>> {
+public class ConcentusHandleFactory {
 
 	public final static String ZOOKEEPER_ADDRESS_OPTION = "z";
 	public final static String PROPERTIES_FILE_OPTION = "p";
 	public final static String NETWORK_ADDRESS_OPTION = "a";
 	
-	private final ClusterFactory<TCluster> _clusterFactory;
-	private final Class<TConfig> _configType;
-	private final ConcentusProcessCallback _callback;
-	
-	public ConcentusProcessConfiguration(
-			final ClusterFactory<TCluster> clusterFactory,
-			final Class<TConfig> configType, 
-			final ConcentusProcessCallback callback) {
-		_clusterFactory = Objects.requireNonNull(clusterFactory);
-		_configType = Objects.requireNonNull(configType);
-		_callback = Objects.requireNonNull(callback);
-	}
-	
 	@SuppressWarnings("static-access")
-	@Override
-	public Iterable<Option> getCommandLineOptions() {
+	public static Iterable<Option> getCommandLineOptions() {
 		return Arrays.asList(
 				OptionBuilder.withArgName("ZooKeeper Address")
 					.hasArgs()
@@ -69,11 +53,11 @@ public class ConcentusProcessConfiguration<TCluster extends ClusterParticipant, 
 			);
 	}
 
-	@Override
-	public void configure(ConcentusProcess<TCluster, TConfig> process,
-			Map<String, String> cmdLineValues) {
+	public static <TConfig extends Configuration> ConcentusHandle<TConfig> createHandle(Class<TConfig> configType, Map<String, String> cmdLineValues) {
+		Clock clock = new DefaultClock();
+		
 		String configPath = cmdLineValues.get(PROPERTIES_FILE_OPTION);
-		TConfig config = Util.readConfig(_configType, configPath);
+		TConfig config = Util.readConfig(configType, configPath);
 		
 		String zooKeeperAddress = cmdLineValues.get(ZOOKEEPER_ADDRESS_OPTION);
 		
@@ -91,15 +75,8 @@ public class ConcentusProcessConfiguration<TCluster extends ClusterParticipant, 
 			throw new RuntimeException(
 					String.format("The ZooKeeper App Root '%s' was not a valid root path " +
 							"(can be '/' or '/[A-Za-z0-9]+')", zooKeeperRoot));
-		}
-		TCluster cluster = _clusterFactory.createCluster(zooKeeperAddress, zooKeeperRoot, _callback);		
-		process.configure(cluster, config, _callback, networkAddress);
-	}
-	
-	public interface ClusterFactory<TCluster extends ClusterParticipant> {
-		
-		TCluster createCluster(final String zooKeeperAddress, final String zooKeeperRoot, final ConcentusProcessCallback callback);
-		
+		}		
+		return new ConcentusHandle<TConfig>(clock, config, networkAddress, zooKeeperAddress);
 	}
 
 }

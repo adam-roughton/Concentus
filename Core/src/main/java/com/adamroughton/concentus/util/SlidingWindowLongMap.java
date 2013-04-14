@@ -1,4 +1,4 @@
-package com.adamroughton.concentus;
+package com.adamroughton.concentus.util;
 
 public class SlidingWindowLongMap {
 	

@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.adamroughton.concentus;
+package com.adamroughton.concentus.util;
 
 import java.io.BufferedWriter;
 import java.io.File;
@@ -24,22 +24,10 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
-import java.util.ListIterator;
-import java.util.Map;
-import java.util.Map.Entry;
 import java.util.UUID;
 import java.util.regex.Pattern;
 
-import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.CommandLineParser;
-import org.apache.commons.cli.GnuParser;
-import org.apache.commons.cli.HelpFormatter;
-import org.apache.commons.cli.Option;
-import org.apache.commons.cli.Options;
-import org.apache.commons.cli.ParseException;
 import org.apache.commons.io.Charsets;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
@@ -181,58 +169,6 @@ public class Util {
 		}
 	}
 	
-	public static <T> Map<String, String> parseCommandLine(String processName, CommandLineConfiguration<T> configHandler, String[] args) {
-		return parseCommandLine(processName, configHandler.getCommandLineOptions(), args, true);
-	}
-	
-	public static Map<String, String> parseCommandLine(String processName, Iterable<Option> options, String[] args, boolean ignoreUnknownOptions) {
-		Map<String, String> parsedCommandLine = new HashMap<>();
-		Options cliOptions = new Options();
-		for (Option option : options) {
-			cliOptions.addOption(option);
-			parsedCommandLine.put(option.getOpt(), null);
-		}
-		CommandLineParser parser = new TolerantParser(ignoreUnknownOptions);
-		try {
-			CommandLine commandLine = parser.parse(cliOptions, args);
-			for (Entry<String, String> entry : new HashSet<>(parsedCommandLine.entrySet())) {
-				parsedCommandLine.put(entry.getKey(), commandLine.getOptionValue(entry.getKey()).trim());
-			}
-		} catch (ParseException eParse) {
-			HelpFormatter helpFormatter = new HelpFormatter();
-			helpFormatter.printHelp(String.format("%s [options]", processName), cliOptions);
-			System.exit(1);
-		}
-		return parsedCommandLine;
-	}
-	
-	@SafeVarargs
-	public static <T> Iterable<T> newIterable(Iterable<T> existingIterable, T... entries) {
-		List<T> entriesList = Arrays.asList(entries);
-		for (T existingEntry : existingIterable) {
-			entriesList.add(existingEntry);
-		}
-		return entriesList;
-	}
-	
-	private static class TolerantParser extends GnuParser {
-
-		private final boolean _ignoreUnrecognisedOptions;
-		
-		public TolerantParser(boolean ignoreUnrecognisedOptions) {
-			_ignoreUnrecognisedOptions = ignoreUnrecognisedOptions;
-		}
-
-		@SuppressWarnings("rawtypes")
-		@Override
-		protected void processOption(String arg, ListIterator iter)
-				throws ParseException {
-			if (getOptions().hasOption(arg) || !_ignoreUnrecognisedOptions) {
-				super.processOption(arg, iter);
-			}
-		}
-	}
-	
 	public static <TConfig extends Configuration> void generateConfigFile(TConfig defaultConfig, Path configPath) throws IOException {
 		Yaml yaml = new Yaml();
 		File configFile = configPath.toFile();
@@ -248,6 +184,15 @@ public class Util {
 	
 	public static <TRunnable extends Runnable> StatefulRunnable<TRunnable> asStateful(TRunnable runnable) {
 		return new StatefulRunnable<TRunnable>(runnable);
+	}
+	
+	@SafeVarargs
+	public static <T> Iterable<T> newIterable(Iterable<T> existingIterable, T... entries) {
+		List<T> entriesList = Arrays.asList(entries);
+		for (T existingEntry : existingIterable) {
+			entriesList.add(existingEntry);
+		}
+		return entriesList;
 	}
 	
 }

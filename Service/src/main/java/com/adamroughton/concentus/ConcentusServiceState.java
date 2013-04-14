@@ -17,7 +17,7 @@ package com.adamroughton.concentus;
 
 import com.adamroughton.concentus.cluster.worker.ClusterStateValue;
 
-public enum ConsentusServiceState implements ClusterStateValue {
+public enum ConcentusServiceState implements ClusterStateValue {
 	/**
 	 * The initial phase of the system. Components should
 	 * request assignments.
@@ -48,7 +48,7 @@ public enum ConsentusServiceState implements ClusterStateValue {
 	;
 	private final int _code;
 	
-	private ConsentusServiceState(final int code) {
+	private ConcentusServiceState(final int code) {
 		_code = code;
 	}
 	

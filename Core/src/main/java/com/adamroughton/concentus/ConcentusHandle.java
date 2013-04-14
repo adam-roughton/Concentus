@@ -15,13 +15,47 @@
  */
 package com.adamroughton.concentus;
 
+import java.net.InetAddress;
+import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.adamroughton.concentus.config.Configuration;
 import com.esotericsoftware.minlog.Log;
 
-public class DefaultProcessCallback implements ConcentusProcessCallback {
-
+public class ConcentusHandle<TConfig extends Configuration> implements FatalExceptionCallback {
+	
 	private final AtomicBoolean _isShuttingDown = new AtomicBoolean(false);
+	
+	private final Clock _clock;
+	private final TConfig _config;
+	private final InetAddress _networkAddress;
+	private final String _zooKeeperAddress;
+	
+	public ConcentusHandle(final Clock clock, 
+			final TConfig config, 
+			final InetAddress networkAddress,
+			final String zooKeeperAddress) {
+		_clock = Objects.requireNonNull(clock);
+		_config = Objects.requireNonNull(config);
+		_networkAddress = Objects.requireNonNull(networkAddress);
+		_zooKeeperAddress = Objects.requireNonNull(zooKeeperAddress);
+	}
+	
+	public Clock getClock() {
+		return _clock;
+	}
+	
+	public TConfig getConfig() {
+		return _config;
+	}
+	
+	public InetAddress getNetworkAddress() {
+		return _networkAddress;
+	}
+	
+	public String getZooKeeperAddress() {
+		return _zooKeeperAddress;
+	}
 	
 	@Override
 	public void signalFatalException(Throwable exception) {
@@ -31,11 +65,10 @@ public class DefaultProcessCallback implements ConcentusProcessCallback {
 		}
 	}
 
-	@Override
 	public void shutdown() {
 		if (!_isShuttingDown.getAndSet(true)) {
 			System.exit(0);
 		}
 	}
-
+	
 }

@@ -22,7 +22,7 @@ public class WorkerMetricEvent extends ByteArrayBackedEvent {
 
 	private final static int WORKER_ID_OFFSET = 0;
 	private final static int METRIC_BUCKET_ID_OFFSET = 8;
-	private final static int ACTUAL_BUCKET_DURATION_OFFSET = 16;
+	private final static int BUCKET_DURATION_OFFSET = 16;
 	private final static int INPUT_ACTIONS_OFFSET = 24;
 	private final static int EVENT_ERROR_COUNT_OFFSET = 32;
 	private final static int CONNECTED_CLIENT_COUNT_OFFSET = 36;
@@ -62,12 +62,12 @@ public class WorkerMetricEvent extends ByteArrayBackedEvent {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(INPUT_ACTIONS_OFFSET), sentInputActionsCount);
 	}
 
-	public long getActualBucketDurationInMs() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(ACTUAL_BUCKET_DURATION_OFFSET));
+	public long getBucketDuration() {
+		return MessageBytesUtil.readLong(getBackingArray(), getOffset(BUCKET_DURATION_OFFSET));
 	}
 
-	public void setActualBucketDurationInMs(long durationInMs) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(ACTUAL_BUCKET_DURATION_OFFSET), durationInMs);
+	public void setBucketDuration(long durationInMs) {
+		MessageBytesUtil.writeLong(getBackingArray(), getOffset(BUCKET_DURATION_OFFSET), durationInMs);
 	}
 	
 	public int getEventErrorCount() {

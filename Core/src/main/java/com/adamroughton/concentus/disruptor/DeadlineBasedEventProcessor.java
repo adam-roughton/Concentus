@@ -4,6 +4,7 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.FatalExceptionCallback;
 import com.lmax.disruptor.AlertException;
 import com.lmax.disruptor.EventProcessor;
@@ -16,16 +17,20 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 
 	private final AtomicBoolean _running = new AtomicBoolean(false);
 	private final Sequence _sequence;
+	private final Clock _clock;
 	
 	private final DeadlineBasedEventHandler<T> _eventHandler;
 	private final RingBuffer<T> _ringBuffer;
 	private final SequenceBarrier _barrier;
 	private final FatalExceptionCallback _exceptionCallback;
 	
-	public DeadlineBasedEventProcessor(DeadlineBasedEventHandler<T> eventHandler,
+	public DeadlineBasedEventProcessor(
+			Clock clock,
+			DeadlineBasedEventHandler<T> eventHandler,
 			RingBuffer<T> ringBuffer,
 			SequenceBarrier barrier,
 			FatalExceptionCallback exceptionCallback) {
+		_clock = Objects.requireNonNull(clock);
 		_eventHandler = Objects.requireNonNull(eventHandler);
 		_ringBuffer = Objects.requireNonNull(ringBuffer);
 		_barrier = Objects.requireNonNull(barrier);
@@ -94,8 +99,8 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 		}
 	}
 
-	private static long timeUntil(long deadline) {
-		long remainingTime = deadline - System.currentTimeMillis();
+	private long timeUntil(long deadline) {
+		long remainingTime = deadline - _clock.currentMillis();
 		if (remainingTime < 0)
 			remainingTime = 0;
 		return remainingTime;
