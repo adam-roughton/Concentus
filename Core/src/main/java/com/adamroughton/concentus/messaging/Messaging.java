@@ -211,7 +211,7 @@ public class Messaging {
 				} else if (recvdAmount == -1) {
 					isValid = false;
 				} else {
-					header.setSegmentMetaData(eventBuffer, segmentIndex, cursor, recvdAmount);
+					header.setSegmentMetaData(eventBuffer, segmentIndex, cursor, recvdAmount);					
 					cursor += recvdAmount;
 					segmentIndex++;
 				}

@@ -21,6 +21,8 @@ import org.zeromq.ZMQ;
 import org.zeromq.ZMQException;
 
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.messaging.SocketMutex.SocketSetMutex;
+import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 import com.lmax.disruptor.RingBuffer;
 
 public final class EventListener implements Runnable {
@@ -32,20 +34,20 @@ public final class EventListener implements Runnable {
 		
 	public EventListener(
 			final IncomingEventHeader header,
-			final SocketPackage socketPackage,
+			final SocketMutex socketToken,
 			final RingBuffer<byte[]> ringBuffer, 
 			final FatalExceptionCallback exCallback) {
 		this(header, ringBuffer, exCallback);
-		_listenerLogic = new SingleSocketListener(socketPackage);
+		_listenerLogic = new SingleSocketListener(socketToken);
 	}
 	
 	public EventListener(
 			final IncomingEventHeader header,
-			final SocketPollInSet pollInSet,
+			final SocketSetMutex<SocketPollInSet> pollInSetToken,
 			final RingBuffer<byte[]> ringBuffer, 
 			final FatalExceptionCallback exCallback) {
 		this(header, ringBuffer, exCallback);
-		_listenerLogic = new MultiSocketListener(pollInSet);
+		_listenerLogic = new MultiSocketListener(pollInSetToken);
 	}
 	
 	private EventListener(
@@ -77,7 +79,9 @@ public final class EventListener implements Runnable {
 		final long seq = _ringBuffer.next();
 		final byte[] incomingBuffer = _ringBuffer.get(seq);
 		try {
-			Messaging.recv(socketPackage, incomingBuffer, _header, true);
+			if (!Messaging.recv(socketPackage, incomingBuffer, _header, true)) {
+				_header.setIsValid(incomingBuffer, false);
+			}
 		} finally {
 			_ringBuffer.publish(seq);
 		}
@@ -89,37 +93,50 @@ public final class EventListener implements Runnable {
 	
 	private class SingleSocketListener implements ListenerLogic {
 
-		private final SocketPackage _socketPackage;
+		private final SocketMutex _socketToken;
 		
-		public SingleSocketListener(final SocketPackage socketPackage) {
-			_socketPackage = socketPackage;
+		public SingleSocketListener(final SocketMutex socketToken) {
+			_socketToken = socketToken;
 		}
 		
 		@Override
 		public void listen() {
-			while (!Thread.interrupted()) {
-				nextEvent(_socketPackage);
-			}
+			_socketToken.runAsOwner(new OwnerDelegate<SocketPackage>() {
+				
+				@Override
+				public void asOwner(SocketPackage socketPackage) {
+					while (!Thread.interrupted()) {
+						nextEvent(socketPackage);
+					}
+				}
+			});
 		}
 	}
 	
 	private class MultiSocketListener implements ListenerLogic {
 
-		private final SocketPollInSet _pollInSet;
+		private final SocketSetMutex<SocketPollInSet> _pollInSetToken;
 		
-		public MultiSocketListener(final SocketPollInSet pollInSet) {
-			_pollInSet = pollInSet;
+		public MultiSocketListener(final SocketSetMutex<SocketPollInSet> pollInSetToken) {
+			_pollInSetToken = pollInSetToken;
 		}
 		
 		@Override
 		public void listen() {
-			try {
-				for (;;) {
-					nextEvent(_pollInSet.poll());
+			_pollInSetToken.runAsOwner(new OwnerDelegate<SocketPollInSet>() {
+
+				@Override
+				public void asOwner(SocketPollInSet pollInSet) {
+					try {
+						while(!Thread.interrupted()) {
+							nextEvent(pollInSet.poll());
+						}
+					} catch (InterruptedException eInterrupted) {
+						Thread.currentThread().interrupt();
+					}
 				}
-			} catch (InterruptedException eInterrupted) {
-				Thread.currentThread().interrupt();
-			}
+			});
+			
 		}
 		
 	}

@@ -129,8 +129,9 @@ public final class SocketSettings {
 		return subscriptions;
 	}
 	
-	public void configureSocket(ZMQ.Socket socket) {
-		long hwm = this.getHWM();
+	public void configureSocket(final SocketPackage socketPackage) {
+		ZMQ.Socket socket = socketPackage.getSocket();
+		long hwm = getHWM();
 		if (hwm != -1) {
 			socket.setHWM(hwm);
 		}

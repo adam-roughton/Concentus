@@ -26,8 +26,8 @@ public enum TestEventType {
 	STATE_INFO(EventType.STATE_INFO.getId(), EventType.STATE_INFO.getEventClass()),
 	CLIENT_CONNECT(EventType.CLIENT_CONNECT.getId(), EventType.CLIENT_CONNECT.getEventClass()),
 	CONNECT_RES(EventType.CONNECT_RES.getId(), EventType.CONNECT_RES.getEventClass()),
-	LOAD_METRIC(100, LoadMetricEvent.class),
-	WORKER_METRIC(101, WorkerMetricEvent.class)
+	CLIENT_HANDLER_METRIC(EventType.CLIENT_HANDLER_METRIC.getId(), EventType.CLIENT_HANDLER_METRIC.getEventClass()),
+	WORKER_METRIC(100, WorkerMetricEvent.class)
 	;
 	private final int _id;
 	private final Class<?> _clazz;

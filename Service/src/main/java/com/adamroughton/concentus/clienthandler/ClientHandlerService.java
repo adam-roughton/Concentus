@@ -29,27 +29,31 @@ import com.adamroughton.concentus.ConcentusServiceState;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
-import com.adamroughton.concentus.disruptor.FailFastExceptionHandler;
+import com.adamroughton.concentus.disruptor.DeadlineBasedEventProcessor;
 import com.adamroughton.concentus.disruptor.NonBlockingRingBufferReader;
 import com.adamroughton.concentus.disruptor.NonBlockingRingBufferWriter;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.messaging.MessagingUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
 import com.adamroughton.concentus.messaging.SendRecvSocketReactor;
 import com.adamroughton.concentus.messaging.SocketManager;
-import com.adamroughton.concentus.messaging.SocketPackage;
+import com.adamroughton.concentus.messaging.SocketMutex;
 import com.adamroughton.concentus.messaging.SocketSettings;
 import com.adamroughton.concentus.messaging.events.EventType;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
-import com.adamroughton.concentus.util.StatefulRunnable;
-import com.adamroughton.concentus.util.Util;
+import com.adamroughton.concentus.pipeline.PipelineBranch;
+import com.adamroughton.concentus.pipeline.PipelineSection;
+import com.adamroughton.concentus.pipeline.ProcessingPipeline;
+import com.lmax.disruptor.BusySpinWaitStrategy;
+import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.MultiThreadedClaimStrategy;
+import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
-import com.lmax.disruptor.dsl.Disruptor;
 
 import static com.adamroughton.concentus.Constants.*;
 import static com.adamroughton.concentus.util.Util.*;
@@ -63,20 +67,26 @@ public class ClientHandlerService implements ConcentusService {
 	
 	private final SocketManager _socketManager;
 	private final ExecutorService _executor;
-	private final Disruptor<byte[]> _recvDisruptor;
-	private final Disruptor<byte[]> _routerSendDisruptor;
-	private final Disruptor<byte[]> _pubSendDisruptor;
+	
+	private final RingBuffer<byte[]> _recvBuffer;
+	private final RingBuffer<byte[]> _routerSendBuffer;
+	private final RingBuffer<byte[]> _pubSendBuffer;
+	private final RingBuffer<byte[]> _metricSendBuffer;
+	private ProcessingPipeline<byte[]> _pipeline;
+	
 	private final OutgoingEventHeader _outgoingHeader; // both router and pub can share the same header
 	private final IncomingEventHeader _incomingHeader; // both router and sub can share the same header
 	
-	private StatefulRunnable<EventListener> _subListener;
+	private EventListener _subListener;
 	private SendRecvSocketReactor _routerReactor;
 	private ClientHandlerProcessor _processor;
-	private Publisher _publisher;
+	private EventProcessor _publisher;
+	private EventProcessor _metricPublisher;
 	
 	private final int _routerSocketId;
 	private final int _subSocketId;
 	private final int _pubSocketId;
+	private final int _metricSocketId;
 	
 	private int _clientHandlerId;
 
@@ -86,24 +96,20 @@ public class ClientHandlerService implements ConcentusService {
 		
 		_executor = Executors.newCachedThreadPool();
 		
-		_recvDisruptor = new Disruptor<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				_executor, 
+		_recvBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
 				new MultiThreadedClaimStrategy(2048), 
 				new YieldingWaitStrategy());
-		_routerSendDisruptor = new Disruptor<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				_executor, 
+		_routerSendBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
 				new SingleThreadedClaimStrategy(2048), 
 				new YieldingWaitStrategy());
-		_pubSendDisruptor = new Disruptor<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				_executor, 
+		_pubSendBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
 				new SingleThreadedClaimStrategy(2048), 
 				new YieldingWaitStrategy());
+		_metricSendBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
+				new SingleThreadedClaimStrategy(2048), 
+				new BusySpinWaitStrategy());
 		_outgoingHeader = new OutgoingEventHeader(0, 2);
 		_incomingHeader = new IncomingEventHeader(0, 2);
-		
-		_recvDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Recv Disruptor", _concentusHandle));
-		_routerSendDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Router Send Disruptor", _concentusHandle));
-		_pubSendDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Pub Send Disruptor", _concentusHandle));
 		
 		/*
 		 * Configure sockets
@@ -116,11 +122,18 @@ public class ClientHandlerService implements ConcentusService {
 		
 		// sub socket
 		SocketSettings subSocketSetting = SocketSettings.create()
-				.subscribeTo(EventType.STATE_UPDATE);
+				.subscribeTo(EventType.STATE_UPDATE)
+				.subscribeTo(EventType.STATE_INFO);
 		_subSocketId = _socketManager.create(ZMQ.SUB, subSocketSetting);
 
 		// pub socket
 		_pubSocketId = _socketManager.create(ZMQ.PUB);
+		
+		// metric socket
+		int metricPort = _concentusHandle.getConfig().getServices().get(SERVICE_TYPE).getPorts().get("pub");
+		SocketSettings metricSocketSetting = SocketSettings.create()
+				.bindToPort(metricPort);
+		_metricSocketId = _socketManager.create(ZMQ.PUB, metricSocketSetting);
 	}
 
 	@Override
@@ -161,7 +174,6 @@ public class ClientHandlerService implements ConcentusService {
 		cluster.requestAssignment(SERVICE_TYPE, clientHandlerAssignmentReq);
 	}
 	
-	@SuppressWarnings("unchecked")
 	private void onBind(ClusterWorkerHandle cluster) throws Exception {
 		// get client handler ID
 		byte[] assignment = cluster.getAssignment(SERVICE_TYPE);
@@ -173,28 +185,33 @@ public class ClientHandlerService implements ConcentusService {
 		_socketManager.bindBoundSockets();
 		
 		// infrastructure for router socket
-		SendQueue<OutgoingEventHeader> routerSendQueue = new SendQueue<>(_outgoingHeader, _routerSendDisruptor);
-		SocketPackage routerSocketPackage = _socketManager.createSocketPackage(_routerSocketId);
-		SequenceBarrier routerSendBarrier = _routerSendDisruptor.getRingBuffer().newBarrier();
+		SendQueue<OutgoingEventHeader> routerSendQueue = new SendQueue<>(_outgoingHeader, _routerSendBuffer);
+		SocketMutex routerSocketPackageMutex = _socketManager.getSocketMutex(_routerSocketId);
+		SequenceBarrier routerSendBarrier = _routerSendBuffer.newBarrier();
 		_routerReactor = new SendRecvSocketReactor(
-				new NonBlockingRingBufferWriter<>(_recvDisruptor.getRingBuffer()),
-				new NonBlockingRingBufferReader<>(_routerSendDisruptor.getRingBuffer(), routerSendBarrier), 
+				new NonBlockingRingBufferWriter<>(_recvBuffer),
+				new NonBlockingRingBufferReader<>(_routerSendBuffer, routerSendBarrier), 
 				_concentusHandle);
-		_routerReactor.configure(routerSocketPackage, _outgoingHeader, _incomingHeader);
+		_routerReactor.configure(routerSocketPackageMutex, _outgoingHeader, _incomingHeader);
 		
 		// infrastructure for sub socket
-		SocketPackage subSocketPackage = _socketManager.createSocketPackage(_subSocketId);
-		_subListener = Util.asStateful(new EventListener(
+		SocketMutex subSocketPackageMutex = _socketManager.getSocketMutex(_subSocketId);
+		_subListener = new EventListener(
 				_incomingHeader,
-				subSocketPackage, 
-				_recvDisruptor.getRingBuffer(), 
-				_concentusHandle));
-		_socketManager.addDependency(_subSocketId, _subListener);
+				subSocketPackageMutex, 
+				_recvBuffer, 
+				_concentusHandle);
 		
+		// infrastructure for metric socket
+		SendQueue<OutgoingEventHeader> metricSendQueue = new SendQueue<>(_outgoingHeader, _metricSendBuffer);
+		SocketMutex metricSocketPackageMutex = _socketManager.getSocketMutex(_metricSocketId);
+		SequenceBarrier metricSendBarrier = _metricSendBuffer.newBarrier();
+		_metricPublisher = MessagingUtil.asSocketOwner(_metricSendBuffer, metricSendBarrier, new Publisher(_outgoingHeader), metricSocketPackageMutex);
 
 		// infrastructure for pub socket
-		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(_outgoingHeader, _pubSendDisruptor);
-		SocketPackage pubSocketPackage = _socketManager.createSocketPackage(_pubSocketId);
+		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(_outgoingHeader, _pubSendBuffer);
+		SocketMutex pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
+		SequenceBarrier pubSendBarrier = _pubSendBuffer.newBarrier();
 		// event processing infrastructure
 		_processor = new ClientHandlerProcessor(
 				_concentusHandle.getClock(),
@@ -203,12 +220,29 @@ public class ClientHandlerService implements ConcentusService {
 				_subSocketId,
 				routerSendQueue, 
 				pubSendQueue, 
+				metricSendQueue,
 				_incomingHeader);
-		_publisher = new Publisher(pubSocketPackage, _outgoingHeader);
+		_publisher = MessagingUtil.asSocketOwner(_pubSendBuffer, pubSendBarrier,  new Publisher(_outgoingHeader), pubSocketPackageMutex);
+		SequenceBarrier processorBarrier = _recvBuffer.newBarrier();
 		
-		_recvDisruptor.handleEventsWith(_processor);
-		_routerSendDisruptor.handleEventsWith(_routerReactor);
-		_pubSendDisruptor.handleEventsWith(_publisher);
+		// create processing pipeline
+		PipelineBranch<byte[]> metricSendBranch = ProcessingPipeline.startBranch(_metricSendBuffer, _concentusHandle.getClock())
+				.then(_metricPublisher)
+				.create();
+		PipelineBranch<byte[]> pubSendBranch = ProcessingPipeline.startBranch(_pubSendBuffer, _concentusHandle.getClock())
+				.then(_publisher)
+				.create();
+		PipelineSection<byte[]> subRecvSection = ProcessingPipeline.<byte[]>build(_subListener, _concentusHandle.getClock())
+				.thenConnector(_recvBuffer)
+				.asSection();
+		_pipeline = ProcessingPipeline.<byte[]>startCyclicPipeline(_routerSendBuffer, _concentusHandle.getClock())
+				.then(_routerReactor)
+				.thenConnector(_recvBuffer)
+				.join(subRecvSection)
+				.into(new DeadlineBasedEventProcessor<>(
+						_concentusHandle.getClock(), _processor, _recvBuffer, processorBarrier, _concentusHandle))
+				.attachBranches(metricSendBranch, pubSendBranch)
+				.completeCycle(_executor);
 		
 		// register the service
 		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _concentusHandle.getNetworkAddress().getHostAddress()));
@@ -230,20 +264,11 @@ public class ClientHandlerService implements ConcentusService {
 	}
 	
 	private void onStart(ClusterWorkerHandle cluster) throws Exception {
-		_recvDisruptor.start();
-		_routerSendDisruptor.start();
-		_pubSendDisruptor.start();
-		_executor.submit(_subListener);
-		_executor.submit(_routerReactor);
+		_pipeline.start();
 	}
 	
 	private void onShutdown(ClusterWorkerHandle cluster) throws Exception {
-		_executor.shutdownNow();
-		try {
-			_executor.awaitTermination(5, TimeUnit.SECONDS);
-		} catch (InterruptedException eInterrupted) {
-			// ignore
-		}
+		_pipeline.halt(60, TimeUnit.SECONDS);
 		_socketManager.close();
 	}
 }

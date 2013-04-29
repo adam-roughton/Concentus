@@ -23,7 +23,8 @@ public class StateUpdateEvent extends ByteArrayBackedEvent {
 
 	private static final int UPDATE_ID_OFFSET = 0;
 	private static final int SIM_TIME_OFFSET = 8;
-	private static final int UPDATE_BUFFER_OFFSET = 16;
+	private static final int UPDATE_BUFFER_LENGTH_OFFSET = 16;
+	private static final int UPDATE_BUFFER_OFFSET = 20;
 	private static final int BASE_SIZE = UPDATE_BUFFER_OFFSET;
 	
 	public StateUpdateEvent() {
@@ -46,21 +47,32 @@ public class StateUpdateEvent extends ByteArrayBackedEvent {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(SIM_TIME_OFFSET), simTime);
 	}
 	
+	public final int getUpdateBufferLength() {
+		return MessageBytesUtil.readInt(getBackingArray(), getOffset(UPDATE_BUFFER_LENGTH_OFFSET));
+	}
+	
 	public final ByteBuffer getUpdateBuffer() {
 		byte[] backingArray = getBackingArray();
 		int offset = getOffset(UPDATE_BUFFER_OFFSET);
 		return ByteBuffer.wrap(backingArray, offset, backingArray.length - offset);
 	}
 	
-	public final void copyUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
-		byte[] backingArray = getBackingArray();
-		int updateLength = backingArray.length - getOffset(UPDATE_BUFFER_OFFSET);
+	public final int copyUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
+		int updateLength = getUpdateBufferLength();
+		int copyLength = length < updateLength? length : updateLength;
 		System.arraycopy(getBackingArray(), getOffset(UPDATE_BUFFER_OFFSET), exBuffer, 0, 
-				length < updateLength? length : updateLength);
+				copyLength);
+		return copyLength;
 	}
 	
-	public final void addUsedLength(final ByteBuffer updateBuffer) {
-		setEventSize(BASE_SIZE + getUsedLength(getOffset(UPDATE_BUFFER_OFFSET), updateBuffer));
+	public final void setUsedLength(final ByteBuffer updateBuffer) {
+		int usedLength = getUsedLength(getOffset(UPDATE_BUFFER_OFFSET), updateBuffer);
+		setUsedLength(usedLength);
+	}
+	
+	public final void setUsedLength(int length) {
+		MessageBytesUtil.writeInt(getBackingArray(), getOffset(UPDATE_BUFFER_LENGTH_OFFSET), length);
+		setEventSize(BASE_SIZE + length);
 	}
 	
 }

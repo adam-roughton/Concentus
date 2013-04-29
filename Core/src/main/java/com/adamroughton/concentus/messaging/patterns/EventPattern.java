@@ -47,6 +47,7 @@ public class EventPattern {
 		try {
 			eventHelper.setBackingArray(outgoingBuffer, offset);
 			try {
+				eventHelper.writeEventTypeId();
 				writer.write(header, eventHelper);
 				int length = eventHelper.getEventSize();
 				int contentSegmentIndex = header.getSegmentCount() - 1;

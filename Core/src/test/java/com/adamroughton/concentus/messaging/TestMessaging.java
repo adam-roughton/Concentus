@@ -37,7 +37,6 @@ import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.Messaging;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.SocketPackage;
 
 @RunWith(MockitoJUnitRunner.class)
 public class TestMessaging {
@@ -53,8 +52,7 @@ public class TestMessaging {
 	public void setUp() {
 		_buffer = new byte[EVENT_BUFFER_LENGTH];
 		
-		_socketPackage = SocketPackage.create(_zmqSocket)
-				.setSocketId(0);
+		_socketPackage = SocketPackage.create(0, _zmqSocket);
 	}
 	
 	private byte[] genContent(int length) {

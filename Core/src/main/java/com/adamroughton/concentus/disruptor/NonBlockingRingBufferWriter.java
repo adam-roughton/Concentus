@@ -36,22 +36,31 @@ public class NonBlockingRingBufferWriter<T> {
 		}
 	}
 	
+	public long getUnpublishedSeq() {
+		return _unpubClaimedSeq;
+	}
+	
 	/**
 	 * Publishes any pending claimed entry. This operation does
 	 * nothing if there is currently no claimed entry.
 	 */
 	public final void publish() {
-		if (_unpubClaimedSeq != -1) {
+		if (hasUnpublished()) {
 			_ringBuffer.publish(_unpubClaimedSeq);
 			_unpubClaimedSeq = -1;
 		}
 	}
 	
-	/**
-	 * Alias for publish.
-	 */
-	public void tidyUp() {
-		publish();
+	public final boolean hasUnpublished() {
+		return _unpubClaimedSeq != -1;
+	}
+	
+	public final T getUnpublished() {
+		if (hasUnpublished()) {
+			return _ringBuffer.get(_unpubClaimedSeq);
+		} else {
+			return null;
+		}
 	}
 
 }

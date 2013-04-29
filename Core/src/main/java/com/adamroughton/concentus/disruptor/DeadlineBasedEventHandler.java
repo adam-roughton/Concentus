@@ -24,11 +24,10 @@ public interface DeadlineBasedEventHandler<T> {
 	 * Requests that the event handler move to the next deadline. If the previous
 	 * deadline was skipped, {@code didSkipLast} will be {@code true}.
 	 * @param unit the time unit in which to return the next deadline
-	 * @param forcedEventCount the number of events that were processed ahead of the
-	 * deadline so as to clear the backlog
+	 * @param pendingCount the number of pending items in the buffer
 	 * @return the next deadline in milliseconds since UTC
 	 */
-	long moveToNextDeadline(long forcedEventCount);
+	long moveToNextDeadline(long pendingCount);
 	
 	/**
 	 * Gets the next deadline without advancing.

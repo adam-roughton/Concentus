@@ -14,6 +14,7 @@ services:
   ClientHandler:
     ports:
       input: 10000
+      pub: 10001
             
   MetricListener:
     ports:
@@ -21,4 +22,4 @@ services:
             
 crowdHammer:
   # the amount of time to test during each test execution phase
-  testRunDurationInSeconds: 30
+  testRunDurationInSeconds: 60

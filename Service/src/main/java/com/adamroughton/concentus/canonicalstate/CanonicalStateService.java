@@ -28,21 +28,23 @@ import com.adamroughton.concentus.ConcentusServiceState;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventProcessor;
-import com.adamroughton.concentus.disruptor.FailFastExceptionHandler;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
+import com.adamroughton.concentus.messaging.MessagingUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
 import com.adamroughton.concentus.messaging.SocketManager;
-import com.adamroughton.concentus.messaging.SocketPackage;
+import com.adamroughton.concentus.messaging.SocketMutex;
 import com.adamroughton.concentus.messaging.SocketSettings;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.StatefulRunnable;
 import com.adamroughton.concentus.util.Util;
+import com.lmax.disruptor.EventProcessor;
+import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
-import com.lmax.disruptor.dsl.Disruptor;
 
 import org.zeromq.*;
 
@@ -58,15 +60,16 @@ public class CanonicalStateService implements ConcentusService {
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	private final SocketManager _socketManager;
-	private final Disruptor<byte[]> _inputDisruptor;
-	private final Disruptor<byte[]> _outputDisruptor;
+	private final RingBuffer<byte[]> _inputBuffer;
+	private final RingBuffer<byte[]> _outputBuffer;
 	private final OutgoingEventHeader _pubHeader;
 	private final IncomingEventHeader _subHeader;
 	private final StateLogic _stateLogic;
 	
+	private ProcessingPipeline<byte[]> _pipeline;
 	private StatefulRunnable<EventListener> _subListener;
 	private StateProcessor _stateProcessor;
-	private Publisher _publisher;	
+	private EventProcessor _publisher;	
 	
 	private final int _pubSocketId;
 	private final int _subSocketId;
@@ -75,11 +78,11 @@ public class CanonicalStateService implements ConcentusService {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_socketManager = new SocketManager();
 		
-		_inputDisruptor = new Disruptor<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				_executor, new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
+		_inputBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
+				new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
 		
-		_outputDisruptor = new Disruptor<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				_executor, new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
+		_outputBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
+				new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
 		
 		_pubHeader = new OutgoingEventHeader(0, 2);
 		_subHeader = new IncomingEventHeader(0, 2);
@@ -104,9 +107,6 @@ public class CanonicalStateService implements ConcentusService {
 			}
 			
 		};
-		
-		_inputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Input Disruptor", _concentusHandle));
-		_outputDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Output Disruptor", _concentusHandle));
 		
 		/*
 		 * Configure sockets
@@ -147,44 +147,40 @@ public class CanonicalStateService implements ConcentusService {
 		cluster.signalReady();
 	}
 	
-	@SuppressWarnings("unchecked")
 	private void onBind(ClusterWorkerHandle cluster) throws Exception {
 		_socketManager.bindBoundSockets();
 		
 		// infrastructure for sub socket
-		SocketPackage subSocketPackage = _socketManager.createSocketPackage(_subSocketId);
-		_subListener = Util.asStateful(new EventListener(_subHeader, subSocketPackage, _inputDisruptor.getRingBuffer(), _concentusHandle));
-		_socketManager.addDependency(_subSocketId, _subListener);
+		SocketMutex subSocketPackageMutex = _socketManager.getSocketMutex(_subSocketId);
+		_subListener = Util.asStateful(new EventListener(_subHeader, subSocketPackageMutex, _inputBuffer, _concentusHandle));
 		
 		// infrastructure for pub socket
-		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(_pubHeader, _outputDisruptor);
-		SocketPackage pubSocketPackage = _socketManager.createSocketPackage(_pubSocketId);
-		_publisher = new Publisher(pubSocketPackage, _pubHeader);
+		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(_pubHeader, _outputBuffer);
+		SequenceBarrier pubSendBarrier = _outputBuffer.newBarrier();
+		SocketMutex pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
+		_publisher = MessagingUtil.asSocketOwner(_outputBuffer, pubSendBarrier, new Publisher(_pubHeader), pubSocketPackageMutex);
 		
-		SequenceBarrier inputBarrier = _inputDisruptor.getRingBuffer().newBarrier();
+		SequenceBarrier inputBarrier = _inputBuffer.newBarrier();
 		_stateProcessor = new StateProcessor(_concentusHandle.getClock(), _stateLogic, _subHeader, pubSendQueue);
 		
-		_inputDisruptor.handleEventsWith(new DeadlineBasedEventProcessor<byte[]>(
-				_concentusHandle.getClock(), _stateProcessor, _inputDisruptor.getRingBuffer(), inputBarrier, _concentusHandle));
-		_outputDisruptor.handleEventsWith(_publisher);
+		_pipeline = ProcessingPipeline.<byte[]>build(_subListener, _concentusHandle.getClock())
+				.thenConnector(_inputBuffer)
+				.then(new DeadlineBasedEventProcessor<byte[]>(
+						_concentusHandle.getClock(), _stateProcessor, _inputBuffer, inputBarrier, _concentusHandle))
+				.thenConnector(_outputBuffer)
+				.then(_publisher)
+				.createPipeline(_executor);
 		
 		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _concentusHandle.getNetworkAddress().getHostAddress()));
 	}
 
 
 	private void onStart(ClusterWorkerHandle cluster) {
-		_outputDisruptor.start();
-		_inputDisruptor.start();
-		_executor.submit(_subListener);
+		_pipeline.start();
 	}
 
-	private void onShutdown(ClusterWorkerHandle cluster) {
-		_executor.shutdownNow();
-		try {
-			_executor.awaitTermination(5, TimeUnit.SECONDS);
-		} catch (InterruptedException eInterrupted) {
-			// ignore
-		}
+	private void onShutdown(ClusterWorkerHandle cluster) throws Exception {
+		_pipeline.halt(60, TimeUnit.SECONDS);
 		_socketManager.close();
 	}
 

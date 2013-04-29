@@ -39,6 +39,7 @@ public final class Client {
 	//private final long[] _neighbourJointActionIds = new long[25];
 	
 	private long _nextSendTimeInMillis = 0;
+	private long _lastConfirmedInputId = -1;
 	//private long _lastClientUpdateId = -1;
 	
 	//private long _currentJointActionId = -1;
@@ -83,7 +84,7 @@ public final class Client {
 	
 	public long getNextSendTimeInMillis() {
 		if (!hasConnected()) {
-			return _clock.currentMillis() + 30;
+			return _clock.currentMillis() + 1;
 		} else {
 			return _nextSendTimeInMillis;
 		}
@@ -102,11 +103,19 @@ public final class Client {
 	}
 	
 	public void setHandlerId(final int handlerId) {
-		_handlerId = handlerId;;
+		_handlerId = handlerId;
 	}
 	
 	public boolean hasConnected() {
 		return _clientId != -1;
+	}
+	
+	public long getLastConfirmedInputActionId() {
+		return _lastConfirmedInputId;
+	}
+	
+	public void setLastConfirmedInputActionId(long inputActionId) {
+		_lastConfirmedInputId = inputActionId;
 	}
 
 }

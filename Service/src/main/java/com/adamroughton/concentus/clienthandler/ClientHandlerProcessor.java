@@ -20,12 +20,20 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 
 import java.util.Objects;
 
+import uk.co.real_logic.intrinsics.ComponentFactory;
+
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.Constants;
+import com.adamroughton.concentus.InitialiseDelegate;
+import com.adamroughton.concentus.MetricContainer;
+import com.adamroughton.concentus.MetricContainer.MetricLamda;
+import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
+import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.events.ClientConnectEvent;
+import com.adamroughton.concentus.messaging.events.ClientHandlerMetricEvent;
 import com.adamroughton.concentus.messaging.events.ClientInputEvent;
-import com.adamroughton.concentus.messaging.events.ClientUpdateEvent;
 import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
 import com.adamroughton.concentus.messaging.events.StateInputEvent;
 import com.adamroughton.concentus.messaging.events.StateUpdateEvent;
@@ -38,11 +46,10 @@ import com.adamroughton.concentus.messaging.patterns.RouterPattern;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.model.ClientId;
 import com.esotericsoftware.minlog.Log;
-import com.lmax.disruptor.EventHandler;
 
 import static com.adamroughton.concentus.messaging.events.EventType.*;
 
-public class ClientHandlerProcessor implements EventHandler<byte[]> {
+public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]> {
 	
 	private final Clock _clock;
 	
@@ -52,20 +59,38 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 	
 	private final SendQueue<OutgoingEventHeader> _pubSendQueue;
 	private final SendQueue<OutgoingEventHeader> _routerSendQueue;
+	private final SendQueue<OutgoingEventHeader> _metricSendQueue;
 	
+	private final UpdateHandler _updateHandler = new UpdateHandler(Constants.MSG_BUFFER_LENGTH);
 	private final IncomingEventHeader _incomingQueueHeader;
 	
 	private long _inputId = 0;
 	private long _nextClientId = 0;
+	private long _connectedClientCount = 0;
 	
 	private final Long2ObjectMap<ClientProxy> _clientLookup = new Long2ObjectArrayMap<>(10000);
 	
 	private final StateInputEvent _stateInputEvent = new StateInputEvent();
 	private final StateUpdateEvent _stateUpdateEvent = new StateUpdateEvent();
-	private final ClientUpdateEvent _clientUpdateEvent = new ClientUpdateEvent();
+	private final StateUpdateInfoEvent _updateInfoEvent = new StateUpdateInfoEvent();
 	private final ConnectResponseEvent _connectResEvent = new ConnectResponseEvent();
 	private final ClientConnectEvent _clientConnectEvent = new ClientConnectEvent();
 	private final ClientInputEvent _clientInputEvent = new ClientInputEvent();
+	private final ClientHandlerMetricEvent _metricEvent = new ClientHandlerMetricEvent();
+	
+	private final MetricContainer<MetricEntry> _metricContainer;
+	private long _lastSentMetricBucketId = -1;
+	private long _nextMetricTime = -1;
+	
+	private static class MetricEntry {
+		public int eventsRecvd = 0;
+		public int inputActionProcessed = 0;
+		public int connectionRequestsProcessed = 0;
+		public int updatesProcessed = 0;
+		public int updateInfoEventsProcessed = 0;
+		public int sentUpdateCount = 0;
+		public long pendingEventCount = 0;
+	}
 	
 	public ClientHandlerProcessor(
 			final Clock clock,
@@ -74,6 +99,7 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 			final int subSocketId,
 			final SendQueue<OutgoingEventHeader> routerSendQueue,
 			final SendQueue<OutgoingEventHeader> pubSendQueue,
+			final SendQueue<OutgoingEventHeader> metricSendQueue,
 			final IncomingEventHeader incomingQueueHeader) {
 		_clock = Objects.requireNonNull(clock);
 		_clientHandlerId = clientHandlerId;
@@ -82,8 +108,30 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 		
 		_routerSendQueue = Objects.requireNonNull(routerSendQueue);
 		_pubSendQueue = Objects.requireNonNull(pubSendQueue);
+		_metricSendQueue = Objects.requireNonNull(metricSendQueue);
 		
 		_incomingQueueHeader = incomingQueueHeader;
+		
+		_metricContainer = new MetricContainer<>(clock, 8, new ComponentFactory<MetricEntry>() {
+
+			@Override
+			public MetricEntry newInstance(Object[] initArgs) {
+				return new MetricEntry();
+			}
+			
+		}, new InitialiseDelegate<MetricEntry>() {
+
+			@Override
+			public void initialise(MetricEntry content) {
+				content.eventsRecvd = 0;
+				content.inputActionProcessed = 0;
+				content.connectionRequestsProcessed = 0;
+				content.updatesProcessed = 0;
+				content.updateInfoEventsProcessed = 0;
+				content.sentUpdateCount = 0;
+				content.pendingEventCount = 0;
+			}
+		});
 	}
 	
 	/**
@@ -99,8 +147,12 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 	 */
 	
 	@Override
-	public void onEvent(byte[] eventBytes, long sequence, boolean endOfBatch)
+	public void onEvent(byte[] eventBytes, long sequence, long nextDeadline)
 			throws Exception {
+		if (!_incomingQueueHeader.isValid(eventBytes)) return;
+		
+		_metricContainer.getMetricEntry().eventsRecvd++;
+		
 		int recvSocketId = _incomingQueueHeader.getSocketId(eventBytes);
 		int eventTypeId = EventPattern.getEventType(eventBytes, _incomingQueueHeader);
 		
@@ -132,16 +184,86 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 
 					@Override
 					public void read(IncomingEventHeader header, StateUpdateEvent event) {
-						onUpdateEvent(event);
+						long updateId = event.getUpdateId();
+						int contentIndex = _incomingQueueHeader.getSegmentCount() - 1;
+						int contentMetaData = _incomingQueueHeader.getSegmentMetaData(event.getBackingArray(), contentIndex);
+						int contentOffset = EventHeader.getSegmentOffset(contentMetaData);
+						int contentLength = EventHeader.getSegmentLength(contentMetaData);
+						_updateHandler.addUpdate(updateId, event.getBackingArray(), contentOffset, contentLength);
+						if (_updateHandler.hasFullUpdateData(updateId)) {
+							_updateHandler.sendUpdates(updateId, _clientLookup.values(), _routerSendQueue);
+						}
+						_metricContainer.getMetricEntry().updatesProcessed++;
 					}
 					
 				});				
+			} else if (eventTypeId == STATE_INFO.getId()) {
+				EventPattern.readContent(eventBytes, _incomingQueueHeader, _updateInfoEvent, new EventReader<IncomingEventHeader, StateUpdateInfoEvent>() {
+
+					@Override
+					public void read(IncomingEventHeader header, StateUpdateInfoEvent event) {
+						onUpdateInfoEvent(event);
+					}
+					
+				});	
 			} else {
 				Log.warn(String.format("Unknown event type %d received on the sub socket.", eventTypeId));
 			}
 		} else {
 			Log.warn(String.format("Unknown socket ID: %d", recvSocketId));
 		}
+	}
+	
+	@Override
+	public void onDeadline() {
+		sendMetricEvents();
+	}
+	
+	@Override
+	public long moveToNextDeadline(long pendingEventCount) {
+		_metricContainer.getMetricEntry().pendingEventCount = pendingEventCount;
+		_nextMetricTime = _metricContainer.getMetricBucketEndTime(_lastSentMetricBucketId + 1);
+		return _nextMetricTime;
+	}
+	
+	@Override
+	public long getDeadline() {
+		return _nextMetricTime;
+	}
+	
+	private void sendMetricEvents() {
+		/*
+		 * Update the last processed metric with the actual bucket IDs if
+		 * they are present. Otherwise we just use the bucket ID that was
+		 * current when this method was called. 
+		 */
+		_lastSentMetricBucketId = _metricContainer.getCurrentMetricBucketId();
+		_metricContainer.forEachPending(new MetricLamda<MetricEntry>() {
+
+			@Override
+			public void call(final long bucketId, final MetricEntry metricEntry) {
+				_metricSendQueue.send(PubSubPattern.asTask(_metricEvent, new EventWriter<OutgoingEventHeader, ClientHandlerMetricEvent>() {
+
+					@Override
+					public void write(OutgoingEventHeader header, ClientHandlerMetricEvent event) {
+						event.setMetricBucketId(bucketId);
+						event.setSourceId(_clientHandlerId);
+						event.setActiveClientCount(_connectedClientCount);
+						event.setBucketDuration(_metricContainer.getBucketDuration());
+						event.setInputActionsProcessed(metricEntry.inputActionProcessed);
+						event.setPendingEventCount(metricEntry.pendingEventCount);
+						event.setTotalEventsProcessed(metricEntry.eventsRecvd);
+						event.setUpdateEventsProcessed(metricEntry.updatesProcessed);
+						event.setUpdateInfoEventsProcessed(metricEntry.updateInfoEventsProcessed);
+						event.setSentUpdateCount(metricEntry.sentUpdateCount);
+						event.setConnectionRequestsProcessed(metricEntry.connectionRequestsProcessed);
+					}
+					
+				}));
+				_lastSentMetricBucketId = bucketId;
+			}
+			
+		});
 	}
 	
 	private void onClientConnected(final byte[] clientSocketId, final ClientConnectEvent connectEvent) {
@@ -164,62 +286,49 @@ public class ClientHandlerProcessor implements EventHandler<byte[]> {
 			}
 			
 		}));
+		_connectedClientCount++;
+		_metricContainer.getMetricEntry().connectionRequestsProcessed++;
 	}
 	
-	private void onClientInput(final byte[] clientSocketId, ClientInputEvent inputEvent) {
+	private void onClientInput(final byte[] clientSocketId, final ClientInputEvent inputEvent) {
 		//TODO 
-		forwardStateInputEvent(clientSocketId, inputEvent);
+		final ClientProxy client = _clientLookup.get(inputEvent.getClientId().getClientId());
+		if (client == null) {
+			Log.warn(String.format("Unknown client ID %d", inputEvent.getClientId().getClientId()));
+		} else {
+			_pubSendQueue.send(PubSubPattern.asTask(_stateInputEvent, new EventWriter<OutgoingEventHeader, StateInputEvent>() {
+	
+				@Override
+				public void write(OutgoingEventHeader header, StateInputEvent event) {
+					long handlerInputId = _inputId++;
+					event.setClientHandlerId(_clientHandlerId);
+					event.setInputId(handlerInputId);
+					client.storeAssociation(inputEvent.getClientActionId(), handlerInputId);
+				}
+				
+			}));
+			_metricContainer.getMetricEntry().inputActionProcessed++;
+		}
 	}
 	
 	private void onUpdateInfoEvent(final StateUpdateInfoEvent updateInfoEvent) {
 		long highestSeq = -1;
-		boolean handlerInPacket = false;
-		for (int i = 0; i < updateInfoEvent.getEntryCount(); i++) {
+		boolean handlerFound = false;
+		for (int i = 0; i < updateInfoEvent.getEntryCount() && !handlerFound; i++) {
 			if (updateInfoEvent.getClientHandlerIdAtIndex(i) == _clientHandlerId) {
-				handlerInPacket = true;
+				handlerFound = true;
 				highestSeq = updateInfoEvent.getHighestSequenceAtIndex(i);
-				break;
 			}
 		}
-		if (handlerInPacket) {	
-		}
-
-	}
-	
-	private void onUpdateEvent(final StateUpdateEvent updateEvent) {
-		//TODO need efficient data structure for this
-		for (final ClientProxy client : _clientLookup.values()) {	
-			final long nextUpdateId = client.getLastUpdateId() + 1;
-			_routerSendQueue.send(RouterPattern.asTask(client.getSocketId(), _clientUpdateEvent, new EventWriter<OutgoingEventHeader, ClientUpdateEvent>() {
-
-				@Override
-				public void write(OutgoingEventHeader header, ClientUpdateEvent event) {
-					event.setClientId(client.getClientId());
-					event.setUpdateId(nextUpdateId);
-					event.setSimTime(updateEvent.getSimTime());
-					// copy update data over
-					updateEvent.copyUpdateBytes(event.getBackingArray(), 
-							event.getUpdateOffset(), 
-							event.getUpdateLength());
-				}
-				
-			}));
-			client.setLastUpdateId(nextUpdateId);
-		}
-	}
-	
-
-	private void forwardStateInputEvent(final byte[] clientSocketId, ClientInputEvent inputEvent) {
-		// note that the event is currently ignored for testing
-		_pubSendQueue.send(PubSubPattern.asTask(_stateInputEvent, new EventWriter<OutgoingEventHeader, StateInputEvent>() {
-
-			@Override
-			public void write(OutgoingEventHeader header, StateInputEvent event) {
-				event.setClientHandlerId(_clientHandlerId);
-				event.setInputId(_inputId++);
+		if (handlerFound) {	
+			long updateId = updateInfoEvent.getUpdateId();
+			_updateHandler.addUpdateMetaData(updateId, highestSeq);
+			if (_updateHandler.hasFullUpdateData(updateId)) {
+				_updateHandler.sendUpdates(updateId, _clientLookup.values(), _routerSendQueue);
+				_metricContainer.getMetricEntry().sentUpdateCount++;
 			}
-			
-		}));
+		}
+		_metricContainer.getMetricEntry().updateInfoEventsProcessed++;
 	}
 
 }

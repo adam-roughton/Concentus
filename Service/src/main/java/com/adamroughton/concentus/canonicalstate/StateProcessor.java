@@ -68,11 +68,12 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 	private static class MetricEntry {
 		public int processedCount;
 		public int errorCount;
-		public int forcedEventCount;
+		public long pendingEventCount;
 	}
 	
 	private long _updateId = 0;
 	private long _lastSentMetricBucketId = -1;
+	private long _nextMetricTime = -1;
 	private boolean _sendMetric = false;
 
 	public StateProcessor(
@@ -101,7 +102,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 				public void initialise(MetricEntry content) {
 					content.processedCount = 0;
 					content.errorCount = 0;
-					content.forcedEventCount = 0;
+					content.pendingEventCount = 0;
 				}
 			});
 	}
@@ -151,8 +152,8 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 	}
 
 	@Override
-	public long moveToNextDeadline(long forcedEventCount) {
-		_metricContainer.getMetricEntry().forcedEventCount += forcedEventCount;
+	public long moveToNextDeadline(long pendingEventCount) {
+		_metricContainer.getMetricEntry().pendingEventCount = pendingEventCount;
 		
 		if (_lastTickTime == -1) {
 			_nextTickTime = _clock.currentMillis();
@@ -160,10 +161,10 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 			_nextTickTime = _lastTickTime + Constants.TIME_STEP_IN_MS;
 		}
 		
-		long nextMetricDeadline = _metricContainer.getMetricBucketEndTime(_lastSentMetricBucketId + 1);
-		if (nextMetricDeadline < _nextTickTime) {
+		_nextMetricTime = _metricContainer.getMetricBucketEndTime(_lastSentMetricBucketId + 1);
+		if (_nextMetricTime < _nextTickTime) {
 			_sendMetric = true;
-			return nextMetricDeadline;
+			return _nextMetricTime;
 		} else {
 			_sendMetric = false;
 			return _nextTickTime;
@@ -172,7 +173,11 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 
 	@Override
 	public long getDeadline() {
-		return _nextTickTime;
+		if (_sendMetric) {
+			return _nextMetricTime;
+		} else {
+			return _nextTickTime;
+		}
 	}
 	
 	private void processInput(StateInputEvent event) {
@@ -194,13 +199,19 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 				event.setSimTime(simTime);
 				ByteBuffer updateBuffer = event.getUpdateBuffer();
 				_stateLogic.createUpdate(updateBuffer);
-				event.addUsedLength(updateBuffer);
+				event.setUsedLength(updateBuffer);
 			}
 			
 		}));
 	}
 	
 	private void sendMetricEvents() {
+		/*
+		 * Update the last processed metric with the actual bucket IDs if
+		 * they are present. Otherwise we just use the bucket ID that was
+		 * current when this method was called. 
+		 */
+		_lastSentMetricBucketId = _metricContainer.getCurrentMetricBucketId();
 		_metricContainer.forEachPending(new MetricLamda<MetricEntry>() {
 
 			@Override
@@ -213,6 +224,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 						event.setInputActionsProcessed(metricEntry.processedCount);
 						event.setBucketDuration(_metricContainer.getBucketDuration());
 						event.setEventErrorCount(metricEntry.errorCount);
+						event.setPendingEventCount(metricEntry.pendingEventCount);
 					}
 					
 				}));

@@ -52,38 +52,40 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 		}
 		
 		long nextSequence = _sequence.get() + 1;
-		long halfBufferSize = _ringBuffer.getBufferSize() / 2;
-		long lastForcedEventCount = 0;
 		while(true) {
 			try {
-				long nextDeadline = _eventHandler.moveToNextDeadline(lastForcedEventCount);
+				//_barrier.checkAlert();
 				
-				// we need to ensure that events get processed eventually
-				long forceEventCount;
-				long pendingCount = _ringBuffer.getCursor() - nextSequence;
-				if (pendingCount > halfBufferSize) {
-					forceEventCount = (pendingCount - halfBufferSize) * 2;
-				} else {
-					forceEventCount = 0;
-				}
+				long pendingCount = _ringBuffer.getCursor() - (nextSequence - 1);
+				long nextDeadline = _eventHandler.moveToNextDeadline(pendingCount);
 				
 				// wait until the next sequence
 				long remainingTime = 0;
 				long availableSequence = -1;
-				while (forceEventCount > 0 || (remainingTime = timeUntil(nextDeadline)) > 0) {
+				do {
 					if (nextSequence <= availableSequence) {
 						_eventHandler.onEvent(_ringBuffer.get(nextSequence), nextSequence, nextDeadline);
 						 nextSequence++;
-						 forceEventCount--;
 					} else {
+						_sequence.set(nextSequence - 1);
+						remainingTime = timeUntil(nextDeadline);
 						availableSequence = _barrier.waitFor(nextSequence, 
 								remainingTime, TimeUnit.MILLISECONDS);
 					}
-					
-				}
+				} while (remainingTime > 0);
+				
+				
+//				while ((remainingTime = timeUntil(nextDeadline)) > 0) {
+//					if (nextSequence <= availableSequence) {
+//						_eventHandler.onEvent(_ringBuffer.get(nextSequence), nextSequence, nextDeadline);
+//						 nextSequence++;
+//					} else {
+//						availableSequence = _barrier.waitFor(nextSequence, 
+//								remainingTime, TimeUnit.MILLISECONDS);
+//					}
+//					
+//				}
 				_eventHandler.onDeadline();
-
-				_sequence.set(nextSequence - 1);
 				
 			} catch (final AlertException eAlert) {
 				if (!_running.get()) {

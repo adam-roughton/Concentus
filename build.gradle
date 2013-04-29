@@ -11,6 +11,7 @@ ext {
 	scripts = file('scripts')
 	readmeFile = file('README.md')
 	licenceFile = file('LICENCE.txt')
+	libDir = file('lib')
 }
 
 task makeTargetDir << {
@@ -66,11 +67,16 @@ task collectDeps(dependsOn: makeTargetDir, type: Copy) { task ->
 	into "$targetDir/dist/lib"
 }
 
+task collectLocalDeps(dependsOn: makeTargetDir, type: Copy) {
+	from libDir
+	into "$targetDir/dist/lib"
+}
+
 task createDist(type: Copy) {
 	from configFile, scripts, readmeFile, licenceFile
 	into "$targetDir/dist"
 }
-createDist.dependsOn collectDeps
+createDist.dependsOn collectDeps, collectLocalDeps
 
 task distZip(dependsOn: createDist, type: Zip) {
 	from "$targetDir/dist"
@@ -87,10 +93,6 @@ def getLocalLib(fileName) {
 }
 
 allprojects {
-	ext {
-		libDir = rootProject.file('lib')
-	}
-		
 	defaultTasks 'build'
 	
 	group = 'com.adamroughton'

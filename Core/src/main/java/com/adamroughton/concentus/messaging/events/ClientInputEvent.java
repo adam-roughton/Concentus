@@ -24,9 +24,10 @@ public class ClientInputEvent extends ByteArrayBackedEvent {
 	
 	private static final int CLIENT_ID_OFFSET = 0;
 	private static final int CLIENT_ACTION_ID_OFFSET = 8;
-	private static final int INPUT_BUFFER_OFFSET = 16;
+	private static final int INPUT_BUFFER_LENGTH_OFFSET = 16;
+	private static final int INPUT_BUFFER_OFFSET = 20;
 	
-	private static final int BASE_SIZE = 16;
+	private static final int BASE_SIZE = INPUT_BUFFER_OFFSET;
 
 	public ClientInputEvent() {
 		super(EventType.CLIENT_INPUT.getId());
@@ -56,14 +57,24 @@ public class ClientInputEvent extends ByteArrayBackedEvent {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CLIENT_ACTION_ID_OFFSET), clientActionId);
 	}
 	
+	public final int getInputBufferLength() {
+		return MessageBytesUtil.readInt(getBackingArray(), getOffset(INPUT_BUFFER_LENGTH_OFFSET));
+	}
+	
 	public final ByteBuffer getInputBuffer() {
 		byte[] backingArray = getBackingArray();
 		int offset = getOffset(INPUT_BUFFER_OFFSET);
 		return ByteBuffer.wrap(backingArray, offset, backingArray.length - offset);
 	}
 	
-	public final void addUsedLength(final ByteBuffer inputBuffer) {
-		setEventSize(BASE_SIZE + getUsedLength(getOffset(INPUT_BUFFER_OFFSET), inputBuffer));
+	public final void setUsedLength(final ByteBuffer inputBuffer) {
+		int usedLength = getUsedLength(getOffset(INPUT_BUFFER_OFFSET), inputBuffer);
+		setUsedLength(usedLength);
+	}
+	
+	public final void setUsedLength(int length) {
+		MessageBytesUtil.writeInt(getBackingArray(), getOffset(INPUT_BUFFER_LENGTH_OFFSET), length);
+		setEventSize(BASE_SIZE + length);
 	}
 	
 }

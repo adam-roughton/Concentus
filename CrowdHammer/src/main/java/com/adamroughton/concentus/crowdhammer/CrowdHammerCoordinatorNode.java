@@ -15,7 +15,11 @@
  */
 package com.adamroughton.concentus.crowdhammer;
 
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -30,7 +34,10 @@ import com.adamroughton.concentus.ConcentusProcessFactory;
 import com.adamroughton.concentus.NoArgsConcentusProcessFactory;
 import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle;
 import com.adamroughton.concentus.cluster.coordinator.ParticipatingNodes;
+import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle.AssignmentRequest;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
+import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
+import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.esotericsoftware.minlog.Log;
 
 import asg.cliche.Command;
@@ -79,6 +86,10 @@ public final class CrowdHammerCoordinatorNode implements ConcentusNode<Concentus
 		private Future<?> _currentTask = null;
 		private boolean _hasInitdTestInfrastructure = false;
 		private ParticipatingNodes _participatingNodes = null;
+		
+		private Map<UUID, Long> _workerIdMapping = new HashMap<>();
+		
+		private long _nextWorkerId = 0;
 			
 		public CrowdHammerCoordinatorProcess(ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle) {
 			_concentusHandle = Objects.requireNonNull(concentusHandle);
@@ -89,6 +100,19 @@ public final class CrowdHammerCoordinatorNode implements ConcentusNode<Concentus
 			if (!_hasInitdTestInfrastructure) {
 				_participatingNodes = _clusterHandle.getNodeSnapshot();
 				System.out.println("Initialising test infrastructure");
+				
+				// give each worker a unique ID
+				List<AssignmentRequest> workerAssignmentReqs = 
+						_clusterHandle.getAssignmentRequests(WorkerService.SERVICE_TYPE);
+				for (AssignmentRequest req : workerAssignmentReqs) {
+					UUID serviceId = UUID.fromString(req.getServiceId());
+					long workerId = _nextWorkerId++;
+					byte[] res = new byte[8];
+					MessageBytesUtil.writeLong(res, 0, workerId);
+					_clusterHandle.setAssignment(WorkerService.SERVICE_TYPE, serviceId, res);
+					_workerIdMapping.put(serviceId, workerId);
+				}
+				
 				setAndWait(CrowdHammerServiceState.BIND, _participatingNodes, _clusterHandle);
 				setAndWait(CrowdHammerServiceState.CONNECT, _participatingNodes, _clusterHandle);
 				_hasInitdTestInfrastructure = true;
@@ -104,7 +128,7 @@ public final class CrowdHammerCoordinatorNode implements ConcentusNode<Concentus
 			clearExisting();
 			int testExecDur = _concentusHandle.getConfig().getCrowdHammer().getTestRunDurationInSeconds();
 			
-			TestRunner runner = new TestRunner(_participatingNodes, _clusterHandle, testExecDur, simClientCounts);
+			TestRunner runner = new TestRunner(_participatingNodes, _clusterHandle, testExecDur, simClientCounts, _workerIdMapping);
 			_currentTask = _executor.submit(runner);
 		}
 		

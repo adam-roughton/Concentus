@@ -3,8 +3,8 @@ package com.adamroughton.concentus.messaging.patterns;
 import java.util.Objects;
 
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.lmax.disruptor.InsufficientCapacityException;
 import com.lmax.disruptor.RingBuffer;
-import com.lmax.disruptor.dsl.Disruptor;
 
 public class SendQueue<TSendHeader extends OutgoingEventHeader> {
 
@@ -12,13 +12,18 @@ public class SendQueue<TSendHeader extends OutgoingEventHeader> {
 	private final RingBuffer<byte[]> _ringBuffer;
 	
 	public SendQueue(final TSendHeader header, 
-			final Disruptor<byte[]> backingDisruptor) {
+			final RingBuffer<byte[]> buffer) {
 		_header = Objects.requireNonNull(header);
-		_ringBuffer = Objects.requireNonNull(backingDisruptor).getRingBuffer();
+		_ringBuffer = Objects.requireNonNull(buffer);
 	}
 	
 	public final void send(SendTask<TSendHeader> task) {
-		long seq = _ringBuffer.next();
+		long seq;
+		try {
+			seq = _ringBuffer.tryNext(1);
+		} catch (InsufficientCapacityException eNoCapacity) {
+			throw new RuntimeException(eNoCapacity);
+		}
 		try {
 			byte[] outgoingBuffer = _ringBuffer.get(seq);
 			task.write(outgoingBuffer, _header);

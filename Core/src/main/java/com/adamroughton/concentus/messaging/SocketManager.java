@@ -6,37 +6,25 @@ import it.unimi.dsi.fastutil.ints.IntArraySet;
 import it.unimi.dsi.fastutil.ints.IntSet;
 
 import java.io.Closeable;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.List;
 import java.util.Objects;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Logger;
 
 import org.zeromq.ZMQ;
 
-import com.adamroughton.concentus.util.StatefulRunnable;
-import com.adamroughton.concentus.util.Util;
-import com.adamroughton.concentus.util.StatefulRunnable.State;
+import com.adamroughton.concentus.messaging.SocketMutex.SocketSetFactory;
+import com.adamroughton.concentus.util.Mutex;
+import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 
 public class SocketManager implements Closeable {
 
-	private static final Logger LOG = Logger.getLogger(SocketManager.class.getName());
 	private static final int SOCKET_TIMEOUT = 1000;
 	
-	private final ExecutorService _proxyExecutor = Executors.newCachedThreadPool();
-	
 	private final ZMQ.Context _zmqContext;
-	private final List<StatefulRunnable<? extends Runnable>> _proxies = new ArrayList<>();
 	private final Int2ObjectMap<ConnectionsRecord> _socketConnLookup = new Int2ObjectArrayMap<>();
-	private final Int2ObjectMap<StatefulRunnable<?>> _socketDepLookup = new Int2ObjectArrayMap<>();
-	private final Int2ObjectMap<ZMQ.Socket> _socketLookup = new Int2ObjectArrayMap<>();
+	private final Int2ObjectMap<SocketMutex> _socketMutexLookup = new Int2ObjectArrayMap<>();
 	private final Int2ObjectMap<SocketSettings> _settingsLookup = new Int2ObjectArrayMap<>();
 	private final IntSet _boundSet = new IntArraySet();
 	private final IntSet _connectedSet = new IntArraySet();
-	private final IntSet _proxyParticipantSet = new IntArraySet();
 	private int _nextSocketId = 0;
 	private boolean _isActive = true;
 	
@@ -73,16 +61,11 @@ public class SocketManager implements Closeable {
 		ZMQ.Socket socket = _zmqContext.socket(socketType);
 		socket.setReceiveTimeOut(SOCKET_TIMEOUT);
 		socket.setSendTimeOut(SOCKET_TIMEOUT);
-		_socketLookup.put(socketId, socket);
+		socket.setLinger(0);
+		_socketMutexLookup.put(socketId, new SocketMutex(SocketPackage.create(socketId, socket)));
 		_settingsLookup.put(socketId, Objects.requireNonNull(socketSettings));
 		_socketConnLookup.put(socketId, new ConnectionsRecord());
 		return socketId;
-	}
-	
-	public synchronized void addDependency(final int socketId, StatefulRunnable<?> runnable) {
-		assertManagerActive();
-		assertSocketExists(socketId);
-		_socketDepLookup.put(socketId, runnable);
 	}
 	
 	public synchronized SocketSettings getSettings(final int socketId) {
@@ -95,137 +78,122 @@ public class SocketManager implements Closeable {
 		_settingsLookup.put(socketId, Objects.requireNonNull(socketSettings));
 	}
 	
-	public synchronized ZMQ.Socket getSocket(final int socketId) {
-		return _socketLookup.get(socketId);
-	}
-	
-	public synchronized SocketPackage createSocketPackage(final int socketId) {
+	public synchronized SocketMutex getSocketMutex(final int socketId) {
 		assertManagerActive();
 		assertSocketExists(socketId);
-		ZMQ.Socket socket = _socketLookup.get(socketId);
-		return SocketPackage.create(socket)
-					 .setSocketId(socketId);
+		return _socketMutexLookup.get(socketId);
 	}
 	
-	public synchronized SocketPollInSet createPollInSet(SocketPackage... socketPackages) {
-		assertManagerActive();
-		return new SocketPollInSet(_zmqContext, socketPackages);
-	}
-	
-	public synchronized SocketPollInSet createPollInSet(int... socketIds) {
-		SocketPackage[] socketPackages = new SocketPackage[socketIds.length];
-		for (int i = 0; i < socketIds.length; i++) {
-			socketPackages[i] = createSocketPackage(socketIds[i]);
+	public synchronized Mutex<SocketPollInSet> createPollInSet(int... socketIds) {
+		Objects.requireNonNull(socketIds);
+		if (socketIds.length < 1) 
+			throw new IllegalArgumentException("There must be at least one socket ID in the poll set.");
+		SocketMutex first = getSocketMutex(socketIds[0]);
+		SocketMutex[] additional = new SocketMutex[socketIds.length - 1];
+		for (int i = 1; i < socketIds.length; i++) {
+			additional[i - 1] = getSocketMutex(socketIds[i]);
 		}
-		return createPollInSet(socketPackages);
+		return SocketMutex.createSetMutex(new SocketSetFactory<SocketPollInSet>() {
+
+			@Override
+			public SocketPollInSet create(SocketPackage... packages) {
+				return new SocketPollInSet(_zmqContext, packages);
+			}
+			
+		}, first, additional);
 	}
 	
 	public synchronized void bindBoundSockets() {
 		assertManagerActive();
-		for (int socketId : _socketLookup.keySet()) {
-			SocketSettings settings = _settingsLookup.get(socketId);
+		for (final int socketId : _socketMutexLookup.keySet()) {
+			final SocketSettings settings = _settingsLookup.get(socketId);
 			if (settings.isBound() && !_boundSet.contains(socketId)) {
-				settings.configureSocket(_socketLookup.get(socketId));
-				_boundSet.add(socketId);
+				SocketMutex token = _socketMutexLookup.get(socketId);
+				token.runAsOwner(new OwnerDelegate<SocketPackage>() {
+					
+					@Override
+					public void asOwner(SocketPackage socketPackage) {
+						settings.configureSocket(socketPackage);
+						_boundSet.add(socketId);
+					}
+				});				
 			}
 		}
 	}
 	
-	public synchronized int connectSocket(int socketId, String address) {
+	public synchronized int connectSocket(final int socketId, final String address) {
 		assertManagerActive();
 		assertSocketExists(socketId);
-		ZMQ.Socket socket = _socketLookup.get(socketId);
-		SocketSettings settings = _settingsLookup.get(socketId);
-		// make sure the socket is bound first before connecting
-		if (settings.isBound() && !_boundSet.contains(socketId)) {
-			settings.configureSocket(socket);
-			_boundSet.add(socketId);
-		}
-		// apply configuration once
-		if (!settings.isBound() && !_connectedSet.contains(socketId)) {
-			settings.configureSocket(socket);
-			_connectedSet.add(socketId);
-		}
-		socket.connect(address);
+		
+		SocketMutex socketToken = _socketMutexLookup.get(socketId);
+		final SocketSettings settings = _settingsLookup.get(socketId);
+		socketToken.runAsOwner(new OwnerDelegate<SocketPackage>() {
+			
+			@Override
+			public void asOwner(SocketPackage socketPackage) {
+				ZMQ.Socket socket = socketPackage.getSocket();
+				
+				// make sure the socket is bound first before connecting
+				if (settings.isBound() && !_boundSet.contains(socketId)) {
+					settings.configureSocket(socketPackage);
+					_boundSet.add(socketId);
+				}
+				// apply configuration once
+				if (!settings.isBound() && !_connectedSet.contains(socketId)) {
+					settings.configureSocket(socketPackage);
+					_connectedSet.add(socketId);
+				}
+				socket.connect(address);
+			}
+		});
 		ConnectionsRecord connsRecord = _socketConnLookup.get(socketId);
 		return connsRecord.addConnString(address);
 	}
 	
-	public synchronized String disconnectSocket(int socketId, int connId) {
+	public synchronized String disconnectSocket(final int socketId, final int connId) {
 		assertManagerActive();
 		assertSocketExists(socketId);
-		ConnectionsRecord connsRecord = _socketConnLookup.get(socketId);
-		String connString = connsRecord.getConnString(connId);
+		final ConnectionsRecord connsRecord = _socketConnLookup.get(socketId);
+		final String connString = connsRecord.getConnString(connId);
 		if (connString != null) {
-			_socketLookup.get(socketId).disconnect(connString);
-			connsRecord.removeConnString(connId);
+			SocketMutex token = _socketMutexLookup.get(socketId);
+			token.runAsOwner(new OwnerDelegate<SocketPackage>() {
+
+				@Override
+				public void asOwner(SocketPackage socketPackage) {
+					socketPackage.getSocket().disconnect(connString);
+					connsRecord.removeConnString(connId);
+				}
+				
+			});
 		}
 		return connString;
 	}
 	
-	/**
-	 * Creates a new proxy that bridges between the front end socket and the back end socket.
-	 * Each socket should already be connected and bound before the proxy is created.
-	 * @param frontendSocketId
-	 * @param backendSocketId
-	 * @see ZMQ#proxy(org.zeromq.ZMQ.Socket, org.zeromq.ZMQ.Socket, org.zeromq.ZMQ.Socket)
-	 */
-	public synchronized void createProxy(int frontendSocketId, int backendSocketId) {
-		assertManagerActive();
-		assertSocketExists(frontendSocketId);
-		assertSocketExists(backendSocketId);
-		
-		// ensure that the sockets are at least bound
-		for (int socketId : Arrays.asList(frontendSocketId, backendSocketId)) {
-			SocketSettings settings = _settingsLookup.get(socketId);
-			// make sure the socket is bound first before connecting
-			if (settings.isBound() && !_boundSet.contains(socketId)) {
-				throw new IllegalStateException(String.format("The socket must be bound before it can be used in a proxy (socketId = %d)", socketId));
-			}
-		}
-		
-		final ZMQ.Socket frontendSocket = _socketLookup.get(frontendSocketId);
-		final ZMQ.Socket backendSocket = _socketLookup.get(backendSocketId);
-		
-		StatefulRunnable<? extends Runnable> proxy = Util.asStateful(new Runnable() {
-
-			@Override
-			public void run() {
-				ZMQ.proxy(frontendSocket, backendSocket, null);
-			}
-			
-		});
-		_proxies.add(proxy);
-		_proxyParticipantSet.add(frontendSocketId);
-		_proxyParticipantSet.add(backendSocketId);
-		_proxyExecutor.execute(proxy);
-	}
-	
 	public synchronized void closeSocket(int socketId) {
-		boolean shouldClose = true;
-		if (_proxyParticipantSet.contains(socketId)) {
-			shouldClose = false;
-		} else if (_socketDepLookup.containsKey(socketId)) {
-			StatefulRunnable<?> dep = _socketDepLookup.get(socketId);
-			try {
-				dep.waitForState(State.STOPPED, SOCKET_TIMEOUT * 2, TimeUnit.MILLISECONDS);
-				if (dep.getState() != State.STOPPED)
-					shouldClose = false;
-			} catch (InterruptedException eInterrupted) {
-				shouldClose = false;
-				Thread.currentThread().interrupt();
-			}
-		}
+		SocketMutex socketToken = getSocketMutex(socketId);
 		try {
-			if (shouldClose) {
-				ZMQ.Socket socket = _socketLookup.get(socketId);
-				socket.close();
+			socketToken.waitForRelease(60, TimeUnit.SECONDS);
+			if (socketToken.isOwned()) {
+				throw new RuntimeException(String.format("The thread closing the socket %d timed out.", socketId));
 			}
+		} catch (InterruptedException eInterrupted) {
+			throw new RuntimeException(String.format("Thread was interrupted while closing socket %d", socketId));
+		}
+
+		try {
+			socketToken.runAsOwner(new OwnerDelegate<SocketPackage>() {
+
+				@Override
+				public void asOwner(SocketPackage socketPackage) {
+					socketPackage.getSocket().close();
+				}
+				
+			});
 		} finally {
-			_socketLookup.remove(socketId);
+			_socketMutexLookup.remove(socketId);
 			_connectedSet.remove(socketId);
 			_boundSet.remove(socketId);
-			_socketDepLookup.remove(socketId);
 		}
 	}
 	
@@ -246,17 +214,6 @@ public class SocketManager implements Closeable {
 	public synchronized void close() {
 		closeManagedSockets();
 		_zmqContext.term();
-		for (StatefulRunnable<? extends Runnable> proxy : _proxies) {
-			try {
-				proxy.waitForState(State.STOPPED, 30, TimeUnit.SECONDS);
-				if (proxy.getState() != State.STOPPED) {
-					LOG.warning("Unable to stop a proxy.");
-				}
-			} catch (InterruptedException eInterrupted) {
-				LOG.warning("Interrupted while stopping a proxy.");
-				Thread.currentThread().interrupt();
-			}
-		}
 		_isActive = false;
 	}
 	
@@ -271,7 +228,7 @@ public class SocketManager implements Closeable {
 	}
 	
 	private void assertSocketExists(int socketId) {
-		if (!_socketLookup.containsKey(socketId))
+		if (!_socketMutexLookup.containsKey(socketId))
 			throw new IllegalArgumentException(String.format("No such socket with id %d", socketId));
 	}
 	

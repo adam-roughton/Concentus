@@ -21,6 +21,8 @@ import com.adamroughton.concentus.messaging.MessageBytesUtil;
 
 public abstract class ByteArrayBackedEvent {
 
+	private static final int EVENT_OFFSET = 4;
+	
 	private final int _id;
 	private final int _defaultEventSize;
 	
@@ -42,7 +44,7 @@ public abstract class ByteArrayBackedEvent {
 	 */
 	protected ByteArrayBackedEvent(int typeId, int defaultEventSize) {
 		_id = typeId;
-		_defaultEventSize = defaultEventSize + 4;
+		_defaultEventSize = defaultEventSize + EVENT_OFFSET;
 	}
 	
 	public final byte[] getBackingArray() {
@@ -53,16 +55,18 @@ public abstract class ByteArrayBackedEvent {
 		_backingArray = backingArray;
 		_eventSize = _defaultEventSize;
 		_offset = offset;
-		MessageBytesUtil.writeInt(_backingArray, offset, _id);
-		_offset += 4;
 	}
 	
 	public final int getEventTypeId() {
 		return _id;
 	}
 	
+	public final void writeEventTypeId() {
+		MessageBytesUtil.writeInt(_backingArray, _offset, _id);
+	}
+	
 	protected final void setEventSize(int size) {
-		_eventSize = size + 4;
+		_eventSize = size + EVENT_OFFSET;
 	}
 	
 	public final int getEventSize() {
@@ -75,7 +79,7 @@ public abstract class ByteArrayBackedEvent {
 	 * @return the absolute offset
 	 */
 	protected final int getOffset(int internalFieldOffset) {
-		return _offset + internalFieldOffset;
+		return _offset + internalFieldOffset + EVENT_OFFSET;
 	}
 	
 	public final void releaseBackingArray() {
@@ -93,7 +97,7 @@ public abstract class ByteArrayBackedEvent {
 	 * @return the number of bytes that can be written into this event
 	 */
 	protected final int getAvailableSize() {
-		return _backingArray.length - 4;
+		return _backingArray.length - EVENT_OFFSET;
 	}
 	
 	public static int getUsedLength(int startPos, ByteBuffer buffer) {

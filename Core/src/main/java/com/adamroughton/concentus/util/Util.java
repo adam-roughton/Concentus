@@ -26,12 +26,14 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import org.apache.commons.io.Charsets;
 import org.yaml.snakeyaml.Yaml;
 import org.yaml.snakeyaml.constructor.Constructor;
 
+import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.events.EventType;
@@ -194,5 +196,21 @@ public class Util {
 		}
 		return entriesList;
 	}
+	
+	public static long millisUntil(long deadline, Clock clock) {
+		long remainingTime = deadline - clock.currentMillis();
+		if (remainingTime < 0)
+			remainingTime = 0;
+		return remainingTime;
+	}
+	
+	public static long nanosUntil(long deadline, Clock clock) {
+		long remainingTime = deadline - clock.nanoTime();
+		if (remainingTime < 0)
+			remainingTime = 0;
+		return remainingTime;
+	}
+	
+	
 	
 }

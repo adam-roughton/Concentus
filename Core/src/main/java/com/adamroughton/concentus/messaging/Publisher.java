@@ -16,29 +16,20 @@
 package com.adamroughton.concentus.messaging;
 
 import java.util.Objects;
-import org.zeromq.ZMQ;
-import com.lmax.disruptor.EventHandler;
+import com.adamroughton.concentus.messaging.MessagingUtil.SocketDependentEventHandler;
 
-public class Publisher implements EventHandler<byte[]> {
+public class Publisher implements SocketDependentEventHandler<byte[], SocketPackage> {
 
-	private final SocketPackage _socketPackage;
 	private final OutgoingEventHeader _header;
 	
-	public Publisher(final SocketPackage socketPackage,
-			final OutgoingEventHeader header) {
-		_socketPackage = Objects.requireNonNull(socketPackage);
-		ZMQ.Socket socket = socketPackage.getSocket();
-		if (socket.getType() != ZMQ.PUB && socket.getType() != ZMQ.XPUB) {
-			throw new IllegalArgumentException(String.format("The socket type was %d, not PUB or XPUB", 
-					socket.getType()));
-		}
+	public Publisher(final OutgoingEventHeader header) {
 		_header = Objects.requireNonNull(header);
 	}
 
 	@Override
-	public void onEvent(byte[] event, long sequence, boolean endOfBatch)
+	public void onEvent(byte[] event, long sequence, boolean endOfBatch, SocketPackage socketPackage)
 			throws Exception {
-		Messaging.send(_socketPackage, event, _header, true);
+		Messaging.send(socketPackage, event, _header, true);
 	}
 
 }

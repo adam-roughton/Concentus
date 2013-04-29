@@ -17,48 +17,39 @@ package com.adamroughton.concentus.messaging.events;
 
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 
-public class StateMetricEvent extends ByteArrayBackedEvent {
+public class StateMetricEvent extends MetricEvent {
 
-	private final static int METRIC_BUCKET_ID_OFFSET = 0;
-	private final static int BUCKET_DURATION_OFFSET = 8;
-	private final static int INPUT_ACTIONS_OFFSET = 16;
-	private final static int EVENT_ERROR_COUNT_OFFSET = 24;
-	private static final int EVENT_SIZE = EVENT_ERROR_COUNT_OFFSET + 4;
+	private final static int INPUT_ACTIONS_OFFSET = 0;
+	private final static int EVENT_ERROR_COUNT_OFFSET = 8;
+	private final static int PENDING_EVENT_COUNT_OFFSET = 12;
+	private static final int EVENT_SIZE = PENDING_EVENT_COUNT_OFFSET + 8;
 
 	public StateMetricEvent() {
 		super(EventType.STATE_METRIC.getId(), EVENT_SIZE);
 	}
 	
-	public final long getMetricBucketId() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(METRIC_BUCKET_ID_OFFSET));
-	}
-	
-	public final void setMetricBucketId(long metricBucketId) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(METRIC_BUCKET_ID_OFFSET), metricBucketId);
-	}
-
-	public final long getBucketDuration() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(BUCKET_DURATION_OFFSET));
-	}
-	
-	public final void setBucketDuration(long durationInMs) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(BUCKET_DURATION_OFFSET), durationInMs);
-	}
-	
 	public final long getInputActionsProcessed() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(INPUT_ACTIONS_OFFSET));
+		return MessageBytesUtil.readLong(getBackingArray(), getContentOffset(INPUT_ACTIONS_OFFSET));
 	}
 
 	public final void setInputActionsProcessed(long inputActionsProcessed) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(INPUT_ACTIONS_OFFSET), inputActionsProcessed);
+		MessageBytesUtil.writeLong(getBackingArray(), getContentOffset(INPUT_ACTIONS_OFFSET), inputActionsProcessed);
 	}
 
 	public final int getEventErrorCount() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(EVENT_ERROR_COUNT_OFFSET));
+		return MessageBytesUtil.readInt(getBackingArray(), getContentOffset(EVENT_ERROR_COUNT_OFFSET));
 	}
 
 	public final void setEventErrorCount(int eventErrorCount) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(EVENT_ERROR_COUNT_OFFSET), eventErrorCount);
+		MessageBytesUtil.writeInt(getBackingArray(), getContentOffset(EVENT_ERROR_COUNT_OFFSET), eventErrorCount);
+	}
+	
+	public long getPendingEventCount() {
+		return MessageBytesUtil.readLong(getBackingArray(), getContentOffset(PENDING_EVENT_COUNT_OFFSET));
+	}
+
+	public void setPendingEventCount(long pendingEventCount) {
+		MessageBytesUtil.writeLong(getBackingArray(), getContentOffset(PENDING_EVENT_COUNT_OFFSET), pendingEventCount);
 	}
 	
 }

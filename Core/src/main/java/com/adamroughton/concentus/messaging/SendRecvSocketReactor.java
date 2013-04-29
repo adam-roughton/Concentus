@@ -24,6 +24,8 @@ import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventProcessor;
 import com.adamroughton.concentus.disruptor.NonBlockingRingBufferReader;
 import com.adamroughton.concentus.disruptor.NonBlockingRingBufferWriter;
+import com.adamroughton.concentus.util.Mutex;
+import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 import com.lmax.disruptor.AlertException;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.RingBuffer;
@@ -49,14 +51,13 @@ public class SendRecvSocketReactor implements EventProcessor {
 	private static final int INACTIVITY_THRESHOLD = 10;
 	
 	private final AtomicBoolean _running = new AtomicBoolean(false);
-	
-	private boolean _isMultiSocket = false;
-	private SendOperation _sendOperation;
-	private RecvOperation _recvOperation;
+	private volatile Thread _processorThread = null;
 	
 	private final NonBlockingRingBufferWriter<byte[]> _recvBufferWriter;
 	private final NonBlockingRingBufferReader<byte[]> _sendBufferReader;
 	private final FatalExceptionCallback _exCallback;
+	
+	private EventLogic<?> _eventLogic;
 	
 	public SendRecvSocketReactor(
 			final NonBlockingRingBufferWriter<byte[]> recvBufferWriter,
@@ -66,115 +67,106 @@ public class SendRecvSocketReactor implements EventProcessor {
 		_sendBufferReader = Objects.requireNonNull(sendBufferReader);
 		_exCallback = Objects.requireNonNull(exCallback);
 	}
+	
+	public void configure(final Mutex<SocketPackage> socketPackageMutex, 
+			final OutgoingEventHeader sendHeader, 
+			final IncomingEventHeader recvHeader) {
+		Objects.requireNonNull(socketPackageMutex);
+		socketPackageMutex.runAsOwner(new OwnerDelegate<SocketPackage>() {
 
-	public void configure(final SocketPackage socketPackage, final OutgoingEventHeader sendHeader, final IncomingEventHeader recvHeader) throws IllegalStateException {
-		if (_running.get()) throw new IllegalStateException("The reactor cannot be configured while running.");
-		
-		Objects.requireNonNull(socketPackage);
-		ZMQ.Socket socket = socketPackage.getSocket();
-		if (socket.getType() != ZMQ.ROUTER && socket.getType() != ZMQ.DEALER) {
-			throw new IllegalArgumentException("Only router and dealer sockets are supported by this reactor");
-		}
+			@Override
+			public void asOwner(SocketPackage item) {
+				ZMQ.Socket socket = item.getSocket();
+				if (socket.getType() != ZMQ.ROUTER && socket.getType() != ZMQ.DEALER) {
+					throw new IllegalArgumentException("Only router and dealer sockets are supported by this reactor");
+				}
+			}
+			
+		});
 		
 		Objects.requireNonNull(recvHeader);
 		Objects.requireNonNull(sendHeader);
 		
-		_recvOperation = new RecvOperation() {
-			
-			public boolean recv(byte[] incomingBuffer) {
-				return Messaging.recv(socketPackage, incomingBuffer, recvHeader, false);
-			}
-			
-		};
-		_sendOperation = new SendOperation() {
+		_eventLogic = new EventLogic<>(socketPackageMutex, new SocketOperations<SocketPackage>() {
 
 			@Override
-			public boolean send(byte[] outgoingBuffer) {
-				return Messaging.send(socketPackage, outgoingBuffer, sendHeader, false);
+			public boolean send(SocketPackage socketItem, byte[] outgoingBuffer) {
+				return Messaging.send(socketItem, outgoingBuffer, sendHeader, false);
 			}
-			
-		};
+
+			@Override
+			public boolean recv(SocketPackage socketItem, byte[] incomingBuffer) {
+				return Messaging.recv(socketItem, incomingBuffer, recvHeader, false);
+			}
+
+			@Override
+			public boolean isMultiSocket() {
+				return false;
+			}
+
+			@Override
+			public IncomingEventHeader getRecvHeader() {
+				return recvHeader;
+			}
+
+		});
 	}
 	
-	public void configure(final SocketPollInSet socketPollInSet, final MultiSocketOutgoingEventHeader sendHeader, final IncomingEventHeader recvHeader) throws IllegalStateException {
-		if (_running.get()) throw new IllegalStateException("The reactor cannot be configured while running.");
-		
-		Objects.requireNonNull(socketPollInSet);
-		for (SocketPackage socketPackage : socketPollInSet.getSockets()) {
-			ZMQ.Socket socket = socketPackage.getSocket();
-			if (socket.getType() != ZMQ.ROUTER && socket.getType() != ZMQ.DEALER) {
-				throw new IllegalArgumentException("Only router and dealer sockets are supported by this reactor");
+	public void configure(
+			final Mutex<SocketPollInSet> socketPollInSetMutex, 
+			final MultiSocketOutgoingEventHeader sendHeader, 
+			final IncomingEventHeader recvHeader) {
+		Objects.requireNonNull(socketPollInSetMutex);
+		socketPollInSetMutex.runAsOwner(new OwnerDelegate<SocketPollInSet>() {
+
+			@Override
+			public void asOwner(SocketPollInSet item) {
+				for (SocketPackage socketPackage : item.getSockets()) {
+					ZMQ.Socket socket = socketPackage.getSocket();
+					if (socket.getType() != ZMQ.ROUTER && socket.getType() != ZMQ.DEALER) {
+						throw new IllegalArgumentException("Only router and dealer sockets are supported by this reactor");
+					}
+				}
 			}
-		}
-		
+			
+		});
 		Objects.requireNonNull(recvHeader);
 		Objects.requireNonNull(sendHeader);
 		
-		_recvOperation = new RecvOperation() {
-			
-			public boolean recv(byte[] incomingBuffer) {
-				return Messaging.recv(socketPollInSet, incomingBuffer, recvHeader, false);
-			}
-			
-		};
-		_sendOperation = new SendOperation() {
+		_eventLogic = new EventLogic<>(socketPollInSetMutex, new SocketOperations<SocketPollInSet>() {
 
 			@Override
-			public boolean send(byte[] outgoingBuffer) {
-				return Messaging.send(socketPollInSet, outgoingBuffer, sendHeader, false);
+			public boolean send(SocketPollInSet socketItem,
+					byte[] outgoingBuffer) {
+				return Messaging.send(socketItem, outgoingBuffer, sendHeader, false);
 			}
-			
-		};
+
+			@Override
+			public boolean recv(SocketPollInSet socketItem,
+					byte[] incomingBuffer) {
+				return Messaging.recv(socketItem, incomingBuffer, recvHeader, false);
+			}
+
+			@Override
+			public boolean isMultiSocket() {
+				return true;
+			}
+
+			@Override
+			public IncomingEventHeader getRecvHeader() {
+				return recvHeader;
+			}
+
+		});
 	}
 	
 	public boolean isMultiSocket() {
-		return _isMultiSocket;
+		return _eventLogic.isMultiSocket();
 	}
 	
 	@Override
 	public void run() {
-		if (!_running.compareAndSet(false, true)) {
-			throw new IllegalStateException(String.format("The %s can only be started once.", 
-					DeadlineBasedEventProcessor.class.getName()));
-		}
-		_sendBufferReader.getBarrier().clearAlert();
-		
-		try {
-			int inactivityCount = 0;
-			while(true) {	
-				try {
-					boolean wasActivity = false;	
-					
-					byte[] recvBuffer = _recvBufferWriter.claimNoBlock();
-					if (recvBuffer != null && _recvOperation.recv(recvBuffer)) {
-						_recvBufferWriter.publish();
-						wasActivity &= true;
-					}
-					
-					byte[] sendBuffer = _sendBufferReader.getIfReady();
-					if (sendBuffer != null && _sendOperation.send(sendBuffer)) {
-						_sendBufferReader.advance();
-						wasActivity &= true;
-					}
-					
-					if (!wasActivity) {
-						inactivityCount--;
-					}
-					if (inactivityCount >= INACTIVITY_THRESHOLD) {
-						Thread.yield();
-						inactivityCount = 0;
-					}
-				} catch (final AlertException eAlert) {
-					if (!_running.get()) {
-						break;
-					}
-				}
-			}
-		} catch (Throwable e) {
-			_exCallback.signalFatalException(e);
-		} finally {
-			_recvBufferWriter.tidyUp();
-		}
+		_eventLogic.run();
 	}
 	
 	@Override
@@ -184,16 +176,94 @@ public class SendRecvSocketReactor implements EventProcessor {
 
 	@Override
 	public void halt() {
-		_running.set(false);
+		boolean wasRunning = _running.getAndSet(false);
 		_sendBufferReader.getBarrier().alert();
+		Thread processorThread = _processorThread;
+		if (wasRunning && processorThread != null) {
+			_processorThread.interrupt();
+		}
 	}
 	
-	private interface SendOperation {
-		boolean send(byte[] outgoingBuffer);
+	private interface SocketOperations<TSocketItem> {
+		boolean send(TSocketItem socketItem, byte[] outgoingBuffer);
+		boolean recv(TSocketItem socketItem, byte[] incomingBuffer);
+		boolean isMultiSocket();
+		IncomingEventHeader getRecvHeader();
 	}
 	
-	private interface RecvOperation {
-		boolean recv(byte[] incomingBuffer);
+	private class EventLogic<TSocketItem> implements Runnable {
+
+		private final Mutex<TSocketItem> _socketItemMutex;
+		private final SocketOperations<TSocketItem> _socketOperations;
+		
+		public EventLogic(final Mutex<TSocketItem> socketItemMutex, final SocketOperations<TSocketItem> socketOperations) {
+			_socketItemMutex = Objects.requireNonNull(socketItemMutex);
+			_socketOperations = Objects.requireNonNull(socketOperations);
+		}
+		
+		@Override
+		public void run() {
+			_socketItemMutex.runAsOwner(new OwnerDelegate<TSocketItem>() {
+				
+				@Override
+				public void asOwner(TSocketItem socketItem) {
+					if (!_running.compareAndSet(false, true)) {
+						throw new IllegalStateException(String.format("The %s can only be started once.", 
+								DeadlineBasedEventProcessor.class.getName()));
+					}
+					_processorThread = Thread.currentThread();
+					_sendBufferReader.getBarrier().clearAlert();
+					
+					try {
+						int inactivityCount = 0;
+						while(!Thread.interrupted()) {	
+							try {
+								boolean wasActivity = false;	
+								
+								byte[] recvBuffer = _recvBufferWriter.claimNoBlock();
+								if (recvBuffer != null && _socketOperations.recv(socketItem, recvBuffer)) {
+									_recvBufferWriter.publish();
+									wasActivity = true;
+								}
+								
+								byte[] sendBuffer = _sendBufferReader.getIfReady();
+								if (sendBuffer != null && _socketOperations.send(socketItem, sendBuffer)) {
+									_sendBufferReader.advance();
+									wasActivity = true;
+								}
+								
+								if (!wasActivity) {
+									inactivityCount++;
+								}
+								if (inactivityCount >= INACTIVITY_THRESHOLD) {
+									Thread.yield();
+									inactivityCount = 0;
+								}
+							} catch (final AlertException eAlert) {
+								if (!_running.get()) {
+									break;
+								}
+							}
+						}
+					} catch (Throwable e) {
+						_exCallback.signalFatalException(e);
+					} finally {
+						if (_recvBufferWriter.hasUnpublished()) {
+							byte[] unpublishedEvent = _recvBufferWriter.getUnpublished();
+							_socketOperations.getRecvHeader().setIsValid(unpublishedEvent, false);
+							_recvBufferWriter.publish();
+						}
+						_processorThread = null;
+					}
+				}
+				
+			});
+		}
+		
+		public boolean isMultiSocket() {
+			return _socketOperations.isMultiSocket();
+		}
+		
 	}
 
 }

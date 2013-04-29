@@ -24,7 +24,8 @@ public enum EventType {
 	STATE_METRIC(5, StateMetricEvent.class),
 	STATE_INFO(6, StateUpdateInfoEvent.class),
 	CLIENT_CONNECT(7, ClientConnectEvent.class),
-	CONNECT_RES(8, ConnectResponseEvent.class)
+	CONNECT_RES(8, ConnectResponseEvent.class),
+	CLIENT_HANDLER_METRIC(9, ClientHandlerMetricEvent.class)
 	;
 	private final int _id;
 	private final Class<?> _clazz;
