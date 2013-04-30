@@ -61,10 +61,35 @@ public class ClientInputEvent extends ByteArrayBackedEvent {
 		return MessageBytesUtil.readInt(getBackingArray(), getOffset(INPUT_BUFFER_LENGTH_OFFSET));
 	}
 	
+	public final int getInputOffset() {
+		return getOffset(INPUT_BUFFER_OFFSET);
+	}
+	
+	public final int getAvailableInputBufferLength() {
+		return getBackingArray().length - getOffset(INPUT_BUFFER_OFFSET);
+	}
+	
 	public final ByteBuffer getInputBuffer() {
 		byte[] backingArray = getBackingArray();
 		int offset = getOffset(INPUT_BUFFER_OFFSET);
 		return ByteBuffer.wrap(backingArray, offset, backingArray.length - offset);
+	}
+	
+	public final int copyFromInputBytes(final byte[] exBuffer, final int offset, final int length) {
+		int updateLength = getInputBufferLength();
+		int copyLength = length < updateLength? length : updateLength;
+		System.arraycopy(getBackingArray(), getOffset(INPUT_BUFFER_OFFSET), exBuffer, 0, 
+				copyLength);
+		return copyLength;
+	}
+	
+	public final int copyToInputBytes(final byte[] exBuffer, final int offset, final int length) {
+		byte[] backingArray = getBackingArray();
+		int maxLength = backingArray.length - getOffset(INPUT_BUFFER_OFFSET);
+		int copyLength = length < maxLength? length : maxLength;
+		System.arraycopy(exBuffer, offset, getBackingArray(), getOffset(INPUT_BUFFER_OFFSET), 
+				copyLength);
+		return copyLength;
 	}
 	
 	public final void setUsedLength(final ByteBuffer inputBuffer) {

@@ -73,6 +73,7 @@ class UpdateHandler {
 			for (final ClientProxy client : clients) {
 				final long nextUpdateId = client.getLastUpdateId() + 1;
 				final long highestInputAction = client.lookupActionId(highestHandlerSeq);
+				
 				updateQueue.send(RouterPattern.asTask(client.getSocketId(), _clientUpdateEvent, new EventWriter<OutgoingEventHeader, ClientUpdateEvent>() {
 	
 					@Override

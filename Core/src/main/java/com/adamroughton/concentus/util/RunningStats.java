@@ -52,7 +52,7 @@ public class RunningStats {
 	}
 	
 	public double getVariance() {
-		if (_count > 0) {
+		if (_count > 1) {
 			return _sumSqrs / (_count - 1);
 		} else {
 			return 0.0;

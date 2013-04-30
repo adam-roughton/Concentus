@@ -174,11 +174,11 @@ public final class WorkerService implements CrowdHammerService {
 		
 		_clientRecvBuffer = new RingBuffer<>(
 				Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(2048), 
+				new SingleThreadedClaimStrategy(1024 * 1024), 
 				new YieldingWaitStrategy());
 		_clientSendBuffer = new RingBuffer<>(
 				Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(2048), 
+				new SingleThreadedClaimStrategy(1024 * 1024), 
 				new YieldingWaitStrategy());
 		_metricSendBuffer = new RingBuffer<>(
 				Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), 

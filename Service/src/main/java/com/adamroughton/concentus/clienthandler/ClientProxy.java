@@ -91,12 +91,15 @@ public class ClientProxy {
 	 */
 	public long lookupActionId(long clientHandlerInputId) {
 		long headActionId = _actionIdMap.getHeadIndex();
-		long tailActionId = headActionId - _actionIdMap.windowSize() + 1;
-		for (long actionId = headActionId; actionId >= tailActionId; actionId++) {
-			if (_actionIdMap.containsIndex(actionId)) {
-				long storedHandlerInputId = _actionIdMap.get(actionId);
-				if (storedHandlerInputId <= clientHandlerInputId) {
-					return storedHandlerInputId;
+		if (headActionId > 0) {
+			long tailActionId = headActionId - _actionIdMap.windowSize() + 1;
+			tailActionId = (tailActionId < 0)? 0: tailActionId;
+			for (long actionId = headActionId; actionId >= tailActionId; actionId--) {
+				if (_actionIdMap.containsIndex(actionId)) {
+					long storedHandlerInputId = _actionIdMap.get(actionId);
+					if (storedHandlerInputId <= clientHandlerInputId) {
+						return actionId;
+					}
 				}
 			}
 		}

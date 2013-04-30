@@ -79,10 +79,10 @@ public class CanonicalStateService implements ConcentusService {
 		_socketManager = new SocketManager();
 		
 		_inputBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
+				new SingleThreadedClaimStrategy(1024 * 1024), new YieldingWaitStrategy());
 		
 		_outputBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
+				new SingleThreadedClaimStrategy(1024 * 1024), new YieldingWaitStrategy());
 		
 		_pubHeader = new OutgoingEventHeader(0, 2);
 		_subHeader = new IncomingEventHeader(0, 2);

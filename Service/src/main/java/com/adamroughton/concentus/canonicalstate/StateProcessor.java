@@ -156,6 +156,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 		_metricContainer.getMetricEntry().pendingEventCount = pendingEventCount;
 		
 		if (_lastTickTime == -1) {
+			_lastTickTime = _clock.currentMillis();
 			_nextTickTime = _clock.currentMillis();
 		} else {
 			_nextTickTime = _lastTickTime + Constants.TIME_STEP_IN_MS;
@@ -259,5 +260,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 			}));
 		}
 	}
+
+
 	
 }

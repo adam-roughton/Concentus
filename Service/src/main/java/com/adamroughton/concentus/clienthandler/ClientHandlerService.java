@@ -97,13 +97,13 @@ public class ClientHandlerService implements ConcentusService {
 		_executor = Executors.newCachedThreadPool();
 		
 		_recvBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				new MultiThreadedClaimStrategy(2048), 
+				new MultiThreadedClaimStrategy(1024 * 1024), 
 				new YieldingWaitStrategy());
 		_routerSendBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(2048), 
+				new SingleThreadedClaimStrategy(1024 * 1024), 
 				new YieldingWaitStrategy());
 		_pubSendBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(2048), 
+				new SingleThreadedClaimStrategy(1024 * 1024), 
 				new YieldingWaitStrategy());
 		_metricSendBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
 				new SingleThreadedClaimStrategy(2048), 

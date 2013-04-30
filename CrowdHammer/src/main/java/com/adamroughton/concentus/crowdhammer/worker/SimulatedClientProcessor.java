@@ -42,7 +42,6 @@ import com.adamroughton.concentus.messaging.patterns.PubSubPattern;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.util.RunningStats;
 import com.adamroughton.concentus.util.SlidingWindowLongMap;
-import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.LifecycleAware;
 
 import uk.co.real_logic.intrinsics.ComponentFactory;
@@ -100,9 +99,6 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 		
 		// create an index for quickly looking up clients
 		_clientsIndex = new Long2LongArrayMap((int)_clients.getLength());
-		for (long clientIndex = 0; clientIndex < _clients.getLength(); clientIndex++) {
-			_clientsIndex.put(_clients.get(clientIndex).getClientId(), clientIndex);
-		}
 		
 		_clientSendQueue = Objects.requireNonNull(clientSendQueue);
 		_metricSendQueue = Objects.requireNonNull(metricSendQueue);
@@ -146,7 +142,6 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 		if (!_recvHeader.isValid(event)) return;
 		
 		if (EventPattern.getEventType(event, _recvHeader) == EventType.CLIENT_UPDATE.getId()) {
-			Log.info("Received client update event");
 			EventPattern.readContent(event, _recvHeader, _updateEvent, new EventReader<IncomingEventHeader, ClientUpdateEvent>() {
 
 				@Override
@@ -154,10 +149,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 					long clientId = event.getClientId();
 					long clientIndex = _clientsIndex.get(clientId);
 					Client updatedClient = _clients.get(clientIndex);
-					Log.info(String.format("Client update for client %s", updatedClient == null? "null" : updatedClient.getClientId()));
-					
 					processUpdateEvent(updatedClient, event);
-					Log.info("finished updating client");
 				}
 			});
 		} else if (EventPattern.getEventType(event, _recvHeader) == EventType.CONNECT_RES.getId()) {
@@ -167,10 +159,8 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 				public void read(IncomingEventHeader header, ConnectResponseEvent event) {
 					// we use the index of the connecting client as the request ID
 					long clientIndex = event.getCallbackBits();
-					Log.info(String.format("Connect Res for client %d", clientIndex));
 					Client connectedClient = _clients.get(clientIndex);
-					processConnectRes(connectedClient, event);
-					Log.info("Finished processing res");
+					processConnectRes(clientIndex, connectedClient, event);
 				}
 			});
 		}
@@ -251,7 +241,6 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	}
 	
 	private void sendConnectRequest(final long clientIndex, final Client client) {
-		Log.info(String.format("Sending connect request for client index %d", clientIndex));
 		_clientSendQueue.send(EventPattern.asTask(_connectEvent, new EventWriter<MultiSocketOutgoingEventHeader, ClientConnectEvent>() {
 
 			@Override
@@ -261,7 +250,6 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 			}
 			
 		}));
-		Log.info("Finished sending connect request");
 	}
 	
 	private void sendInputEvent(final Client client) {
@@ -281,7 +269,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 		_metricContainer.getMetricEntry().sentActions++;
 	}
 	
-	private void processConnectRes(final Client client, final ConnectResponseEvent resEvent) {
+	private void processConnectRes(long clientIndex, final Client client, final ConnectResponseEvent resEvent) {
 		if (!client.isConnecting()) 
 			throw new RuntimeException("Expected the client to be connecting on reception of a connect response event.");
 		if (resEvent.getResponseCode() != ConnectResponseEvent.RES_OK) {
@@ -289,6 +277,9 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 					resEvent.getResponseCode(), ConnectResponseEvent.RES_OK));
 		}
 		client.setClientId(resEvent.getClientIdBits());
+		
+		// create a lookup entry for quickly retrieving the client given the ID
+		_clientsIndex.put(resEvent.getClientIdBits(), clientIndex);
 		client.setIsConnecting(false);
 		_connectedClientCount++;
 	}

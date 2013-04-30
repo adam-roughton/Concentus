@@ -303,6 +303,8 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 					long handlerInputId = _inputId++;
 					event.setClientHandlerId(_clientHandlerId);
 					event.setInputId(handlerInputId);
+					int inputBytes = inputEvent.copyFromInputBytes(event.getBackingArray(), event.getInputOffset(), event.getAvailableInputBufferLength());
+					event.setUsedLength(inputBytes);
 					client.storeAssociation(inputEvent.getClientActionId(), handlerInputId);
 				}
 				
@@ -320,7 +322,7 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 				highestSeq = updateInfoEvent.getHighestSequenceAtIndex(i);
 			}
 		}
-		if (handlerFound) {	
+		if (handlerFound) {
 			long updateId = updateInfoEvent.getUpdateId();
 			_updateHandler.addUpdateMetaData(updateId, highestSeq);
 			if (_updateHandler.hasFullUpdateData(updateId)) {
