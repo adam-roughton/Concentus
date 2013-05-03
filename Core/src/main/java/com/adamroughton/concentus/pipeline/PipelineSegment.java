@@ -6,10 +6,9 @@ import java.util.Objects;
 import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
-import jline.internal.Log;
-
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.util.Util;
+import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
 
