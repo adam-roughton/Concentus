@@ -26,7 +26,6 @@ import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
 import java.util.List;
 import java.util.UUID;
-import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 
 import org.apache.commons.io.Charsets;
@@ -211,6 +210,24 @@ public class Util {
 		return remainingTime;
 	}
 	
-	
+	public static long binarySearchHighestMatch(long[] orderedValues, long key, int startIndex, int endIndex) {
+		if (startIndex > endIndex) {
+			return -1;
+		} 
+		int midIndex = startIndex + (endIndex - startIndex) / 2;
+		long midValue = orderedValues[midIndex];
+		if (midValue == key) {
+			return key;
+		} else if (midValue < key) {
+			long nextHighestMatch = binarySearchHighestMatch(orderedValues, key, midIndex + 1, endIndex);
+			if (nextHighestMatch == -1) {
+				return midValue;
+			} else {
+				return nextHighestMatch;
+			}
+		} else {
+			return binarySearchHighestMatch(orderedValues, key, startIndex, midIndex - 1);
+		}
+	}
 	
 }

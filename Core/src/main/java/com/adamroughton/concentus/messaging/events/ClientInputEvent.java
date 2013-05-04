@@ -78,7 +78,7 @@ public class ClientInputEvent extends ByteArrayBackedEvent {
 	public final int copyFromInputBytes(final byte[] exBuffer, final int offset, final int length) {
 		int updateLength = getInputBufferLength();
 		int copyLength = length < updateLength? length : updateLength;
-		System.arraycopy(getBackingArray(), getOffset(INPUT_BUFFER_OFFSET), exBuffer, 0, 
+		System.arraycopy(getBackingArray(), getOffset(INPUT_BUFFER_OFFSET), exBuffer, offset, 
 				copyLength);
 		return copyLength;
 	}

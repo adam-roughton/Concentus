@@ -36,22 +36,22 @@ public class SlidingWindowLongMap {
 					String.format("The index %d is smaller than the smallest index (%d) in the window.", 
 					index, _currentIndex- _window.length));
 		}
-		long prevIndex = _currentIndex;
-		_currentIndex = index;
-		int windowIndex = (int) _currentIndex & _mask;
-		_window[windowIndex] = data;
-		
-		long skippedCount = (_currentIndex - prevIndex) - 1;
-		if (skippedCount >= _window.length) 
-			skippedCount = _window.length - 1;
-		if (skippedCount > 0) {
-			// go through skipped indices and set each one to invalid
-			for (long i = _currentIndex - skippedCount; i < _currentIndex; i++) {
-				if (i >= 0) {
-					_window[(int) (i & _mask)] = NULL;
+		_window[(int) index & _mask] = data;
+		if (index > _currentIndex) {
+			long prevIndex = _currentIndex;
+			_currentIndex = index;
+			long skippedCount = (_currentIndex - prevIndex) - 1;
+			if (skippedCount >= _window.length) 
+				skippedCount = _window.length - 1;
+			if (skippedCount > 0) {
+				// go through skipped indices and set each one to invalid
+				for (long i = _currentIndex - skippedCount; i < _currentIndex; i++) {
+					if (i >= 0) {
+						_window[(int) (i & _mask)] = NULL;
+					}
 				}
-			}
-		} 
+			} 
+		}
 		return data;
 	}
 	
@@ -91,6 +91,16 @@ public class SlidingWindowLongMap {
 			if (val != NULL) count++;
 		}
 		return count;
+	}
+	
+	/**
+	 * Returns a reference to the underlying window.
+	 * Any modifications to the values array will
+	 * modify the contents of the {@link SlidingWindowLongMap}.
+	 * @return a reference to the underlying window
+	 */
+	public final long[] values() {
+		return _window;
 	}
 	
 	/**

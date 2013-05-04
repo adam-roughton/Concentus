@@ -57,6 +57,13 @@ public class StateUpdateInfoEvent extends ByteArrayBackedEvent {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(getEntryOffset(index) + 4), entry.getHighestHandlerSeq());
 	}
 
+	/**
+	 * Gets the offset of the entry at index {@code index} relative to the {@link StateUpdateInfoEvent#ENTRY_START_OFFSET}.
+	 * This must be transformed by {@link ByteArrayBackedEvent#getOffset(int)} to get the offset relative to the
+	 * start of the event.
+	 * @param index the index of the entry
+	 * @return the offset relative to {@link StateUpdateInfoEvent#ENTRY_START_OFFSET}
+	 */
 	private final int getEntryOffset(int index) {
 		return ENTRY_START_OFFSET + ENTRY_SIZE * index;
 	}
@@ -69,7 +76,7 @@ public class StateUpdateInfoEvent extends ByteArrayBackedEvent {
 	 * @return the number of entries that can be written into this event
 	 */
 	public final int getMaximumEntries() {
-		int availableBytes = getAvailableSize() - 12;
+		int availableBytes = getAvailableSize() - getOffset(ENTRY_START_OFFSET);
 		return availableBytes / ENTRY_SIZE;
 	}
 	

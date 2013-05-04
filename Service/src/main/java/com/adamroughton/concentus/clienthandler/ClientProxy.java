@@ -24,6 +24,8 @@ public class ClientProxy {
 	private long _lastMsgTime;
 	private long _lastUpdateId;
 	
+	private boolean _isActive;
+	
 	/**
 	 * Store the last 128 input actions -> client action ID mappings for this client
 	 */
@@ -34,6 +36,15 @@ public class ClientProxy {
 		_lastMsgTime = 0;
 		_clientSocketId = new byte[0];
 		_lastUpdateId = -1;
+		_isActive = false;
+	}
+	
+	public boolean isActive() {
+		return _isActive;
+	}
+	
+	public void setIsActive(boolean isActive) {
+		_isActive = isActive;
 	}
 	
 	public long getClientId() {
@@ -93,17 +104,30 @@ public class ClientProxy {
 		long headActionId = _actionIdMap.getHeadIndex();
 		if (headActionId > 0) {
 			long tailActionId = headActionId - _actionIdMap.windowSize() + 1;
-			tailActionId = (tailActionId < 0)? 0: tailActionId;
-			for (long actionId = headActionId; actionId >= tailActionId; actionId--) {
-				if (_actionIdMap.containsIndex(actionId)) {
-					long storedHandlerInputId = _actionIdMap.get(actionId);
-					if (storedHandlerInputId <= clientHandlerInputId) {
-						return actionId;
-					}
-				}
-			}
+			tailActionId = (tailActionId < 0)? 0: tailActionId;	
+			return binarySearchHighestMatch(_actionIdMap, clientHandlerInputId, tailActionId, headActionId);
 		}
 		return -1;
+	}
+	
+	private static long binarySearchHighestMatch(SlidingWindowLongMap window, long key, long startIndex, long endIndex) {
+		if (startIndex > endIndex) {
+			return -1;
+		} 
+		long midIndex = startIndex + (endIndex - startIndex) / 2;
+		long midValue = window.get(midIndex);
+		if (midValue == key) {
+			return key;
+		} else if (midValue < key) {
+			long nextHighestMatch = binarySearchHighestMatch(window, key, midIndex + 1, endIndex);
+			if (nextHighestMatch == -1) {
+				return midValue;
+			} else {
+				return nextHighestMatch;
+			}
+		} else {
+			return binarySearchHighestMatch(window, key, startIndex, midIndex - 1);
+		}
 	}
 	
 	public void storeAssociation(long actionId, long clientHandlerInputId) {

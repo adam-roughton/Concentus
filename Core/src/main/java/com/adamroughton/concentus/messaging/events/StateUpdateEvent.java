@@ -47,8 +47,12 @@ public class StateUpdateEvent extends ByteArrayBackedEvent {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(SIM_TIME_OFFSET), simTime);
 	}
 	
-	public final int getUpdateBufferLength() {
+	public final int getByteCountInBuffer() {
 		return MessageBytesUtil.readInt(getBackingArray(), getOffset(UPDATE_BUFFER_LENGTH_OFFSET));
+	}
+	
+	public final int getMaxUpdateBufferLength() {
+		return getBackingArray().length - getOffset(UPDATE_BUFFER_OFFSET);
 	}
 	
 	public final ByteBuffer getUpdateBuffer() {
@@ -58,9 +62,9 @@ public class StateUpdateEvent extends ByteArrayBackedEvent {
 	}
 	
 	public final int copyUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
-		int updateLength = getUpdateBufferLength();
+		int updateLength = getByteCountInBuffer();
 		int copyLength = length < updateLength? length : updateLength;
-		System.arraycopy(getBackingArray(), getOffset(UPDATE_BUFFER_OFFSET), exBuffer, 0, 
+		System.arraycopy(getBackingArray(), getOffset(UPDATE_BUFFER_OFFSET), exBuffer, offset, 
 				copyLength);
 		return copyLength;
 	}

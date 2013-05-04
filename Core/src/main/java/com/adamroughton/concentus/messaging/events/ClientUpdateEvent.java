@@ -78,12 +78,22 @@ public class ClientUpdateEvent extends ByteArrayBackedEvent {
 		return getOffset(UPDATE_BUFFER_OFFSET);
 	}
 	
-	public final int getUpdateBufferLength() {
+	/**
+	 * Gets the number of bytes stored in the update buffer. This should only be called
+	 * on events that have had {@link ClientUpdateEvent#setUsedLength(ByteBuffer)} or {@link ClientUpdateEvent#setUsedLength(int)}
+	 * invoked.
+	 * @return the number of bytes stored in the update buffer
+	 */
+	public final int getByteCountInBuffer() {
 		return MessageBytesUtil.readInt(getBackingArray(), getOffset(UPDATE_BUFFER_LENGTH_OFFSET));
 	}
 	
+	public final int getMaxUpdateBufferLength() {
+		return getBackingArray().length - getOffset(UPDATE_BUFFER_OFFSET);
+	}
+	
 	public final int copyFromUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
-		int updateLength = getUpdateBufferLength();
+		int updateLength = getByteCountInBuffer();
 		int copyLength = length < updateLength? length : updateLength;
 		System.arraycopy(getBackingArray(), getOffset(UPDATE_BUFFER_OFFSET), exBuffer, 0, 
 				copyLength);
@@ -91,8 +101,7 @@ public class ClientUpdateEvent extends ByteArrayBackedEvent {
 	}
 	
 	public final int copyToUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
-		byte[] backingArray = getBackingArray();
-		int maxLength = backingArray.length - getOffset(UPDATE_BUFFER_OFFSET);
+		int maxLength = getMaxUpdateBufferLength();
 		int copyLength = length < maxLength? length : maxLength;
 		System.arraycopy(exBuffer, offset, getBackingArray(), getOffset(UPDATE_BUFFER_OFFSET), 
 				copyLength);

@@ -71,25 +71,27 @@ class UpdateHandler {
 		try {
 			_updateEvent.setBackingArray(updateBufferEntry, 4);
 			for (final ClientProxy client : clients) {
-				final long nextUpdateId = client.getLastUpdateId() + 1;
-				final long highestInputAction = client.lookupActionId(highestHandlerSeq);
-				
-				updateQueue.send(RouterPattern.asTask(client.getSocketId(), _clientUpdateEvent, new EventWriter<OutgoingEventHeader, ClientUpdateEvent>() {
-	
-					@Override
-					public void write(OutgoingEventHeader header,
-							ClientUpdateEvent event) throws Exception {
-						event.setClientId(client.getClientId());
-						event.setUpdateId(nextUpdateId);
-						event.setSimTime(_updateEvent.getSimTime());
-						event.setHighestInputActionId(highestInputAction);
-						int copyLength = _updateEvent.copyUpdateBytes(event.getBackingArray(), 
-								event.getUpdateOffset(), 
-								event.getUpdateBufferLength());
-						event.setUsedLength(copyLength);
-					}
+				if (client.isActive()) {
+					final long nextUpdateId = client.getLastUpdateId() + 1;
+					final long highestInputAction = client.lookupActionId(highestHandlerSeq);
 					
-				}));
+					updateQueue.send(RouterPattern.asTask(client.getSocketId(), _clientUpdateEvent, new EventWriter<OutgoingEventHeader, ClientUpdateEvent>() {
+		
+						@Override
+						public void write(OutgoingEventHeader header,
+								ClientUpdateEvent event) throws Exception {
+							event.setClientId(client.getClientId());
+							event.setUpdateId(nextUpdateId);
+							event.setSimTime(_updateEvent.getSimTime());
+							event.setHighestInputActionId(highestInputAction);
+							int copyLength = _updateEvent.copyUpdateBytes(event.getBackingArray(), 
+									event.getUpdateOffset(), 
+									event.getMaxUpdateBufferLength());
+							event.setUsedLength(copyLength);
+						}
+						
+					}));
+				}
 			}
 		} finally {
 			_updateEvent.releaseBackingArray();

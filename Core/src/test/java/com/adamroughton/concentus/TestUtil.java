@@ -96,4 +96,59 @@ public class TestUtil {
 			FileUtils.deleteQuietly(tmpDirPath.toFile());
 		}
 	}
+	
+	@Test
+	public void binarySearchHighestMatch_StartIndexGreaterThanEnd() {
+		assertEquals(-1, Util.binarySearchHighestMatch(new long[] {1, 4, 6, 7, 9}, 1, 5, 0));
+	}
+	
+	@Test
+	public void binarySearchHighestMatch_MatchesFirstElement() {
+		assertEquals(1, Util.binarySearchHighestMatch(new long[] {1, 2, 4, 5, 7, 9, 10}, 1, 0, 6));
+	}
+	
+	@Test
+	public void binarySearchHighestMatch_MatchesLastElement() {
+		assertEquals(10, Util.binarySearchHighestMatch(new long[] {1, 2, 4, 5, 7, 9, 10}, 10, 0, 6));
+	}
+	
+	@Test
+	public void binarySearchHighestMatch_MatchesRightOfMidOnEven() {
+		assertEquals(8, Util.binarySearchHighestMatch(new long[]{1, 2, 5, 8, 9, 11}, 8, 0, 5));
+	}
+	
+	@Test
+	public void binarySearchHighestMatch_MatchesMidOnEven() {
+		assertEquals(5, Util.binarySearchHighestMatch(new long[]{1, 2, 5, 8, 9, 11}, 5, 0, 5));
+	}
+	
+	@Test
+	public void binarySearchHighestMatch_MatchesOnlyElement() {
+		assertEquals(1, Util.binarySearchHighestMatch(new long[]{1}, 1, 0, 0));
+	}
+	
+	@Test
+	public void binarySearchHighestMatch_NonDirectMatchEven() {
+		assertEquals(5, Util.binarySearchHighestMatch(new long[]{1, 2, 5, 8, 9, 11}, 6, 0, 5));
+	}
+	
+	@Test
+	public void binarySearchHighestMatch_NonDirectMatchOdd() {
+		assertEquals(5, Util.binarySearchHighestMatch(new long[]{1, 2, 5, 8, 9, 11, 46}, 6, 0, 6));
+	}
+	
+	@Test
+	public void binarySearchHighestMatch_NonDirectMatchManyPossible() {
+		assertEquals(11, Util.binarySearchHighestMatch(new long[]{6, 7, 8, 9, 10, 11}, 12, 0, 5));
+	}
+	
+	@Test
+	public void binarySearchHighestMatch_DoesNotMatchEven() {
+		assertEquals(-1, Util.binarySearchHighestMatch(new long[]{5, 7, 9, 11, 15, 63}, 4, 0, 5));
+	}
+	
+	@Test
+	public void binarySearchHighestMatch_DoesNotMatchOdd() {
+		assertEquals(-1, Util.binarySearchHighestMatch(new long[]{5, 7, 9, 11, 15, 63, 121}, 4, 0, 6));
+	}
 }

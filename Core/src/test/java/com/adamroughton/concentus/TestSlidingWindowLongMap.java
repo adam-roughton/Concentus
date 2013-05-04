@@ -148,6 +148,7 @@ public class TestSlidingWindowLongMap {
 			assertEquals(i * 1000 * 1000, _window.put(i, i * 1000 * 1000));
 			assertEquals(i * 1000 * 1000, _window.get(i));
 			assertTrue(_window.containsIndex(i));
+			assertEquals(i, _window.getHeadIndex());
 		}
 	}
 	
@@ -157,6 +158,7 @@ public class TestSlidingWindowLongMap {
 			assertEquals(i * 1000 * 1000, _window.put(i, i * 1000 * 1000));
 			assertEquals(i * 1000 * 1000, _window.get(i));
 			assertTrue(_window.containsIndex(i));
+			assertEquals(i, _window.getHeadIndex());
 		}
 	}
 	
@@ -164,6 +166,7 @@ public class TestSlidingWindowLongMap {
 	public void put_NoGapsFetchLastEntry() {
 		for (int i = 0; i < 2 * _window.windowSize(); i++) {
 			assertEquals(i * 1000 * 1000, _window.put(i, i * 1000 * 1000));
+			assertEquals(i, _window.getHeadIndex());
 			if (i - _window.windowSize() >= 0) {
 				int lastAvailableEntry = i - _window.windowSize() + 1;
 				assertEquals(lastAvailableEntry * 1000 * 1000, _window.get(lastAvailableEntry));
@@ -176,6 +179,7 @@ public class TestSlidingWindowLongMap {
 	public void put_NoGapsFetchSecondEntry() {
 		for (int i = 0; i < 2 * _window.windowSize(); i++) {
 			assertEquals(i * 1000 * 1000, _window.put(i, i * 1000 * 1000));
+			assertEquals(i, _window.getHeadIndex());
 			if (i - 1 >= 0) {
 				int secondEntry = i - 1;
 				assertEquals(secondEntry * 1000 * 1000, _window.get(secondEntry));
@@ -189,6 +193,7 @@ public class TestSlidingWindowLongMap {
 		int midPoint = _window.windowSize() / 2 + 1;
 		for (int i = 0; i < 2 * _window.windowSize(); i++) {
 			assertEquals(i * 1000 * 1000, _window.put(i, i * 1000 * 1000));
+			assertEquals(i, _window.getHeadIndex());
 			if (i - midPoint >= 0) {
 				int midEntry = i - midPoint;
 				assertEquals(midEntry * 1000 * 1000, _window.get(midEntry));
@@ -201,6 +206,7 @@ public class TestSlidingWindowLongMap {
 	public void put_skipFirst() {
 		for (int i = 1; i < 2 * _window.windowSize(); i++) {
 			assertEquals(i * 1000 * 1000, _window.put(i, i * 1000 * 1000));
+			assertEquals(i, _window.getHeadIndex());
 			assertEquals(i * 1000 * 1000, _window.get(i));			
 			if (i == 1) {
 				assertFalse(_window.containsIndex(0));
@@ -216,6 +222,7 @@ public class TestSlidingWindowLongMap {
 		for (int i = 0; i < 2 * _window.windowSize(); i++) {
 			if (i % 3 == 0) {
 				assertEquals(i * 1000 * 1000, _window.put(i, i * 1000 * 1000));
+				assertEquals(i, _window.getHeadIndex());
 				assertEquals(i * 1000 * 1000, _window.get(i));
 				if (i > 0) {
 					assertFalse(_window.containsIndex(i - 2));
@@ -223,7 +230,6 @@ public class TestSlidingWindowLongMap {
 					assertTrue(_window.containsIndex(i));
 				}
 			}
-	
 		}
 	}
 	
@@ -232,6 +238,7 @@ public class TestSlidingWindowLongMap {
 		for (int i = 0; i < 100 * _window.windowSize(); i++) {
 			if (i % _window.windowSize() == 0) {
 				assertEquals(i * 1000 * 1000, _window.put(i, i * 1000 * 1000));
+				assertEquals(i, _window.getHeadIndex());
 				assertEquals(i * 1000 * 1000, _window.get(i));
 				if (i > 0) {
 					for (int j = i - _window.windowSize() + 1; j <= i; j++) {
@@ -245,7 +252,6 @@ public class TestSlidingWindowLongMap {
 					assertTrue(_window.containsIndex(i));
 				}
 			}
-	
 		}
 	}
 	
@@ -254,6 +260,7 @@ public class TestSlidingWindowLongMap {
 		for (int i = 0; i < 100 * _window.windowSize(); i++) {
 			if (i % (_window.windowSize() + 2) == 0) {
 				assertEquals(i * 1000 * 1000, _window.put(i, i * 1000 * 1000));
+				assertEquals(i, _window.getHeadIndex());
 				assertEquals(i * 1000 * 1000, _window.get(i));
 				if (i > 0) {
 					for (int j = i - _window.windowSize(); j <= i; j++) {
@@ -267,7 +274,6 @@ public class TestSlidingWindowLongMap {
 					assertTrue(_window.containsIndex(i));
 				}
 			}
-	
 		}
 	}
 	
@@ -288,9 +294,11 @@ public class TestSlidingWindowLongMap {
 			assertEquals(i, _window.add(i * 1000 * 1000));
 			assertEquals(i * 1000 * 1000, _window.get(i));
 		}
+		long currentHeadIndex = _window.getHeadIndex();
 		_window.put(lastIndex - 1, 5);
 		assertTrue(_window.containsIndex(lastIndex - 1));
 		assertEquals(5, _window.get(lastIndex - 1));
+		assertEquals(currentHeadIndex, _window.getHeadIndex());
 	}
 	
 	@Test
@@ -300,9 +308,11 @@ public class TestSlidingWindowLongMap {
 			assertEquals(i, _window.add(i * 1000 * 1000));
 			assertEquals(i * 1000 * 1000, _window.get(i));
 		}
+		long currentHeadIndex = _window.getHeadIndex();
 		_window.put(lastIndex - _window.windowSize(), 5);
-		assertTrue(_window.containsIndex(lastIndex - _window.windowSize()));
+		assertTrue(_window.containsIndex(lastIndex - _window.windowSize() + 1));
 		assertEquals(5, _window.get(lastIndex - _window.windowSize()));
+		assertEquals(currentHeadIndex, _window.getHeadIndex());
 	}
 	
 }

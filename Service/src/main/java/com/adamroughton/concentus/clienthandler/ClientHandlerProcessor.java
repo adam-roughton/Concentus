@@ -17,10 +17,12 @@ package com.adamroughton.concentus.clienthandler;
 
 import it.unimi.dsi.fastutil.longs.Long2ObjectArrayMap;
 import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
+import it.unimi.dsi.fastutil.longs.Long2ObjectRBTreeMap;
 
 import java.util.Objects;
 
 import uk.co.real_logic.intrinsics.ComponentFactory;
+import uk.co.real_logic.intrinsics.StructuredArray;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.Constants;
@@ -61,14 +63,23 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	private final SendQueue<OutgoingEventHeader> _routerSendQueue;
 	private final SendQueue<OutgoingEventHeader> _metricSendQueue;
 	
-	private final UpdateHandler _updateHandler = new UpdateHandler(Constants.MSG_BUFFER_LENGTH);
+	private final UpdateHandler _updateHandler = new UpdateHandler(32);
 	private final IncomingEventHeader _incomingQueueHeader;
 	
 	private long _inputId = 0;
 	private long _nextClientId = 0;
 	private long _connectedClientCount = 0;
 	
-	private final Long2ObjectMap<ClientProxy> _clientLookup = new Long2ObjectArrayMap<>(10000);
+	private final StructuredArray<ClientProxy> _clientLookup = StructuredArray.newInstance(128 * 1024, ClientProxy.class, new ComponentFactory<ClientProxy>() {
+
+		private long nextClientId = 0;
+		
+		@Override
+		public ClientProxy newInstance(Object[] initArgs) {
+			return new ClientProxy(nextClientId++);
+		}
+	});
+	//private final Long2ObjectMap<ClientProxy> _clientLookup = new Long2ObjectRBTreeMap<>();// new Long2ObjectArrayMap<>(10000);
 	
 	private final StateInputEvent _stateInputEvent = new StateInputEvent();
 	private final StateUpdateEvent _stateUpdateEvent = new StateUpdateEvent();
@@ -191,7 +202,7 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 						int contentLength = EventHeader.getSegmentLength(contentMetaData);
 						_updateHandler.addUpdate(updateId, event.getBackingArray(), contentOffset, contentLength);
 						if (_updateHandler.hasFullUpdateData(updateId)) {
-							_updateHandler.sendUpdates(updateId, _clientLookup.values(), _routerSendQueue);
+							_updateHandler.sendUpdates(updateId, _clientLookup, _routerSendQueue);
 						}
 						_metricContainer.getMetricEntry().updatesProcessed++;
 					}
@@ -267,26 +278,38 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	}
 	
 	private void onClientConnected(final byte[] clientSocketId, final ClientConnectEvent connectEvent) {
-		final long newClientId = _nextClientId++;
-		ClientProxy newClient = new ClientProxy(newClientId);
-		
-		newClient.setLastMsgTime(_clock.currentMillis());
-		newClient.setSocketId(clientSocketId);
-		
-		_clientLookup.put(newClientId, newClient);
-		
-		// send a connect response
-		_routerSendQueue.send(RouterPattern.asTask(newClient.getSocketId(), _connectResEvent, new EventWriter<OutgoingEventHeader, ConnectResponseEvent>() {
+		if (_nextClientId >= _clientLookup.getLength()) {
+			// over-subscribed - turn away
+			_routerSendQueue.send(RouterPattern.asTask(clientSocketId, _connectResEvent, new EventWriter<OutgoingEventHeader, ConnectResponseEvent>() {
 
-			@Override
-			public void write(OutgoingEventHeader header, ConnectResponseEvent event) {
-				event.setClientId(new ClientId(_clientHandlerId, newClientId));
-				event.setResponseCode(ConnectResponseEvent.RES_OK);
-				event.setCallbackBits(connectEvent.getCallbackBits());
-			}
+				@Override
+				public void write(OutgoingEventHeader header, ConnectResponseEvent event) {
+					event.setResponseCode(ConnectResponseEvent.RES_ERROR);
+					event.setCallbackBits(connectEvent.getCallbackBits());
+				}
+				
+			}));
+		} else {
+			final long newClientId = _nextClientId++;
+			ClientProxy newClient = _clientLookup.get(newClientId);
 			
-		}));
-		_connectedClientCount++;
+			newClient.setLastMsgTime(_clock.currentMillis());
+			newClient.setSocketId(clientSocketId);
+			newClient.setIsActive(true);
+			
+			// send a connect response
+			_routerSendQueue.send(RouterPattern.asTask(newClient.getSocketId(), _connectResEvent, new EventWriter<OutgoingEventHeader, ConnectResponseEvent>() {
+
+				@Override
+				public void write(OutgoingEventHeader header, ConnectResponseEvent event) {
+					event.setClientId(new ClientId(_clientHandlerId, newClientId));
+					event.setResponseCode(ConnectResponseEvent.RES_OK);
+					event.setCallbackBits(connectEvent.getCallbackBits());
+				}
+				
+			}));
+			_connectedClientCount++;
+		}
 		_metricContainer.getMetricEntry().connectionRequestsProcessed++;
 	}
 	
@@ -326,7 +349,7 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 			long updateId = updateInfoEvent.getUpdateId();
 			_updateHandler.addUpdateMetaData(updateId, highestSeq);
 			if (_updateHandler.hasFullUpdateData(updateId)) {
-				_updateHandler.sendUpdates(updateId, _clientLookup.values(), _routerSendQueue);
+				_updateHandler.sendUpdates(updateId, _clientLookup, _routerSendQueue);
 				_metricContainer.getMetricEntry().sentUpdateCount++;
 			}
 		}
