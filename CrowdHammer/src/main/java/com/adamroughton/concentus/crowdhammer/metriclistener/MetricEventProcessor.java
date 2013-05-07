@@ -62,14 +62,14 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 	private static class WorkerMetricEntry {
 		public long clientCount;
 		public long workersXor;
-		public RunningStats inputToUpdateLatency = new RunningStats();
+		public RunningStats inputToUpdateLatency = null;
 		public int lateInputResCount;
 	}
 	
 	private StructuredSlidingWindowMap<WorkerMetricEntry> _workerMetrics;
 	
-	private final RunningStats _canonicalStateThroughput = new RunningStats();
-	private final RunningStats _inputToUpdateLatency = new RunningStats();
+	private RunningStats _canonicalStateThroughput = null;
+	private RunningStats _inputToUpdateLatency = null;
 	private int _lateInputUpdateCount = 0;
 	
 	public MetricEventProcessor(final IncomingEventHeader subHeader) {
@@ -136,8 +136,8 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 		}
 		_histogram = new Histogram(upperBounds);
 		_isCollectingData = false;
-		_canonicalStateThroughput.reset();
-		_inputToUpdateLatency.reset();
+		_canonicalStateThroughput = null;
+		_inputToUpdateLatency = null;
 	}
 
 	@Override
@@ -169,7 +169,7 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 				content.clientCount = 0;
 				content.workersXor = workersXor;
 				content.lateInputResCount = 0;
-				content.inputToUpdateLatency.reset();
+				content.inputToUpdateLatency = null;
 			}
 			
 		});
@@ -190,21 +190,33 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 	
 	private void processWorkerMetric(final WorkerMetricEvent event) {
 		long bucketId = event.getMetricBucketId();
+		
+		RunningStats inputToActionLatencyStats = new RunningStats(
+				event.getInputToUpdateLatencyCount(),
+				event.getInputToUpdateLatencyMean(),
+				event.getInputToUpdateLatencySumSqrs(),
+				event.getInputToUpdateLatencyMin(),
+				event.getInputToUpdateLatencyMax());
+		
 		WorkerMetricEntry metricEntry = _workerMetrics.get(bucketId);
 		metricEntry.clientCount += event.getConnectedClientCount();
 		metricEntry.lateInputResCount += event.getInputToUpdateLatencyLateCount();
-		metricEntry.inputToUpdateLatency.merge(event.getInputToUpdateLatencyCount(), 
-				event.getInputToUpdateLatencyMean(), 
-				event.getInputToUpdateLatencySumSqrs(), 
-				event.getInputToUpdateLatencyMin(), 
-				event.getInputToUpdateLatencyMax());
+		if (metricEntry.inputToUpdateLatency == null) {
+			metricEntry.inputToUpdateLatency = inputToActionLatencyStats;
+		} else {
+			metricEntry.inputToUpdateLatency.merge(inputToActionLatencyStats);
+		}
 		metricEntry.workersXor ^= event.getSourceId();
 		if (metricEntry.workersXor == 0) {
 			if (metricEntry.clientCount >= _clientCount) {
 				_isCollectingData = true;
 			}
 			if (_isCollectingData) {
-				_inputToUpdateLatency.merge(metricEntry.inputToUpdateLatency);
+				if (_inputToUpdateLatency == null) {
+					_inputToUpdateLatency = metricEntry.inputToUpdateLatency;
+				} else {
+					_inputToUpdateLatency.merge(metricEntry.inputToUpdateLatency);
+				}
 				_lateInputUpdateCount += metricEntry.lateInputResCount;
 			}
 		}
@@ -215,11 +227,6 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 		if (duration > 0) {
 			throughput = ((double) actionsSent / (double) duration) * 1000;
 		}
-		RunningStats inputToActionLatencyStats = new RunningStats(event.getInputToUpdateLatencyCount(),
-				event.getInputToUpdateLatencyMean(),
-				event.getInputToUpdateLatencySumSqrs(),
-				event.getInputToUpdateLatencyMin(),
-				event.getInputToUpdateLatencyMax());
 		
 		Log.info(String.format("WorkerMetric (B%d,%d): %f input/s, %d clients, %d errors, %d pending events, [%f mean, %f stddev, %f max, %f min] input to update latency", 
 				event.getMetricBucketId(), 

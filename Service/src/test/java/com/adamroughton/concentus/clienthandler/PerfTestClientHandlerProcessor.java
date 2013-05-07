@@ -50,7 +50,7 @@ public class PerfTestClientHandlerProcessor {
 				return new byte[512];
 			}
 			
-		}, new SingleThreadedClaimStrategy(2048),
+		}, new SingleThreadedClaimStrategy(1024 * 1024),
 			new YieldingWaitStrategy());
 	}
 	

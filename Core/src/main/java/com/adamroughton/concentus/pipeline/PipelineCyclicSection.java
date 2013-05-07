@@ -1,8 +1,7 @@
 package com.adamroughton.concentus.pipeline;
 
-
+import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.concurrent.Executor;
 
 import com.adamroughton.concentus.Clock;
@@ -25,7 +24,7 @@ public class PipelineCyclicSection<TEvent> {
 		
 		public CyclicBuilder<TEvent> then(ConsumingPipelineProcess<TEvent> process) {
 			_cycleConnector.setGatingSequences(process.getSequence());
-			PipelineSegment<TEvent> segment = new PipelineSegment<>(Arrays.asList(_cycleConnector), process, _clock);
+			PipelineSegment<TEvent> segment = new CyclicPipelineSegment<>(_cycleConnector, process, _clock);
 			PipelineTopology<TEvent> topology = _pipelineSegment.add(0, segment);
 			return new CyclicBuilder<>(segment, new ProcessingPipeline.Builder<>(1, topology, _clock), _clock);
 		}
@@ -36,10 +35,10 @@ public class PipelineCyclicSection<TEvent> {
 		
 		@SafeVarargs
 		public final CyclicPipelineSectionJoin<TEvent> join(PipelineSection<TEvent> first, PipelineSection<TEvent>...additional) {
-			PipelineSection<TEvent> cycleAsSection = new PipelineSection<>(0, _cycleConnector, _pipelineSegment, _clock);
-			Collection<PipelineSection<TEvent>> joinSections = ProcessingPipeline.getJoinSections(cycleAsSection, first, additional);
-			ProcessingPipeline.PipelineSectionJoin<TEvent> sectionJoin = new ProcessingPipeline.PipelineSectionJoin<>(joinSections, _clock);
-			return new CyclicPipelineSectionJoin<>(sectionJoin, _clock);
+			ArrayList<PipelineSection<TEvent>> sections = new ArrayList<>(Arrays.asList(additional));
+			sections.add(0, first);
+			ProcessingPipeline.PipelineSectionJoin<TEvent> sectionJoin = new ProcessingPipeline.PipelineSectionJoin<>(sections, _clock);
+			return new CyclicPipelineSectionJoin<>(_cycleConnector, sectionJoin, _clock);
 		}
 		
 	}
@@ -108,8 +107,9 @@ public class PipelineCyclicSection<TEvent> {
 		private final PipelineSegment<TEvent> _cycleLink;
 		private final ProcessingPipeline.PipelineSectionJoin<TEvent> _pipelineSectionJoin;
 		private final Clock _clock;
+		private final RingBuffer<TEvent> _cyclicConnector;
 		
-		private final boolean _linkCreated;
+		private final boolean _createLink;
 		
 		CyclicPipelineSectionJoin(
 				PipelineSegment<TEvent> cycleLink,
@@ -118,21 +118,27 @@ public class PipelineCyclicSection<TEvent> {
 			_cycleLink = cycleLink;
 			_pipelineSectionJoin = pipelineSectionJoin;
 			_clock = clock;
-			_linkCreated = false;
+			_createLink = false;
+			_cyclicConnector = null;
 		}
 		
 		CyclicPipelineSectionJoin(
+				RingBuffer<TEvent> cycleConnector,
 				ProcessingPipeline.PipelineSectionJoin<TEvent> pipelineSectionJoin,
 				Clock clock) {
 			_cycleLink = null;
 			_pipelineSectionJoin = pipelineSectionJoin;
 			_clock = clock;
-			_linkCreated = true;
+			_createLink = true;
+			_cyclicConnector = cycleConnector;
 		}
 		
 		public CyclicBuilder<TEvent> into(ConsumingPipelineProcess<TEvent> process) {
-			if (_linkCreated) {
-				PipelineSegment<TEvent> cycleSegment = _pipelineSectionJoin.createSegment(process);
+			if (_createLink) {
+				PipelineSegment<TEvent> cycleSegment = new CyclicPipelineSegment<>(_cyclicConnector, _pipelineSectionJoin._connectors, process, _clock);
+				for (RingBuffer<TEvent> connector : _pipelineSectionJoin._connectors) {
+					connector.setGatingSequences(process.getSequence());
+				}
 				PipelineTopology<TEvent> pipelineSection = _pipelineSectionJoin._pipeline.add(_pipelineSectionJoin._layerIndex, cycleSegment);
 				return new CyclicBuilder<>(_cycleLink, new ProcessingPipeline.Builder<>(_pipelineSectionJoin._layerIndex + 1, pipelineSection, _clock), _clock);
 			} else {

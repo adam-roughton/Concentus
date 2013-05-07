@@ -31,7 +31,7 @@ class UpdateHandler {
 
 					@Override
 					public byte[] newInstance(Object[] initArgs) {
-						return new byte[Constants.MSG_BUFFER_LENGTH + 4];
+						return new byte[Constants.MSG_BUFFER_ENTRY_LENGTH + 4];
 					}
 				
 			}, new InitialiseDelegate<byte[]>() {

@@ -29,6 +29,7 @@ import com.adamroughton.concentus.ConcentusServiceState;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventProcessor;
 import com.adamroughton.concentus.disruptor.NonBlockingRingBufferReader;
 import com.adamroughton.concentus.disruptor.NonBlockingRingBufferWriter;
@@ -70,7 +71,7 @@ public class ClientHandlerService implements ConcentusService {
 	
 	private final RingBuffer<byte[]> _recvBuffer;
 	private final RingBuffer<byte[]> _routerSendBuffer;
-	private final RingBuffer<byte[]> _pubSendBuffer;
+	private final RingBuffer<byte[]> _pubBuffer;
 	private final RingBuffer<byte[]> _metricSendBuffer;
 	private ProcessingPipeline<byte[]> _pipeline;
 	
@@ -96,17 +97,24 @@ public class ClientHandlerService implements ConcentusService {
 		
 		_executor = Executors.newCachedThreadPool();
 		
-		_recvBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				new MultiThreadedClaimStrategy(1024 * 1024), 
+		Configuration config = concentusHandle.getConfig();
+		
+		int recvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "recv");
+		int routerSendBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "routerSend");
+		int pubBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "pub");
+		int metricBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "metric");
+		
+		_recvBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
+				new MultiThreadedClaimStrategy(recvBufferLength), 
 				new YieldingWaitStrategy());
-		_routerSendBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(1024 * 1024), 
+		_routerSendBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
+				new SingleThreadedClaimStrategy(routerSendBufferLength), 
 				new YieldingWaitStrategy());
-		_pubSendBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(1024 * 1024), 
+		_pubBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
+				new SingleThreadedClaimStrategy(pubBufferLength), 
 				new YieldingWaitStrategy());
-		_metricSendBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(2048), 
+		_metricSendBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
+				new SingleThreadedClaimStrategy(metricBufferLength), 
 				new BusySpinWaitStrategy());
 		_outgoingHeader = new OutgoingEventHeader(0, 2);
 		_incomingHeader = new IncomingEventHeader(0, 2);
@@ -115,7 +123,7 @@ public class ClientHandlerService implements ConcentusService {
 		 * Configure sockets
 		 */
 		// router socket
-		int routerPort = _concentusHandle.getConfig().getServices().get(SERVICE_TYPE).getPorts().get("input");
+		int routerPort = ConfigurationUtil.getPort(config, SERVICE_TYPE, "input");
 		SocketSettings routerSocketSetting = SocketSettings.create()
 				.bindToPort(routerPort);
 		_routerSocketId = _socketManager.create(ZMQ.ROUTER, routerSocketSetting);
@@ -130,7 +138,7 @@ public class ClientHandlerService implements ConcentusService {
 		_pubSocketId = _socketManager.create(ZMQ.PUB);
 		
 		// metric socket
-		int metricPort = _concentusHandle.getConfig().getServices().get(SERVICE_TYPE).getPorts().get("pub");
+		int metricPort = ConfigurationUtil.getPort(config, SERVICE_TYPE, "pub");
 		SocketSettings metricSocketSetting = SocketSettings.create()
 				.bindToPort(metricPort);
 		_metricSocketId = _socketManager.create(ZMQ.PUB, metricSocketSetting);
@@ -209,9 +217,9 @@ public class ClientHandlerService implements ConcentusService {
 		_metricPublisher = MessagingUtil.asSocketOwner(_metricSendBuffer, metricSendBarrier, new Publisher(_outgoingHeader), metricSocketPackageMutex);
 
 		// infrastructure for pub socket
-		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(_outgoingHeader, _pubSendBuffer);
+		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(_outgoingHeader, _pubBuffer);
 		SocketMutex pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
-		SequenceBarrier pubSendBarrier = _pubSendBuffer.newBarrier();
+		SequenceBarrier pubSendBarrier = _pubBuffer.newBarrier();
 		// event processing infrastructure
 		_processor = new ClientHandlerProcessor(
 				_concentusHandle.getClock(),
@@ -222,14 +230,14 @@ public class ClientHandlerService implements ConcentusService {
 				pubSendQueue, 
 				metricSendQueue,
 				_incomingHeader);
-		_publisher = MessagingUtil.asSocketOwner(_pubSendBuffer, pubSendBarrier,  new Publisher(_outgoingHeader), pubSocketPackageMutex);
+		_publisher = MessagingUtil.asSocketOwner(_pubBuffer, pubSendBarrier,  new Publisher(_outgoingHeader), pubSocketPackageMutex);
 		SequenceBarrier processorBarrier = _recvBuffer.newBarrier();
 		
 		// create processing pipeline
 		PipelineBranch<byte[]> metricSendBranch = ProcessingPipeline.startBranch(_metricSendBuffer, _concentusHandle.getClock())
 				.then(_metricPublisher)
 				.create();
-		PipelineBranch<byte[]> pubSendBranch = ProcessingPipeline.startBranch(_pubSendBuffer, _concentusHandle.getClock())
+		PipelineBranch<byte[]> pubSendBranch = ProcessingPipeline.startBranch(_pubBuffer, _concentusHandle.getClock())
 				.then(_publisher)
 				.create();
 		PipelineSection<byte[]> subRecvSection = ProcessingPipeline.<byte[]>build(_subListener, _concentusHandle.getClock())
@@ -255,8 +263,8 @@ public class ClientHandlerService implements ConcentusService {
 		}
 
 		// assuming only one publishes at any given time (i.e. the slave publishes to null)
-		int canonicalPubPort = _concentusHandle.getConfig().getServices().get(CanonicalStateService.SERVICE_TYPE).getPorts().get("pub");
-		int canonicalSubPort = _concentusHandle.getConfig().getServices().get(CanonicalStateService.SERVICE_TYPE).getPorts().get("sub");
+		int canonicalPubPort = ConfigurationUtil.getPort(_concentusHandle.getConfig(), CanonicalStateService.SERVICE_TYPE ,"pub");
+		int canonicalSubPort = ConfigurationUtil.getPort(_concentusHandle.getConfig(), CanonicalStateService.SERVICE_TYPE, "sub");
 		for (String canonicalStateAddress : canonicalStateAddresses) {
 			_socketManager.connectSocket(_subSocketId, String.format("%s:%d", canonicalStateAddress, canonicalPubPort));
 			_socketManager.connectSocket(_pubSocketId, String.format("%s:%d", canonicalStateAddress, canonicalSubPort));

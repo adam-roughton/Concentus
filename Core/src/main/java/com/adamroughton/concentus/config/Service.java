@@ -22,6 +22,7 @@ public class Service {
 	
 	private String _name;
 	private Map<String, Integer> _ports;
+	private Map<String, Integer> _messageBufferSizes;
 	
 	public String getName() {
 		return _name;
@@ -37,6 +38,14 @@ public class Service {
 	
 	public void setPorts(Map<String, Integer> ports) {
 		_ports = ports;
+	}
+	
+	public Map<String, Integer> getMessageBufferSizes() {
+		return _messageBufferSizes;
+	}
+	
+	public void setMessageBufferSizes(Map<String, Integer> messageBufferSizes) {
+		_messageBufferSizes = messageBufferSizes;
 	}
 	
 	public String toString() {

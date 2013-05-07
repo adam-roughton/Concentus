@@ -105,28 +105,28 @@ public class ClientProxy {
 		if (headActionId > 0) {
 			long tailActionId = headActionId - _actionIdMap.windowSize() + 1;
 			tailActionId = (tailActionId < 0)? 0: tailActionId;	
-			return binarySearchHighestMatch(_actionIdMap, clientHandlerInputId, tailActionId, headActionId);
+			return binarySearchHighestActionId(_actionIdMap, clientHandlerInputId, tailActionId, headActionId);
 		}
 		return -1;
 	}
 	
-	private static long binarySearchHighestMatch(SlidingWindowLongMap window, long key, long startIndex, long endIndex) {
-		if (startIndex > endIndex) {
+	private static long binarySearchHighestActionId(SlidingWindowLongMap window, long clientHandlerId, long startId, long endId) {
+		if (startId > endId) {
 			return -1;
 		} 
-		long midIndex = startIndex + (endIndex - startIndex) / 2;
-		long midValue = window.get(midIndex);
-		if (midValue == key) {
-			return key;
-		} else if (midValue < key) {
-			long nextHighestMatch = binarySearchHighestMatch(window, key, midIndex + 1, endIndex);
-			if (nextHighestMatch == -1) {
-				return midValue;
+		long midId = startId + (endId - startId) / 2;
+		long midClientHandlerId = window.get(midId);
+		if (midClientHandlerId == clientHandlerId) {
+			return midId;
+		} else if (midClientHandlerId < clientHandlerId) {
+			long nextHighestActionId = binarySearchHighestActionId(window, clientHandlerId, midId + 1, endId);
+			if (nextHighestActionId == -1) {
+				return midId;
 			} else {
-				return nextHighestMatch;
+				return nextHighestActionId;
 			}
 		} else {
-			return binarySearchHighestMatch(window, key, startIndex, midIndex - 1);
+			return binarySearchHighestActionId(window, clientHandlerId, startId, midId - 1);
 		}
 	}
 	

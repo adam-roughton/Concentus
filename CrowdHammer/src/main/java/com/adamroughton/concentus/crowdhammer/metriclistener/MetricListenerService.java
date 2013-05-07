@@ -29,6 +29,8 @@ import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
+import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
@@ -88,7 +90,9 @@ public class MetricListenerService implements CrowdHammerService {
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
 			ClusterWorkerHandle cluster) throws Exception {
 		LOG.info(String.format("Entering state %s", newClusterState.name()));
-		if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
+		if (newClusterState == CrowdHammerServiceState.INIT) {
+			onInit(cluster);
+		} else if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
 			onInitTest(cluster);
 		} else if (newClusterState == CrowdHammerServiceState.SET_UP_TEST) { 
 			onSetUpTest(cluster);
@@ -108,6 +112,10 @@ public class MetricListenerService implements CrowdHammerService {
 		return CrowdHammerServiceState.class;
 	}
 	
+	private void onInit(ClusterWorkerHandle cluster) {
+		_metricProcessor = new MetricEventProcessor(_header);
+	}
+	
 	private void onInitTest(ClusterWorkerHandle cluster) {
 		_socketManager = new SocketManager();
 		_subSocketId = _socketManager.create(ZMQ.SUB, _subSocketSettings);
@@ -119,13 +127,13 @@ public class MetricListenerService implements CrowdHammerService {
 	private void onSetUpTest(ClusterWorkerHandle cluster) {		
 		_socketManager.bindBoundSockets();
 		
-		_inputBuffer = new RingBuffer<>(Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(2048), new YieldingWaitStrategy());
+		Configuration config = _concentusHandle.getConfig();
+		int recvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "recv");
+		_inputBuffer = new RingBuffer<>(Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
+				new SingleThreadedClaimStrategy(recvBufferLength), new YieldingWaitStrategy());
 		
 		SocketMutex socketPackage = _socketManager.getSocketMutex(_subSocketId);
 		_eventListener = new EventListener(_header, socketPackage, _inputBuffer, _concentusHandle);
-		
-		_metricProcessor = new MetricEventProcessor(_header);
 		
 		_pipeline = ProcessingPipeline.<byte[]>build(_eventListener, _concentusHandle.getClock())
 				.thenConnector(_inputBuffer)

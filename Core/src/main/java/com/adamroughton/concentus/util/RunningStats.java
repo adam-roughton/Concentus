@@ -87,6 +87,7 @@ public class RunningStats {
 			_sumSqrs += sumSqrs + (meanDiff * meanDiff) * (_count * count / newN);
 			_min = (min < _min)? min : _min;
 			_max = (max > _max)? max : _max;
+			_count = newN;
 		}
 	}
 	

@@ -35,6 +35,8 @@ public final class Constants {
 	 */
 	public static final int CLIENT_ID_LENGTH = 8;
 	
-	public static final int MSG_BUFFER_LENGTH = 512;
+	public static final int MSG_BUFFER_ENTRY_LENGTH = 512;
+	
+	public static final int DEFAULT_MSG_BUFFER_SIZE = 2048;
 			
 }

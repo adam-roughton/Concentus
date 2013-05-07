@@ -27,6 +27,7 @@ import com.adamroughton.concentus.ConcentusService;
 import com.adamroughton.concentus.ConcentusServiceState;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventProcessor;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
@@ -48,7 +49,7 @@ import com.lmax.disruptor.YieldingWaitStrategy;
 
 import org.zeromq.*;
 
-import static com.adamroughton.concentus.Constants.MSG_BUFFER_LENGTH;
+import static com.adamroughton.concentus.Constants.MSG_BUFFER_ENTRY_LENGTH;
 import static com.adamroughton.concentus.util.Util.msgBufferFactory;
 
 public class CanonicalStateService implements ConcentusService {
@@ -77,12 +78,17 @@ public class CanonicalStateService implements ConcentusService {
 	public CanonicalStateService(ConcentusHandle<? extends Configuration> concentusHandle) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_socketManager = new SocketManager();
+
+		Configuration config = concentusHandle.getConfig();
 		
-		_inputBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(1024 * 1024), new YieldingWaitStrategy());
+		int recvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "recv");
+		int pubBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "pub");
 		
-		_outputBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(1024 * 1024), new YieldingWaitStrategy());
+		_inputBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
+				new SingleThreadedClaimStrategy(recvBufferLength), new YieldingWaitStrategy());
+		
+		_outputBuffer = new RingBuffer<>(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
+				new SingleThreadedClaimStrategy(pubBufferLength), new YieldingWaitStrategy());
 		
 		_pubHeader = new OutgoingEventHeader(0, 2);
 		_subHeader = new IncomingEventHeader(0, 2);
@@ -112,7 +118,7 @@ public class CanonicalStateService implements ConcentusService {
 		 * Configure sockets
 		 */
 		// sub socket
-		int subPort = _concentusHandle.getConfig().getServices().get(SERVICE_TYPE).getPorts().get("sub");
+		int subPort = ConfigurationUtil.getPort(config, SERVICE_TYPE, "sub");
 		SocketSettings subSocketSettings = SocketSettings.create()
 				.bindToPort(subPort)
 				.setHWM(1000)
@@ -120,7 +126,7 @@ public class CanonicalStateService implements ConcentusService {
 		_subSocketId = _socketManager.create(ZMQ.SUB, subSocketSettings);
 		
 		// pub socket
-		int pubPort = _concentusHandle.getConfig().getServices().get(SERVICE_TYPE).getPorts().get("pub");
+		int pubPort = ConfigurationUtil.getPort(config, SERVICE_TYPE, "pub");
 		SocketSettings pubSocketSettings = SocketSettings.create()
 				.bindToPort(pubPort)
 				.setHWM(1000);

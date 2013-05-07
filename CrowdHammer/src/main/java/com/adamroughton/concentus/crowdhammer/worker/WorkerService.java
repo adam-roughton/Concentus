@@ -28,6 +28,7 @@ import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
+import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
@@ -172,17 +173,22 @@ public final class WorkerService implements CrowdHammerService {
 		
 		_socketManager.bindBoundSockets();
 		
+		CrowdHammerConfiguration config = _concentusHandle.getConfig();
+		int routerRecvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "routerRecv");
+		int routerSendBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "routerSend");
+		int metricBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "metric");
+		
 		_clientRecvBuffer = new RingBuffer<>(
-				Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(1024 * 1024), 
+				Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
+				new SingleThreadedClaimStrategy(routerRecvBufferLength), 
 				new YieldingWaitStrategy());
 		_clientSendBuffer = new RingBuffer<>(
-				Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(1024 * 1024), 
+				Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
+				new SingleThreadedClaimStrategy(routerSendBufferLength), 
 				new YieldingWaitStrategy());
 		_metricSendBuffer = new RingBuffer<>(
-				Util.msgBufferFactory(Constants.MSG_BUFFER_LENGTH), 
-				new SingleThreadedClaimStrategy(2048), 
+				Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
+				new SingleThreadedClaimStrategy(metricBufferLength), 
 				new YieldingWaitStrategy());
 		
 		// infrastructure for client socket
