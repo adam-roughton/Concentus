@@ -180,7 +180,7 @@ public class SendRecvSocketReactor implements EventProcessor {
 		_sendBufferReader.getBarrier().alert();
 		Thread processorThread = _processorThread;
 		if (wasRunning && processorThread != null) {
-			_processorThread.interrupt();
+			processorThread.interrupt();
 		}
 	}
 	
