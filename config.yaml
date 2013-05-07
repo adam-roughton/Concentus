@@ -10,16 +10,26 @@ services:
     ports:
       pub: 9000
       sub: 9001
+    messageBufferSizes:
+      recv: 1048576
+      pub: 1048576
     
   ClientHandler:
     ports:
       input: 10000
       pub: 10001
-            
-  MetricListener:
+    messageBufferSizes:
+      recv: 1048576
+      routerSend: 1048576
+      pub: 1048576
+  
+  CrowdHammerWorker:
     ports:
-      input: 11000
+      pub: 12000
+    messageBufferSizes:
+      routerRecv: 1048576
+      routerSend: 1048576
             
 crowdHammer:
   # the amount of time to test during each test execution phase
-  testRunDurationInSeconds: 60
+  testRunDurationInSeconds: 120

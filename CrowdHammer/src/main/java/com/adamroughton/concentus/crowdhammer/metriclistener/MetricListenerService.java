@@ -35,6 +35,7 @@ import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.concentus.crowdhammer.messaging.events.TestEventType;
+import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
@@ -78,9 +79,7 @@ public class MetricListenerService implements CrowdHammerService {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_header = new IncomingEventHeader(0, 2);
 		
-		int testMetricsSubPort = _concentusHandle.getConfig().getServices().get(SERVICE_TYPE).getPorts().get("input");
 		_subSocketSettings = SocketSettings.create()
-				.bindToPort(testMetricsSubPort)
 				.subscribeTo(EventType.STATE_METRIC)
 				.subscribeTo(TestEventType.WORKER_METRIC.getId())
 				.subscribeTo(EventType.CLIENT_HANDLER_METRIC.getId());
@@ -140,8 +139,6 @@ public class MetricListenerService implements CrowdHammerService {
 				.then(new BatchEventProcessor<>(_inputBuffer, _inputBuffer.newBarrier(), _metricProcessor))
 				.createPipeline(_executor);
 						
-		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _concentusHandle.getNetworkAddress().getHostAddress()));
-		
 		// get client count
 		int cursor = 0;
 		byte[] assignment = cluster.getAssignment(SERVICE_TYPE);
@@ -162,13 +159,19 @@ public class MetricListenerService implements CrowdHammerService {
 	}
 	
 	private void onConnectSUT(ClusterWorkerHandle cluster) {
-		int canoncicalPubPort = _concentusHandle.getConfig().getServices().get(CanonicalStateService.SERVICE_TYPE).getPorts().get("pub");
+		CrowdHammerConfiguration config = _concentusHandle.getConfig();
+		
+		int canoncicalPubPort = ConfigurationUtil.getPort(config, CanonicalStateService.SERVICE_TYPE, "pub");
 		for (String service : cluster.getAllServices(CanonicalStateService.SERVICE_TYPE)) {
 			_sutMetricConnIdSet.add(_socketManager.connectSocket(_subSocketId, String.format("%s:%d", service, canoncicalPubPort)));
 		}
-		int clientHandlerPubPort = _concentusHandle.getConfig().getServices().get(ClientHandlerService.SERVICE_TYPE).getPorts().get("pub");
+		int clientHandlerPubPort = ConfigurationUtil.getPort(config, ClientHandlerService.SERVICE_TYPE, "pub");
 		for (String service : cluster.getAllServices(ClientHandlerService.SERVICE_TYPE)) {
 			_sutMetricConnIdSet.add(_socketManager.connectSocket(_subSocketId, String.format("%s:%d", service, clientHandlerPubPort)));
+		}
+		int workerPubPort = ConfigurationUtil.getPort(config, WorkerService.SERVICE_TYPE, "pub");
+		for (String service : cluster.getAllServices(WorkerService.SERVICE_TYPE)) {
+			_sutMetricConnIdSet.add(_socketManager.connectSocket(_subSocketId, String.format("%s:%d", service, workerPubPort)));
 		}
 		
 		_pipeline.start();

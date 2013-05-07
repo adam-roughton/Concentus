@@ -32,6 +32,7 @@ import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
+import com.adamroughton.concentus.crowdhammer.messaging.events.TestEventType;
 import com.adamroughton.concentus.crowdhammer.metriclistener.MetricListenerService;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventProcessor;
 import com.adamroughton.concentus.disruptor.NonBlockingRingBufferReader;
@@ -46,6 +47,8 @@ import com.adamroughton.concentus.messaging.SendRecvSocketReactor;
 import com.adamroughton.concentus.messaging.SocketManager;
 import com.adamroughton.concentus.messaging.SocketMutex;
 import com.adamroughton.concentus.messaging.SocketPollInSet;
+import com.adamroughton.concentus.messaging.SocketSettings;
+import com.adamroughton.concentus.messaging.events.EventType;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.pipeline.PipelineBranch;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
@@ -156,7 +159,10 @@ public final class WorkerService implements CrowdHammerService {
 		cluster.requestAssignment(SERVICE_TYPE, reqBytes);
 
 		// metric socket
-		_metricPubSocketId = _socketManager.create(ZMQ.PUB);
+		int metricsPubPort = ConfigurationUtil.getPort(_concentusHandle.getConfig(), SERVICE_TYPE, "pub");
+		SocketSettings metricSocketSettings = SocketSettings.create()
+				.bindToPort(metricsPubPort);
+		_metricPubSocketId = _socketManager.create(ZMQ.PUB, metricSocketSettings);
 	}
 
 	private void setUpTest(ClusterWorkerHandle cluster) throws Exception {
@@ -220,9 +226,7 @@ public final class WorkerService implements CrowdHammerService {
 				.attachBranch(metricSendBranch)
 				.completeCycle(_executor);
 		
-		String metricListenerConnString = cluster.getServiceAtRandom(MetricListenerService.SERVICE_TYPE);
-		int metricSubPort = _concentusHandle.getConfig().getServices().get(MetricListenerService.SERVICE_TYPE).getPorts().get("input");
-		_socketManager.connectSocket(_metricPubSocketId, String.format("%s:%d", metricListenerConnString, metricSubPort));
+		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _concentusHandle.getNetworkAddress().getHostAddress()));
 	}
 	
 	private void startSUT(ClusterWorkerHandle cluster) throws Exception {
