@@ -60,9 +60,9 @@ else
 	ZOO_KEEPER_ADDRESS="127.0.0.1"
 fi
 
-# go to the working directory
+# go to the working directory (where this script is located)
 pushd .
-cd `dirname $0`/..
+cd `dirname $0`
 
 if [[ $1 = "Coordinator" ]]; then
    # start ZooKeeper
