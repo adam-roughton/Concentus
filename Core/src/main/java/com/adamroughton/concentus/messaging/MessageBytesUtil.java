@@ -78,22 +78,17 @@ public final class MessageBytesUtil {
 		_unsafe.putByte(array, BYTE_ARRAY_OFFSET + fieldOffset, field);
 	}
 	
-	private static long getFieldOffset(long fieldOffset, int fieldByteLength, int flagOffset) {
-		long fieldOffsetForFlag = (flagOffset / 8) + fieldOffset;
-		if (fieldOffsetForFlag >= fieldOffset + fieldByteLength)
-			throw new IllegalArgumentException(String.format("The required field offset for flag %d is %d, " +
-					"which is outside the bounds of the field {%d, %d}.", 
-					flagOffset, fieldOffsetForFlag, fieldOffset, fieldOffset + fieldByteLength - 1));
-		return fieldOffsetForFlag;
+	private static long getFieldOffset(long fieldOffset, int flagOffset) {
+		return (flagOffset / 8) + fieldOffset;
 	}
 	
 	public static boolean readFlag(byte[] array, long fieldOffset, int fieldByteLength, int flagOffset) {
-		long fieldOffsetForFlag = getFieldOffset(fieldOffset, fieldByteLength, flagOffset);	
+		long fieldOffsetForFlag = getFieldOffset(fieldOffset, flagOffset);	
 		return readFlagFromByte(array, fieldOffsetForFlag, flagOffset % 8);
 	}
 	
 	public static void writeFlag(byte[] array, long fieldOffset, int fieldByteLength, int flagOffset, boolean raised) {
-		long fieldOffsetForFlag = getFieldOffset(fieldOffset, fieldByteLength, flagOffset);	
+		long fieldOffsetForFlag = getFieldOffset(fieldOffset, flagOffset);	
 		writeFlagToByte(array, fieldOffsetForFlag, flagOffset % 8, raised);
 	}
 	
@@ -217,5 +212,20 @@ public final class MessageBytesUtil {
 		int[] res = new int[arraySize];
 		
 	}*/
+	
+	public static void clear(byte[] event, int offset, int length) {
+		int lastHeaderByte = offset + length - 1;
+		while (offset + 7 <= lastHeaderByte) {
+			MessageBytesUtil.writeLong(event, offset, 0);
+			offset += 8;
+		}
+		while (offset + 3 <= lastHeaderByte) {
+			MessageBytesUtil.writeInt(event, offset, 0);
+			offset += 4;
+		}
+		while (offset <= lastHeaderByte) {
+			event[offset++] = 0;
+		}
+	}
 	
 }

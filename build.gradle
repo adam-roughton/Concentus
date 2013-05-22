@@ -111,7 +111,8 @@ subprojects {
 	}
 
 	dependencies {
-		testCompile 'junit:junit:4.5', 'org.mockito:mockito-core:1.9.5'
+		testCompile 'junit:junit:4.5', 'org.mockito:mockito-core:1.9.5', 'com.google.caliper:caliper:1.0-beta-1'
+		testCompile 'com.sun.jersey:jersey-core:1.11' // transitive dependency from caliper, though not pulled by gradle due to pom format on jersey-client
 	}
 	
 	task sourcesJar(type: Jar) {
@@ -147,7 +148,7 @@ project(':Core') {
 	dependencies {
 		compile 'com.googlecode.disruptor:disruptor:2.10.4'
 		compile 'com.google.guava:guava:14.0'
-		compile 'org.zeromq:jzmq:2.1.2'
+		compile 'org.zeromq:jzmq:2.1.3'
 		compile 'com.esotericsoftware.kryo:kryo:2.20'
 		compile 'com.esotericsoftware.minlog:minlog:1.2'
 		compile 'com.netflix.curator:curator-recipes:1.3.2' // pulls in zookeeper as well
@@ -165,17 +166,32 @@ project(':Core') {
 		args "50000"
 		workingDir rootProject.workingDir
 	}
+	
+	task testJar(type: Jar, dependsOn: testClasses) {
+		baseName = "test-${project.archivesBaseName}"
+		from sourceSets.test.output
+	}
+	
+	configurations {
+		tests
+	}
+	
+	artifacts {
+		tests testJar
+	}
 }
 
 project(':Service') {
 	dependencies {
 		compile project(':Core')
+		testCompile project(path: ':Core', configuration: 'tests')
 	}
 }
 
 project(':CrowdHammer') {
 	dependencies {
 		compile project(':Service')
+		testCompile project(path: ':Core', configuration: 'tests')
 	}
 	
 	def createLocalExecWorkerClosure = { serviceClassName, serviceArgs ->

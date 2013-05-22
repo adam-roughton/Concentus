@@ -156,23 +156,24 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 		_clientCount = clientCount;
 		
 		_workerMetrics = new StructuredSlidingWindowMap<WorkerMetricEntry>(128, 
+				WorkerMetricEntry.class,
 				new ComponentFactory<WorkerMetricEntry>() {
 
-			@Override
-			public WorkerMetricEntry newInstance(Object[] initArgs) {
-				return new WorkerMetricEntry();
-			}
-		}, new InitialiseDelegate<WorkerMetricEntry>() {
-
-			@Override
-			public void initialise(WorkerMetricEntry content) {
-				content.clientCount = 0;
-				content.workersXor = workersXor;
-				content.lateInputResCount = 0;
-				content.inputToUpdateLatency = null;
-			}
-			
-		});
+					@Override
+					public WorkerMetricEntry newInstance(Object[] initArgs) {
+						return new WorkerMetricEntry();
+					}
+				}, new InitialiseDelegate<WorkerMetricEntry>() {
+		
+					@Override
+					public void initialise(WorkerMetricEntry content) {
+						content.clientCount = 0;
+						content.workersXor = workersXor;
+						content.lateInputResCount = 0;
+						content.inputToUpdateLatency = null;
+					}
+					
+				});
 	}
 	
 	private void processStateMetric(final StateMetricEvent event) {
@@ -191,12 +192,7 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 	private void processWorkerMetric(final WorkerMetricEvent event) {
 		long bucketId = event.getMetricBucketId();
 		
-		RunningStats inputToActionLatencyStats = new RunningStats(
-				event.getInputToUpdateLatencyCount(),
-				event.getInputToUpdateLatencyMean(),
-				event.getInputToUpdateLatencySumSqrs(),
-				event.getInputToUpdateLatencyMin(),
-				event.getInputToUpdateLatencyMax());
+		RunningStats inputToActionLatencyStats = event.getInputToUpdateLatency();
 		
 		WorkerMetricEntry metricEntry = _workerMetrics.get(bucketId);
 		metricEntry.clientCount += event.getConnectedClientCount();
@@ -289,14 +285,16 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 	//TODO hack just to get the file for now
 	public void endOfTest() {
 		try {
-			_latencyFileWriter.append(String.format("%d,%f,%f,%f,%f,%d\n", 
-					_clientCount,
-					_inputToUpdateLatency.getMean(), 
-					_inputToUpdateLatency.getStandardDeviation(),
-					_inputToUpdateLatency.getMin(),
-					_inputToUpdateLatency.getMax(),
-					_lateInputUpdateCount
-					));
+			if (_inputToUpdateLatency != null) {
+				_latencyFileWriter.append(String.format("%d,%f,%f,%f,%f,%d\n", 
+						_clientCount,
+						_inputToUpdateLatency.getMean(), 
+						_inputToUpdateLatency.getStandardDeviation(),
+						_inputToUpdateLatency.getMin(),
+						_inputToUpdateLatency.getMax(),
+						_lateInputUpdateCount
+						));
+			}
 			_latencyFileWriter.flush();
 		} catch (IOException e) {
 			throw new RuntimeException(e);

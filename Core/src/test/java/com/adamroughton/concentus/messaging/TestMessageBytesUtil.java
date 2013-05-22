@@ -536,11 +536,6 @@ public class TestMessageBytesUtil {
 		assertEquals(0x1, 0xFF & array[0]);
 	}
 	
-	@Test(expected=IllegalArgumentException.class)
-	public void testReadFlag_FlagOutOfRange() {
-		MessageBytesUtil.readFlag(new byte[2], 0, 2, 16);
-	}
-	
 	@Test
 	public void testReadFlag_AllRaised() {
 		byte[] array = new byte[16];

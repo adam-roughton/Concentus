@@ -16,20 +16,21 @@
 package com.adamroughton.concentus.messaging;
 
 import java.util.Objects;
-import com.adamroughton.concentus.messaging.MessagingUtil.SocketDependentEventHandler;
 
-public class Publisher implements SocketDependentEventHandler<byte[], SocketPackage> {
+import com.adamroughton.concentus.messaging.MessagingUtil.MessengerDependentEventHandler;
+
+public class Publisher implements MessengerDependentEventHandler<byte[]> {
 
 	private final OutgoingEventHeader _header;
 	
-	public Publisher(final OutgoingEventHeader header) {
+	public Publisher(OutgoingEventHeader header) {
 		_header = Objects.requireNonNull(header);
 	}
 
 	@Override
-	public void onEvent(byte[] event, long sequence, boolean endOfBatch, SocketPackage socketPackage)
+	public void onEvent(byte[] event, long sequence, boolean endOfBatch, Messenger messenger)
 			throws Exception {
-		Messaging.send(socketPackage, event, _header, true);
+		messenger.send(event, _header, true);
 	}
 
 }

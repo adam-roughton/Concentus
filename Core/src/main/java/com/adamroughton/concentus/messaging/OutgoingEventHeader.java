@@ -24,9 +24,14 @@ package com.adamroughton.concentus.messaging;
 public class OutgoingEventHeader extends EventHeader {
 	
 	private static final int NEXT_SEGMENT_LENGTH = 4;
+	private static final int SENT_TIME_LENGTH = 8;
+	private static final int TARGET_SOCKET_ID_LENGTH = 4;
+	private static final int ADDITIONAL_LENGTH = NEXT_SEGMENT_LENGTH + SENT_TIME_LENGTH + TARGET_SOCKET_ID_LENGTH;
 	private static final int FLAG_COUNT = 1;
 	
 	private final int _nextSegmentOffset;
+	private final int _sentTimeOffset;
+	private final int _targetSocketIdOffset;
 	private final int _isPartiallySentFlagIndex;
 	
 	public OutgoingEventHeader(final int startOffset, final int segmentCount) {
@@ -34,8 +39,10 @@ public class OutgoingEventHeader extends EventHeader {
 	}
 	
 	protected OutgoingEventHeader(final int startOffset, final int segmentCount, final int additionalLength, final int additionalFlagCount) {
-		super(startOffset, segmentCount, additionalLength + NEXT_SEGMENT_LENGTH, additionalFlagCount + FLAG_COUNT);
+		super(startOffset, segmentCount, additionalLength + ADDITIONAL_LENGTH, additionalFlagCount + FLAG_COUNT);
 		_nextSegmentOffset = super.getAdditionalOffset();
+		_sentTimeOffset = super.getAdditionalOffset() + NEXT_SEGMENT_LENGTH;
+		_targetSocketIdOffset = _sentTimeOffset + SENT_TIME_LENGTH;
 		_isPartiallySentFlagIndex = super.getAdditionalFlagsStartIndex();
 	}
 	
@@ -46,7 +53,7 @@ public class OutgoingEventHeader extends EventHeader {
 	
 	@Override
 	protected int getAdditionalOffset() {
-		return super.getAdditionalOffset() + NEXT_SEGMENT_LENGTH;
+		return super.getAdditionalOffset() + ADDITIONAL_LENGTH;
 	}
 
 	public final boolean isPartiallySent(byte[] event) {
@@ -63,6 +70,22 @@ public class OutgoingEventHeader extends EventHeader {
 	
 	public final void setNextSegmentToSend(byte[] event, int segmentIndex) {
 		MessageBytesUtil.writeInt(event, _nextSegmentOffset, segmentIndex);
+	}
+	
+	public final int getTargetSocketId(byte[] event) {
+		return MessageBytesUtil.readInt(event, _targetSocketIdOffset);
+	}
+	
+	public final void setTargetSocketId(byte[] event, int socketId) {
+		MessageBytesUtil.writeInt(event, _targetSocketIdOffset, socketId);
+	}
+	
+	public final long getSentTime(byte[] event) {
+		return MessageBytesUtil.readLong(event, _sentTimeOffset);
+	}
+	
+	public final void setSentTime(byte[] event, long sentTime) {
+		MessageBytesUtil.writeLong(event, _sentTimeOffset, sentTime);
 	}
 	
 }

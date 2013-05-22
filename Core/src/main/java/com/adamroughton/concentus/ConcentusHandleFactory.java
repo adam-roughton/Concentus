@@ -24,6 +24,9 @@ import org.apache.commons.cli.Option;
 import org.apache.commons.cli.OptionBuilder;
 
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.SocketManagerImpl;
+import com.adamroughton.concentus.messaging.zmq.TrackingSocketManagerDecorator;
 import com.adamroughton.concentus.util.Util;
 
 public class ConcentusHandleFactory {
@@ -54,7 +57,15 @@ public class ConcentusHandleFactory {
 	}
 
 	public static <TConfig extends Configuration> ConcentusHandle<TConfig> createHandle(Class<TConfig> configType, Map<String, String> cmdLineValues) {
-		Clock clock = new DefaultClock();
+		final Clock clock = new DefaultClock();
+		
+		InstanceFactory<SocketManager> socketManagerFactory = new InstanceFactory<SocketManager>() {
+			
+			@Override
+			public SocketManager newInstance() {
+				return new TrackingSocketManagerDecorator(new SocketManagerImpl(clock), clock);
+			}
+		};
 		
 		String configPath = cmdLineValues.get(PROPERTIES_FILE_OPTION);
 		TConfig config = Util.readConfig(configType, configPath);
@@ -76,7 +87,7 @@ public class ConcentusHandleFactory {
 					String.format("The ZooKeeper App Root '%s' was not a valid root path " +
 							"(can be '/' or '/[A-Za-z0-9]+')", zooKeeperRoot));
 		}		
-		return new ConcentusHandle<TConfig>(clock, config, networkAddress, zooKeeperAddress);
+		return new ConcentusHandle<TConfig>(socketManagerFactory, clock, config, networkAddress, zooKeeperAddress);
 	}
 
 }

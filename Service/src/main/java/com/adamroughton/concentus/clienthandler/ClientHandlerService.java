@@ -37,17 +37,18 @@ import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.MessagingUtil;
+import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
-import com.adamroughton.concentus.messaging.SendRecvSocketReactor;
-import com.adamroughton.concentus.messaging.SocketManager;
-import com.adamroughton.concentus.messaging.SocketMutex;
-import com.adamroughton.concentus.messaging.SocketSettings;
+import com.adamroughton.concentus.messaging.SendRecvMessengerReactor;
 import com.adamroughton.concentus.messaging.events.EventType;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.pipeline.PipelineBranch;
 import com.adamroughton.concentus.pipeline.PipelineSection;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
+import com.adamroughton.concentus.util.Mutex;
 import com.lmax.disruptor.BusySpinWaitStrategy;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.MultiThreadedClaimStrategy;
@@ -79,7 +80,7 @@ public class ClientHandlerService implements ConcentusService {
 	private final IncomingEventHeader _incomingHeader; // both router and sub can share the same header
 	
 	private EventListener _subListener;
-	private SendRecvSocketReactor _routerReactor;
+	private SendRecvMessengerReactor _routerReactor;
 	private ClientHandlerProcessor _processor;
 	private EventProcessor _publisher;
 	private EventProcessor _metricPublisher;
@@ -93,7 +94,7 @@ public class ClientHandlerService implements ConcentusService {
 
 	public ClientHandlerService(ConcentusHandle<? extends Configuration> concentusHandle) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
-		_socketManager = new SocketManager();
+		_socketManager = _concentusHandle.newSocketManager();
 		
 		_executor = Executors.newCachedThreadPool();
 		
@@ -190,20 +191,20 @@ public class ClientHandlerService implements ConcentusService {
 					"instead had length %d", assignment.length));
 		_clientHandlerId = MessageBytesUtil.readInt(assignment, 0);
 		
-		_socketManager.bindBoundSockets();
-		
 		// infrastructure for router socket
 		SendQueue<OutgoingEventHeader> routerSendQueue = new SendQueue<>(_outgoingHeader, _routerSendBuffer);
-		SocketMutex routerSocketPackageMutex = _socketManager.getSocketMutex(_routerSocketId);
+		Mutex<Messenger> routerSocketPackageMutex = _socketManager.getSocketMutex(_routerSocketId);
 		SequenceBarrier routerSendBarrier = _routerSendBuffer.newBarrier();
-		_routerReactor = new SendRecvSocketReactor(
+		_routerReactor = new SendRecvMessengerReactor(
+				routerSocketPackageMutex, 
+				_outgoingHeader, 
+				_incomingHeader,
 				new NonBlockingRingBufferWriter<>(_recvBuffer),
 				new NonBlockingRingBufferReader<>(_routerSendBuffer, routerSendBarrier), 
 				_concentusHandle);
-		_routerReactor.configure(routerSocketPackageMutex, _outgoingHeader, _incomingHeader);
 		
 		// infrastructure for sub socket
-		SocketMutex subSocketPackageMutex = _socketManager.getSocketMutex(_subSocketId);
+		Mutex<Messenger> subSocketPackageMutex = _socketManager.getSocketMutex(_subSocketId);
 		_subListener = new EventListener(
 				_incomingHeader,
 				subSocketPackageMutex, 
@@ -212,13 +213,13 @@ public class ClientHandlerService implements ConcentusService {
 		
 		// infrastructure for metric socket
 		SendQueue<OutgoingEventHeader> metricSendQueue = new SendQueue<>(_outgoingHeader, _metricSendBuffer);
-		SocketMutex metricSocketPackageMutex = _socketManager.getSocketMutex(_metricSocketId);
+		Mutex<Messenger> metricSocketPackageMutex = _socketManager.getSocketMutex(_metricSocketId);
 		SequenceBarrier metricSendBarrier = _metricSendBuffer.newBarrier();
 		_metricPublisher = MessagingUtil.asSocketOwner(_metricSendBuffer, metricSendBarrier, new Publisher(_outgoingHeader), metricSocketPackageMutex);
 
 		// infrastructure for pub socket
 		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(_outgoingHeader, _pubBuffer);
-		SocketMutex pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
+		Mutex<Messenger> pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
 		SequenceBarrier pubSendBarrier = _pubBuffer.newBarrier();
 		// event processing infrastructure
 		_processor = new ClientHandlerProcessor(

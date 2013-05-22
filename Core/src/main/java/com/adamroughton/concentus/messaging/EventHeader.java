@@ -119,4 +119,8 @@ public abstract class EventHeader {
 		return _length;
 	}
 	
+	public final void reset(byte[] event) {
+		MessageBytesUtil.clear(event, _startOffset, _length);
+	}
+	
 }

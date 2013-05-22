@@ -1,3 +1,18 @@
+/*
+ * Copyright 2013 Adam Roughton
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.adamroughton.concentus.util;
 
 import java.util.Objects;
@@ -19,7 +34,8 @@ import uk.co.real_logic.intrinsics.StructuredArray;
 public class StructuredSlidingWindowMap<T> {
 		
 	private final int _mask;
-	private final StructuredArray<Entry> _window;
+	private final boolean[] _contentFlags;
+	private final StructuredArray<T> _window;
 	private final InitialiseDelegate<T> _initialiseDelegate;
 	
 	private long _currentIndex = -1;
@@ -29,12 +45,14 @@ public class StructuredSlidingWindowMap<T> {
 	 * @param windowLength the window length, which must be a power of 2
 	 */
 	public StructuredSlidingWindowMap(final int windowLength, 
+			Class<T> dataType,
 			ComponentFactory<T> dataFactory, 
 			InitialiseDelegate<T> initialiseDelegate) {
 		if (Integer.bitCount(windowLength) != 1)
 			throw new IllegalArgumentException("The window length must be a power of 2");
 		_mask = windowLength - 1;
-		_window = StructuredArray.newInstance(windowLength, Entry.class, new EntryFactory<T>(dataFactory));
+		_contentFlags = new boolean[windowLength];
+		_window = StructuredArray.newInstance(windowLength, dataType, dataFactory);
 		_initialiseDelegate = Objects.requireNonNull(initialiseDelegate);
 	}
 	
@@ -61,17 +79,16 @@ public class StructuredSlidingWindowMap<T> {
 			// go through skipped indices and set each one to invalid
 			for (long i = _currentIndex - skippedCount; i < _currentIndex; i++) {
 				if (i >= 0) {
-					_window.get((int) (i & _mask)).isValid = false;
+					_contentFlags[(int) (i & _mask)] = false;
 				}
 			}
 		} 
 	}
 	
-	@SuppressWarnings("unchecked")
 	private void prepareEntry(long index) {
-		Entry entry = _window.get((int)index & _mask);
-		_initialiseDelegate.initialise((T)entry.content);
-		entry.isValid = true;
+		int windowIndex = (int)index & _mask;
+		_initialiseDelegate.initialise(_window.get(windowIndex));
+		_contentFlags[windowIndex] = true;
 	}
 	
 	/**
@@ -82,9 +99,8 @@ public class StructuredSlidingWindowMap<T> {
 	 * @param index the key
 	 * @return the data associated with the given index
 	 */
-	@SuppressWarnings("unchecked")
 	public final T get(long index) {
-		return (T) _window.get((int)index & _mask).content;
+		return _window.get((int)index & _mask);
 	}
 	
 	public final long getHeadIndex() {
@@ -94,7 +110,7 @@ public class StructuredSlidingWindowMap<T> {
 	public final boolean remove(long index) {
 		boolean hasEntry = containsIndex(index);
 		if (hasEntry) {
-			_window.get(index & _mask).isValid = false;
+			_contentFlags[(int)index & _mask] = false;
 		}
 		return hasEntry;
 	}
@@ -122,31 +138,14 @@ public class StructuredSlidingWindowMap<T> {
 	
 	public final boolean containsIndex(long index) {
 		int relIndex = (int) (_currentIndex - index);
-		return relIndex >= 0 && relIndex < _window.getLength() && _window.get((int)(index & _mask)).isValid;
+		return relIndex >= 0 && relIndex < _window.getLength() && _contentFlags[(int)(index & _mask)];
 	}
 	
-	// wrapper classes for signalling the validity of entries in the window
-	
-	private static class Entry {
-		public Object content;
-		public boolean isValid = false;
-	}
-	
-	private static class EntryFactory<T> implements ComponentFactory<Entry> {
-
-		private final ComponentFactory<T> _wrappedComponentFactory;
-		
-		public EntryFactory(ComponentFactory<T> wrappedComponentFactory) {
-			_wrappedComponentFactory = wrappedComponentFactory;
+	public final void clear() {
+		for (int i = 0; i < _window.getLength(); i++) {
+			_contentFlags[i] = false;
+			_initialiseDelegate.initialise(_window.get(i));
 		}
-		
-		@Override
-		public Entry newInstance(Object[] initArgs) {
-			Entry entry = new Entry();
-			entry.isValid = false;
-			entry.content = _wrappedComponentFactory.newInstance(initArgs);
-			return entry;
-		}
-		
+		_currentIndex = -1;
 	}
 }

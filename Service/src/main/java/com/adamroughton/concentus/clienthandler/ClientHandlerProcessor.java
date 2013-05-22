@@ -15,17 +15,12 @@
  */
 package com.adamroughton.concentus.clienthandler;
 
-import it.unimi.dsi.fastutil.longs.Long2ObjectArrayMap;
-import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
-import it.unimi.dsi.fastutil.longs.Long2ObjectRBTreeMap;
-
 import java.util.Objects;
 
 import uk.co.real_logic.intrinsics.ComponentFactory;
 import uk.co.real_logic.intrinsics.StructuredArray;
 
 import com.adamroughton.concentus.Clock;
-import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.InitialiseDelegate;
 import com.adamroughton.concentus.MetricContainer;
 import com.adamroughton.concentus.MetricContainer.MetricLamda;
@@ -123,26 +118,28 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 		
 		_incomingQueueHeader = incomingQueueHeader;
 		
-		_metricContainer = new MetricContainer<>(clock, 8, new ComponentFactory<MetricEntry>() {
-
-			@Override
-			public MetricEntry newInstance(Object[] initArgs) {
-				return new MetricEntry();
-			}
-			
-		}, new InitialiseDelegate<MetricEntry>() {
-
-			@Override
-			public void initialise(MetricEntry content) {
-				content.eventsRecvd = 0;
-				content.inputActionProcessed = 0;
-				content.connectionRequestsProcessed = 0;
-				content.updatesProcessed = 0;
-				content.updateInfoEventsProcessed = 0;
-				content.sentUpdateCount = 0;
-				content.pendingEventCount = 0;
-			}
-		});
+		_metricContainer = new MetricContainer<>(clock, 8,
+				MetricEntry.class,
+				new ComponentFactory<MetricEntry>() {
+		
+					@Override
+					public MetricEntry newInstance(Object[] initArgs) {
+						return new MetricEntry();
+					}
+					
+				}, new InitialiseDelegate<MetricEntry>() {
+		
+					@Override
+					public void initialise(MetricEntry content) {
+						content.eventsRecvd = 0;
+						content.inputActionProcessed = 0;
+						content.connectionRequestsProcessed = 0;
+						content.updatesProcessed = 0;
+						content.updateInfoEventsProcessed = 0;
+						content.sentUpdateCount = 0;
+						content.pendingEventCount = 0;
+					}
+				});
 	}
 	
 	/**

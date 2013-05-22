@@ -39,11 +39,12 @@ import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
-import com.adamroughton.concentus.messaging.SocketManager;
-import com.adamroughton.concentus.messaging.SocketMutex;
-import com.adamroughton.concentus.messaging.SocketSettings;
+import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.events.EventType;
+import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
+import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.BatchEventProcessor;
 import com.lmax.disruptor.RingBuffer;
@@ -116,7 +117,7 @@ public class MetricListenerService implements CrowdHammerService {
 	}
 	
 	private void onInitTest(ClusterWorkerHandle cluster) {
-		_socketManager = new SocketManager();
+		_socketManager = _concentusHandle.newSocketManager();
 		_subSocketId = _socketManager.create(ZMQ.SUB, _subSocketSettings);
 		
 		// request sim client count
@@ -124,15 +125,13 @@ public class MetricListenerService implements CrowdHammerService {
 	}
 	
 	private void onSetUpTest(ClusterWorkerHandle cluster) {		
-		_socketManager.bindBoundSockets();
-		
 		Configuration config = _concentusHandle.getConfig();
 		int recvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "recv");
 		_inputBuffer = new RingBuffer<>(Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
 				new SingleThreadedClaimStrategy(recvBufferLength), new YieldingWaitStrategy());
 		
-		SocketMutex socketPackage = _socketManager.getSocketMutex(_subSocketId);
-		_eventListener = new EventListener(_header, socketPackage, _inputBuffer, _concentusHandle);
+		Mutex<Messenger> subMessengerMutex = _socketManager.getSocketMutex(_subSocketId);
+		_eventListener = new EventListener(_header, subMessengerMutex, _inputBuffer, _concentusHandle);
 		
 		_pipeline = ProcessingPipeline.<byte[]>build(_eventListener, _concentusHandle.getClock())
 				.thenConnector(_inputBuffer)

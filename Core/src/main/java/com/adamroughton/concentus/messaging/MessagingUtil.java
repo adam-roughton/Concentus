@@ -1,6 +1,21 @@
+/*
+ * Copyright 2013 Adam Roughton
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.adamroughton.concentus.messaging;
 
-import com.adamroughton.concentus.messaging.SocketMutex.SocketSetMutex;
+import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 import com.lmax.disruptor.BatchEventProcessor;
 import com.lmax.disruptor.EventHandler;
@@ -10,13 +25,13 @@ import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.SequenceBarrier;
 
 public class MessagingUtil {
-
+	
 	public static <TEvent> EventProcessor asSocketOwner(
 			final RingBuffer<TEvent> ringBuffer, 
 			final SequenceBarrier sequenceBarrier,
-			final SocketDependentEventHandler<TEvent, SocketPackage> eventHandler, 
-			final SocketMutex socketMutex) {	
-		final EventHandlerAdapter<TEvent, SocketPackage> adapter = new EventHandlerAdapter<>(eventHandler);
+			final MessengerDependentEventHandler<TEvent> eventHandler, 
+			final Mutex<Messenger> messengerMutex) {	
+		final EventHandlerAdapter<TEvent> adapter = new EventHandlerAdapter<>(eventHandler);
 		
 		return new EventProcessor() {
 
@@ -25,11 +40,11 @@ public class MessagingUtil {
 			
 			@Override
 			public void run() {
-				socketMutex.runAsOwner(new OwnerDelegate<SocketPackage>() {
+				messengerMutex.runAsOwner(new OwnerDelegate<Messenger>() {
 
 					@Override
-					public void asOwner(SocketPackage socketPackage) {
-						adapter.setSocketPackage(socketPackage);
+					public void asOwner(Messenger messenger) {
+						adapter.setMessenger(messenger);
 						_batchProcessor.run();
 					}
 					
@@ -49,66 +64,28 @@ public class MessagingUtil {
 		};
 	}
 	
-	public static <TEvent, TSocketSet extends SocketSet> EventProcessor asSocketOwner(
-			final RingBuffer<TEvent> ringBuffer, 
-			final SequenceBarrier sequenceBarrier,
-			final SocketDependentEventHandler<TEvent, TSocketSet> eventHandler, 
-			final SocketSetMutex<TSocketSet> socketSetMutex) {	
-		final EventHandlerAdapter<TEvent, TSocketSet> adapter = new EventHandlerAdapter<>(eventHandler);
-		
-		return new EventProcessor() {
-
-			private final BatchEventProcessor<TEvent> _batchProcessor = 
-					new BatchEventProcessor<>(ringBuffer, sequenceBarrier, adapter);
-			
-			@Override
-			public void run() {
-				socketSetMutex.runAsOwner(new OwnerDelegate<TSocketSet>() {
-
-					@Override
-					public void asOwner(TSocketSet socketSet) {
-						adapter.setSocketPackage(socketSet);
-						_batchProcessor.run();
-					}
-					
-				});
-			}
-
-			@Override
-			public Sequence getSequence() {
-				return _batchProcessor.getSequence();
-			}
-
-			@Override
-			public void halt() {
-				_batchProcessor.halt();
-			}
-			
-		};
-	}
-	
-	public interface SocketDependentEventHandler<TEvent, TSocketPackage> {
-		void onEvent(TEvent event, long sequence, boolean endOfBatch, TSocketPackage socketPackage)
+	public interface MessengerDependentEventHandler<TEvent> {
+		void onEvent(TEvent event, long sequence, boolean endOfBatch, Messenger messenger)
 			throws Exception;
 	}
 	
-	private static final class EventHandlerAdapter<TEvent, TSocketPackage> implements EventHandler<TEvent> {
+	private static final class EventHandlerAdapter<TEvent> implements EventHandler<TEvent> {
 
-		private final SocketDependentEventHandler<TEvent, TSocketPackage> _eventHandler;
-		private TSocketPackage _socketPackage;
+		private final MessengerDependentEventHandler<TEvent> _eventHandler;
+		private Messenger _messenger;
 		
-		public EventHandlerAdapter(SocketDependentEventHandler<TEvent, TSocketPackage> eventHandler) {
+		public EventHandlerAdapter(MessengerDependentEventHandler<TEvent> eventHandler) {
 			_eventHandler = eventHandler;
 		}
 		
-		public void setSocketPackage(TSocketPackage socketPackage) {
-			_socketPackage = socketPackage;
+		public void setMessenger(Messenger messenger) {
+			_messenger = messenger;
 		}
 		
 		@Override
 		public void onEvent(TEvent event, long sequence, boolean endOfBatch)
 				throws Exception {
-			_eventHandler.onEvent(event, sequence, endOfBatch, _socketPackage);
+			_eventHandler.onEvent(event, sequence, endOfBatch, _messenger);
 		}
 		
 	}

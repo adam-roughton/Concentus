@@ -24,21 +24,25 @@ package com.adamroughton.concentus.messaging;
 public class IncomingEventHeader extends EventHeader {
 	
 	private final static int SOCKET_ID_LENGTH = 4;
+	private final static int RECV_TIME_LENGTH = 8;
+	private final static int ADDITIONAL_LENGTH = SOCKET_ID_LENGTH + RECV_TIME_LENGTH;
 	
 	private final int _socketIdOffset;
+	private final int _recvTimeOffset;
 	
 	public IncomingEventHeader(final int startOffset, final int segmentCount) {
 		this(startOffset, segmentCount, 0, 0);
 	}
 	
 	protected IncomingEventHeader(final int startOffset, final int segmentCount, final int additionalLength, final int additionalFlagCount) {
-		super(startOffset, segmentCount, additionalLength + SOCKET_ID_LENGTH, additionalFlagCount);
+		super(startOffset, segmentCount, additionalLength + ADDITIONAL_LENGTH, additionalFlagCount);
 		_socketIdOffset = super.getAdditionalOffset();
+		_recvTimeOffset = super.getAdditionalOffset() + SOCKET_ID_LENGTH;
 	}
 	
 	@Override
 	protected int getAdditionalOffset() {
-		return super.getAdditionalOffset() + SOCKET_ID_LENGTH;
+		return super.getAdditionalOffset() + ADDITIONAL_LENGTH;
 	}
 
 	public final int getSocketId(byte[] event) {
@@ -47,6 +51,14 @@ public class IncomingEventHeader extends EventHeader {
 	
 	public final void setSocketId(byte[] event, int socketId) {
 		MessageBytesUtil.writeInt(event, _socketIdOffset, socketId);
+	}
+	
+	public final long getRecvTime(byte[] event) {
+		return MessageBytesUtil.readLong(event, _recvTimeOffset);
+	}
+	
+	public final void setRecvTime(byte[] event, long recvTime) {
+		MessageBytesUtil.writeLong(event, _recvTimeOffset, recvTime);
 	}
 	
 }

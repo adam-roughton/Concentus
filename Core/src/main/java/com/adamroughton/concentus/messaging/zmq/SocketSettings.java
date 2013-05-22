@@ -13,13 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.adamroughton.concentus.messaging;
+package com.adamroughton.concentus.messaging.zmq;
 
 import java.util.Arrays;
 import java.util.Objects;
 
-import org.zeromq.ZMQ;
-
+import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.events.EventType;
 import com.adamroughton.concentus.util.Util;
 
@@ -127,23 +126,6 @@ public final class SocketSettings {
 			subscriptions[i] = Arrays.copyOf(sub, sub.length);
 		}
 		return subscriptions;
-	}
-	
-	public void configureSocket(final SocketPackage socketPackage) {
-		ZMQ.Socket socket = socketPackage.getSocket();
-		long hwm = getHWM();
-		if (hwm != -1) {
-			socket.setHWM(hwm);
-		}
-		for (byte[] subscription : _subscriptions) {
-			socket.subscribe(subscription);
-		}
-		for (String inprocName : _inprocNamesToBindTo) {
-			socket.bind(getInprocAddress(inprocName));
-		}
-		for (int port : _portsToBindTo) {
-			socket.bind("tcp://*:" + port);
-		}
 	}
 	
 	public static String getInprocAddress(String inprocName) {

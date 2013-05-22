@@ -15,6 +15,8 @@
  */
 package com.adamroughton.concentus.messaging;
 
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.Condition;
@@ -23,33 +25,33 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import com.adamroughton.concentus.util.Mutex;
 
-public final class SocketMutex implements Mutex<SocketPackage> {
+public final class MessengerMutex<TMessenger extends Messenger> implements Mutex<Messenger> {
 	
-	private final SocketPackage _socketPackage;
+	private final TMessenger _messenger;
 	
 	private final Lock _lock = new ReentrantLock();
 	private final Condition _condition = _lock.newCondition();
 	private Thread _owningThread = null;
 	private int _reentrantCount = 0;
 	
-	public SocketMutex(SocketPackage socketPackage) {
-		_socketPackage = Objects.requireNonNull(socketPackage);
+	public MessengerMutex(TMessenger messenger) {
+		_messenger = Objects.requireNonNull(messenger);
 	}
 	
 	/**
 	 * Executes the provided runnable object with exclusive
-	 * access to the socket, releasing access when the runnable
+	 * access to the messenger, releasing access when the runnable
 	 * completes.
 	 * 
 	 * @param delegate the delegate to execute
 	 */
-	public void runAsOwner(OwnerDelegate<SocketPackage> delegate) {
+	public void runAsOwner(OwnerDelegate<Messenger> delegate) {
 		try {
 			if (!takeOwnership()) {
-				throw new IllegalStateException(String.format("The socket is already in use by thread %s", 
+				throw new IllegalStateException(String.format("The messenger is already in use by thread %s", 
 						Thread.currentThread().getName()));
 			}
-			delegate.asOwner(_socketPackage);
+			delegate.asOwner(_messenger);
 		} finally {
 			releaseOwnership();
 		}
@@ -123,41 +125,39 @@ public final class SocketMutex implements Mutex<SocketPackage> {
 		}
 	}
 	
-	public static <TSocketSet extends SocketSet> SocketSetMutex<TSocketSet> createSetMutex(
-			SocketSetFactory<TSocketSet> factory, 
-			SocketMutex first, SocketMutex...additional) {
-		return new SocketSetMutex<TSocketSet>(factory, first, additional);
+	public static <TMessenger extends Messenger> MultiMessengerMutex<TMessenger> createMultiMessengerMutex(
+			MultiMessengerFactory<TMessenger> factory, 
+			Collection<MessengerMutex<TMessenger>> messengerMutexes) {
+		return new MultiMessengerMutex<>(factory, messengerMutexes);
 	}
 	
-	public interface SocketSetFactory<TSocketSet extends SocketSet> {
-		TSocketSet create(SocketPackage...packages);
+	public interface MultiMessengerFactory<TMessenger extends Messenger> {
+		Messenger create(Collection<TMessenger> messengers);
 	}
 	
-	public static class SocketSetMutex<TSocketSet extends SocketSet> implements Mutex<TSocketSet> {
-		private final SocketSetFactory<TSocketSet> _factory;
-		private final SocketMutex[] _tokens;
+	public static class MultiMessengerMutex<TMessenger extends Messenger> implements Mutex<Messenger> {
+		private final MultiMessengerFactory<TMessenger> _factory;
+		private final ArrayList<MessengerMutex<TMessenger>> _tokens;
 		
-		public SocketSetMutex(SocketSetFactory<TSocketSet> factory, SocketMutex first, SocketMutex...additional) {
+		public MultiMessengerMutex(MultiMessengerFactory<TMessenger> factory, Collection<MessengerMutex<TMessenger>> messengerMutexes) {
 			_factory = Objects.requireNonNull(factory);
-			_tokens = new SocketMutex[additional.length + 1];
-			_tokens[0] = Objects.requireNonNull(first);
-			System.arraycopy(additional, 0, _tokens, 1, additional.length);
+			_tokens = new ArrayList<>(messengerMutexes);
 		}
 		
-		public void runAsOwner(OwnerDelegate<TSocketSet> delegate) {
-			final SocketPackage[] packages = new SocketPackage[_tokens.length];
-			boolean[] ownedSockets = new boolean[_tokens.length];
+		public void runAsOwner(OwnerDelegate<Messenger> delegate) {
+			final ArrayList<TMessenger> messengers = new ArrayList<>(_tokens.size());
+			boolean[] ownedSockets = new boolean[_tokens.size()];
 			try {
-				for (int i = 0; i < _tokens.length; i++) {
-					_tokens[i].takeOwnership();
+				for (int i = 0; i < _tokens.size(); i++) {
+					_tokens.get(i).takeOwnership();
 					ownedSockets[i] = true;
-					packages[i] = _tokens[i]._socketPackage;
+					messengers.add(i, _tokens.get(i)._messenger);
 				}
-				delegate.asOwner(_factory.create(packages));
+				delegate.asOwner(_factory.create(messengers));
 			} finally {
-				for (int i = 0; i < _tokens.length; i++) {
+				for (int i = 0; i < _tokens.size(); i++) {
 					if (ownedSockets[i]) {
-						_tokens[i].releaseOwnership();
+						_tokens.get(i).releaseOwnership();
 					}
 				}
 			}
@@ -165,20 +165,20 @@ public final class SocketMutex implements Mutex<SocketPackage> {
 
 		@Override
 		public boolean isOwned() {
-			boolean[] lockedSockets = new boolean[_tokens.length];
+			boolean[] lockedMessengers = new boolean[_tokens.size()];
 			try {
 				boolean isOwned = false;
-				for (int i = 0; i < _tokens.length; i++) {
-					_tokens[i]._lock.lock();
-					lockedSockets[i] = true;
-					isOwned |= _tokens[i].isOwned();
+				for (int i = 0; i < _tokens.size(); i++) {
+					_tokens.get(i)._lock.lock();
+					lockedMessengers[i] = true;
+					isOwned |= _tokens.get(i).isOwned();
 					if (isOwned) break;
 				}
 				return isOwned;
 			} finally {
-				for (int i = 0; i < _tokens.length; i++) {
-					if (lockedSockets[i]) {
-						_tokens[i]._lock.unlock();
+				for (int i = 0; i < _tokens.size(); i++) {
+					if (lockedMessengers[i]) {
+						_tokens.get(i)._lock.unlock();
 					}
 				}
 			}
@@ -186,8 +186,8 @@ public final class SocketMutex implements Mutex<SocketPackage> {
 
 		@Override
 		public void waitForRelease() throws InterruptedException {
-			for (Mutex<?> socketMutex : _tokens) {
-				socketMutex.waitForRelease();
+			for (Mutex<?> messengerMutex : _tokens) {
+				messengerMutex.waitForRelease();
 			}
 		}
 
@@ -196,11 +196,11 @@ public final class SocketMutex implements Mutex<SocketPackage> {
 				throws InterruptedException {
 			long startTime = System.nanoTime();
 			long remainingTime;
-			for (Mutex<?> socketMutex : _tokens) {
+			for (Mutex<?> messengerMutex : _tokens) {
 				remainingTime = unit.toNanos(timeout) - System.nanoTime() - startTime;
 				remainingTime = Math.min(remainingTime, 0);
 				if (remainingTime > 0) {
-					socketMutex.waitForRelease(remainingTime, TimeUnit.NANOSECONDS);
+					messengerMutex.waitForRelease(remainingTime, TimeUnit.NANOSECONDS);
 				} else {
 					return;
 				}

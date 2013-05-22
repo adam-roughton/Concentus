@@ -20,25 +20,34 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.esotericsoftware.minlog.Log;
 
 public class ConcentusHandle<TConfig extends Configuration> implements FatalExceptionCallback {
 	
 	private final AtomicBoolean _isShuttingDown = new AtomicBoolean(false);
 	
+	private final InstanceFactory<SocketManager> _socketManager;
 	private final Clock _clock;
 	private final TConfig _config;
 	private final InetAddress _networkAddress;
 	private final String _zooKeeperAddress;
 	
-	public ConcentusHandle(final Clock clock, 
-			final TConfig config, 
-			final InetAddress networkAddress,
-			final String zooKeeperAddress) {
+	public ConcentusHandle(
+			InstanceFactory<SocketManager> socketManagerFactory,
+			Clock clock, 
+			TConfig config, 
+			InetAddress networkAddress,
+			String zooKeeperAddress) {
+		_socketManager = Objects.requireNonNull(socketManagerFactory);
 		_clock = Objects.requireNonNull(clock);
 		_config = Objects.requireNonNull(config);
 		_networkAddress = Objects.requireNonNull(networkAddress);
 		_zooKeeperAddress = Objects.requireNonNull(zooKeeperAddress);
+	}
+	
+	public SocketManager newSocketManager() {
+		return _socketManager.newInstance();
 	}
 	
 	public Clock getClock() {

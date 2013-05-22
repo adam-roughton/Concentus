@@ -102,7 +102,7 @@ public class ClientProxy {
 	 */
 	public long lookupActionId(long clientHandlerInputId) {
 		long headActionId = _actionIdMap.getHeadIndex();
-		if (headActionId > 0) {
+		if (headActionId >= 0) {
 			long tailActionId = headActionId - _actionIdMap.windowSize() + 1;
 			tailActionId = (tailActionId < 0)? 0: tailActionId;	
 			return binarySearchHighestActionId(_actionIdMap, clientHandlerInputId, tailActionId, headActionId);

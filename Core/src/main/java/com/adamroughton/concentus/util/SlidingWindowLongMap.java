@@ -1,3 +1,18 @@
+/*
+ * Copyright 2013 Adam Roughton
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.adamroughton.concentus.util;
 
 public class SlidingWindowLongMap {
@@ -114,6 +129,13 @@ public class SlidingWindowLongMap {
 	public final boolean containsIndex(long index) {
 		int relIndex = (int) (_currentIndex - index);
 		return relIndex >= 0 && relIndex < _window.length && _window[(int)(index & _mask)] != NULL;
+	}
+	
+	public final void clear() {
+		for (int i = 0; i < _window.length; i++) {
+			_window[i] = NULL;
+		}
+		_currentIndex = -1;
 	}
 	
 }

@@ -23,7 +23,6 @@ import java.util.logging.Logger;
 
 import org.zeromq.ZMQ;
 
-import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService;
@@ -32,24 +31,19 @@ import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
-import com.adamroughton.concentus.crowdhammer.messaging.events.TestEventType;
-import com.adamroughton.concentus.crowdhammer.metriclistener.MetricListenerService;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventProcessor;
 import com.adamroughton.concentus.disruptor.NonBlockingRingBufferReader;
 import com.adamroughton.concentus.disruptor.NonBlockingRingBufferWriter;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.MessagingUtil;
-import com.adamroughton.concentus.messaging.MultiSocketOutgoingEventHeader;
+import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
-import com.adamroughton.concentus.messaging.SendRecvSocketReactor;
-import com.adamroughton.concentus.messaging.SocketManager;
-import com.adamroughton.concentus.messaging.SocketMutex;
-import com.adamroughton.concentus.messaging.SocketPollInSet;
-import com.adamroughton.concentus.messaging.SocketSettings;
-import com.adamroughton.concentus.messaging.events.EventType;
+import com.adamroughton.concentus.messaging.SendRecvMessengerReactor;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.pipeline.PipelineBranch;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
@@ -60,6 +54,7 @@ import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
+import uk.co.real_logic.intrinsics.ComponentFactory;
 import uk.co.real_logic.intrinsics.StructuredArray;
 
 import static com.adamroughton.concentus.util.Util.*;
@@ -79,7 +74,7 @@ public final class WorkerService implements CrowdHammerService {
 	
 	private ProcessingPipeline<byte[]> _pipeline;
 	
-	private final MultiSocketOutgoingEventHeader _clientSendHeader;
+	private final OutgoingEventHeader _clientSendHeader;
 	private final IncomingEventHeader _clientRecvHeader;
 	private final OutgoingEventHeader _metricSendHeader;
 	
@@ -93,15 +88,23 @@ public final class WorkerService implements CrowdHammerService {
 	private SimulatedClientProcessor _clientProcessor;
 	private EventProcessor _metricPublisher;
 	
-	private SendRecvSocketReactor _clientSocketReactor;
+	private SendRecvMessengerReactor _clientSocketReactor;
 	private int[] _handlerIds;
 	
-	public WorkerService(ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle, int maxClientCount) {
+	public WorkerService(final ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle, int maxClientCount) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_maxClients = maxClientCount;
-		_clients = StructuredArray.newInstance(nextPowerOf2(_maxClients), Client.class, new Class<?>[] { Clock.class }, _concentusHandle.getClock());
+		_clients = StructuredArray.newInstance(nextPowerOf2(_maxClients), Client.class, new ComponentFactory<Client>() {
+
+			long index = 0;
+			
+			@Override
+			public Client newInstance(Object[] initArgs) {
+				return new Client(index++, _concentusHandle.getClock());
+			}
+		});
 		
-		_clientSendHeader = new MultiSocketOutgoingEventHeader(0, 1);
+		_clientSendHeader = new OutgoingEventHeader(0, 1);
 		_clientRecvHeader = new IncomingEventHeader(0, 1);
 		_metricSendHeader = new OutgoingEventHeader(0, 2);
 	}
@@ -151,7 +154,7 @@ public final class WorkerService implements CrowdHammerService {
 	}
 	
 	private void initTest(ClusterWorkerHandle cluster) throws Exception {
-		_socketManager = new SocketManager();
+		_socketManager = _concentusHandle.newSocketManager();
 		
 		// request client allocation
 		byte[] reqBytes = new byte[4];
@@ -177,8 +180,6 @@ public final class WorkerService implements CrowdHammerService {
 							_clientCountForTest, 
 							_maxClients));
 		
-		_socketManager.bindBoundSockets();
-		
 		CrowdHammerConfiguration config = _concentusHandle.getConfig();
 		int routerRecvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "routerRecv");
 		int routerSendBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "routerSend");
@@ -196,35 +197,6 @@ public final class WorkerService implements CrowdHammerService {
 				Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
 				new SingleThreadedClaimStrategy(metricBufferLength), 
 				new YieldingWaitStrategy());
-		
-		// infrastructure for client socket
-		SequenceBarrier clientSendBarrier = _clientSendBuffer.newBarrier();
-		SendQueue<MultiSocketOutgoingEventHeader> clientSendQueue = new SendQueue<>(_clientSendHeader, _clientSendBuffer);
-		_clientSocketReactor = new SendRecvSocketReactor(
-				new NonBlockingRingBufferWriter<>(_clientRecvBuffer),
-				new NonBlockingRingBufferReader<>(_clientSendBuffer, clientSendBarrier), 
-				_concentusHandle);
-
-		// infrastructure for metric socket
-		SendQueue<OutgoingEventHeader> metricSendQueue = new SendQueue<>(_metricSendHeader, _metricSendBuffer);
-		SequenceBarrier sendBarrier = _metricSendBuffer.newBarrier();
-		SocketMutex pubSocketPackageMutex = _socketManager.getSocketMutex(_metricPubSocketId);
-		_metricPublisher = MessagingUtil.asSocketOwner(_metricSendBuffer, sendBarrier, new Publisher(_metricSendHeader), pubSocketPackageMutex);
-		
-		// event processing infrastructure
-		SequenceBarrier recvBarrier = _clientRecvBuffer.newBarrier();
-		_clientProcessor = new SimulatedClientProcessor(_workerId, _concentusHandle.getClock(), _clients, clientSendQueue, metricSendQueue, _clientRecvHeader);
-		
-		PipelineBranch<byte[]> metricSendBranch = ProcessingPipeline.startBranch(_metricSendBuffer, _concentusHandle.getClock())
-				.then(_metricPublisher)
-				.create();
-		
-		_pipeline = ProcessingPipeline.<byte[]>startCyclicPipeline(_clientSendBuffer, _concentusHandle.getClock())
-				.then(_clientSocketReactor)
-				.thenConnector(_clientRecvBuffer)
-				.then(new DeadlineBasedEventProcessor<>(_concentusHandle.getClock(), _clientProcessor, _clientRecvBuffer, recvBarrier, _concentusHandle))
-				.attachBranch(metricSendBranch)
-				.completeCycle(_executor);
 		
 		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _concentusHandle.getNetworkAddress().getHostAddress()));
 	}
@@ -258,11 +230,43 @@ public final class WorkerService implements CrowdHammerService {
 			} else {
 				client.setIsActive(false);
 			}
-			client.setIsConnecting(false);
 		}
 		
-		Mutex<SocketPollInSet> clientHandlerSet = _socketManager.createPollInSet(_handlerIds);
-		_clientSocketReactor.configure(clientHandlerSet, _clientSendHeader, _clientRecvHeader);
+		Mutex<Messenger> clientHandlerSet = _socketManager.createPollInSet(_handlerIds);
+		
+		// infrastructure for client socket
+		SequenceBarrier clientSendBarrier = _clientSendBuffer.newBarrier();
+		SendQueue<OutgoingEventHeader> clientSendQueue = new SendQueue<>(_clientSendHeader, _clientSendBuffer);
+		_clientSocketReactor = new SendRecvMessengerReactor(
+				clientHandlerSet, 
+				_clientSendHeader, 
+				_clientRecvHeader,
+				new NonBlockingRingBufferWriter<>(_clientRecvBuffer),
+				new NonBlockingRingBufferReader<>(_clientSendBuffer, clientSendBarrier), 
+				_concentusHandle);
+
+		// infrastructure for metric socket
+		SendQueue<OutgoingEventHeader> metricSendQueue = new SendQueue<>(_metricSendHeader, _metricSendBuffer);
+		SequenceBarrier sendBarrier = _metricSendBuffer.newBarrier();
+		Mutex<Messenger> pubSocketPackageMutex = _socketManager.getSocketMutex(_metricPubSocketId);
+		_metricPublisher = MessagingUtil.asSocketOwner(_metricSendBuffer, sendBarrier, new Publisher(_metricSendHeader), pubSocketPackageMutex);
+		
+		// event processing infrastructure
+		SequenceBarrier recvBarrier = _clientRecvBuffer.newBarrier();
+		_clientProcessor = new SimulatedClientProcessor(_workerId, _concentusHandle.getClock(), _clients, _clientCountForTest, clientSendQueue, metricSendQueue, _clientRecvHeader);
+		
+		PipelineBranch<byte[]> metricSendBranch = ProcessingPipeline.startBranch(_metricSendBuffer, _concentusHandle.getClock())
+				.then(_metricPublisher)
+				.create();
+		
+		_pipeline = ProcessingPipeline.<byte[]>startCyclicPipeline(_clientSendBuffer, _concentusHandle.getClock())
+				.then(_clientSocketReactor)
+				.thenConnector(_clientRecvBuffer)
+				.then(new DeadlineBasedEventProcessor<>(_concentusHandle.getClock(), _clientProcessor, _clientRecvBuffer, recvBarrier, _concentusHandle))
+				.attachBranch(metricSendBranch)
+				.completeCycle(_executor);
+		
+		
 	}
 	
 	private void executeTest(ClusterWorkerHandle cluster) throws Exception {
@@ -271,7 +275,6 @@ public final class WorkerService implements CrowdHammerService {
 	
 	private void stopSendingInputEvents(ClusterWorkerHandle cluster) throws Exception {
 		_clientProcessor.stopSendingInput();
-		
 	}
 	
 	private void teardown(ClusterWorkerHandle cluster) throws Exception {		
@@ -283,9 +286,7 @@ public final class WorkerService implements CrowdHammerService {
 		for (int i = 0; i < _clients.getLength(); i++) {
 			client = _clients.get(i);
 			if (client.isActive()) {
-				client.setHandlerId(-1);
-				client.setClientId(-1);
-				client.setIsConnecting(false);
+				client.reset();
 			}
 		}
 	}

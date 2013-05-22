@@ -1,3 +1,18 @@
+/*
+ * Copyright 2013 Adam Roughton
+ * 
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ * 
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ * 
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package com.adamroughton.concentus.disruptor;
 
 import java.util.Objects;
@@ -6,6 +21,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.util.RunningStats;
+import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.AlertException;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.LifecycleAware;
@@ -51,6 +68,42 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 			((LifecycleAware)_eventHandler).onStart();
 		}
 		
+		//TODO REMOVE
+		/*
+		 * TESTING
+		 */
+		final RunningStats nanosInOnEvent = new RunningStats();
+		final RunningStats nanosWaitingForEvents = new RunningStats();
+		final RunningStats nanosInOnDeadline = new RunningStats();
+		
+		class TimingHelper {
+			long lastTraceTime = 0;
+			
+			public void traceIfReady() {
+				long now = _clock.currentMillis();
+				if (now - lastTraceTime > 1000) {
+					traceStats("onEvent (millis)", nanosInOnEvent);			
+					traceStats("waitingForEvents (millis)", nanosWaitingForEvents);
+					traceStats("onDeadline (millis)", nanosInOnDeadline);
+					lastTraceTime = now;
+				}
+			}
+			
+			private void traceStats(String name, RunningStats stats) {
+				Log.info(String.format("%s: %d invocations, %f avg, %f stdDev, %f max, %f min",
+						name,
+						stats.getCount(), 
+						stats.getMean(), 
+						stats.getStandardDeviation(), 
+						stats.getMax(), 
+						stats.getMin()));
+			}
+		}
+		TimingHelper timingHelper = new TimingHelper();
+		/*
+		 * END TESTING
+		 */
+		
 		long nextSequence = _sequence.get() + 1;
 		while(true) {
 			try {
@@ -62,30 +115,44 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 				// wait until the next sequence
 				long remainingTime = 0;
 				long availableSequence = -1;
-				do {
-					if (nextSequence <= availableSequence) {
-						_eventHandler.onEvent(_ringBuffer.get(nextSequence), nextSequence, nextDeadline);
-						 nextSequence++;
-					} else {
-						_sequence.set(nextSequence - 1);
-						remainingTime = timeUntil(nextDeadline);
-						availableSequence = _barrier.waitFor(nextSequence, 
-								remainingTime, TimeUnit.MILLISECONDS);
-					}
-				} while (remainingTime > 0);
 				
 				
-//				while ((remainingTime = timeUntil(nextDeadline)) > 0) {
+//				do {
 //					if (nextSequence <= availableSequence) {
+//						_barrier.checkAlert();
 //						_eventHandler.onEvent(_ringBuffer.get(nextSequence), nextSequence, nextDeadline);
 //						 nextSequence++;
 //					} else {
+//						_sequence.set(nextSequence - 1);
+//						remainingTime = timeUntil(nextDeadline);
 //						availableSequence = _barrier.waitFor(nextSequence, 
 //								remainingTime, TimeUnit.MILLISECONDS);
 //					}
-//					
-//				}
+//				} while (remainingTime > 0);
+				
+				
+				while ((remainingTime = timeUntil(nextDeadline)) > 0) {
+					if (nextSequence <= availableSequence) {
+						_barrier.checkAlert();
+						
+						long startTime = _clock.nanoTime();
+						_eventHandler.onEvent(_ringBuffer.get(nextSequence), nextSequence, nextDeadline);
+						nanosInOnEvent.push(TimeUnit.NANOSECONDS.toMillis(_clock.nanoTime() - startTime));
+						
+						 nextSequence++;
+					} else {
+						_sequence.set(nextSequence - 1);
+						long startTime = _clock.nanoTime();
+						availableSequence = _barrier.waitFor(nextSequence, 
+								remainingTime, TimeUnit.MILLISECONDS);
+						nanosWaitingForEvents.push(TimeUnit.NANOSECONDS.toMillis(_clock.nanoTime() - startTime));
+					}
+				}
+				
+				long startTime = _clock.nanoTime();
 				_eventHandler.onDeadline();
+				nanosInOnDeadline.push(TimeUnit.NANOSECONDS.toMillis(_clock.nanoTime() - startTime));
+				timingHelper.traceIfReady();
 				
 			} catch (final AlertException eAlert) {
 				if (!_running.get()) {

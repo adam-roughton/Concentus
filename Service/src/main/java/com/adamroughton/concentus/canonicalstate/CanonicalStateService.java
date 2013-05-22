@@ -32,13 +32,14 @@ import com.adamroughton.concentus.disruptor.DeadlineBasedEventProcessor;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessagingUtil;
+import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
-import com.adamroughton.concentus.messaging.SocketManager;
-import com.adamroughton.concentus.messaging.SocketMutex;
-import com.adamroughton.concentus.messaging.SocketSettings;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
+import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.StatefulRunnable;
 import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.EventProcessor;
@@ -77,7 +78,7 @@ public class CanonicalStateService implements ConcentusService {
 	
 	public CanonicalStateService(ConcentusHandle<? extends Configuration> concentusHandle) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
-		_socketManager = new SocketManager();
+		_socketManager = _concentusHandle.newSocketManager();
 
 		Configuration config = concentusHandle.getConfig();
 		
@@ -154,16 +155,14 @@ public class CanonicalStateService implements ConcentusService {
 	}
 	
 	private void onBind(ClusterWorkerHandle cluster) throws Exception {
-		_socketManager.bindBoundSockets();
-		
 		// infrastructure for sub socket
-		SocketMutex subSocketPackageMutex = _socketManager.getSocketMutex(_subSocketId);
+		Mutex<Messenger> subSocketPackageMutex = _socketManager.getSocketMutex(_subSocketId);
 		_subListener = Util.asStateful(new EventListener(_subHeader, subSocketPackageMutex, _inputBuffer, _concentusHandle));
 		
 		// infrastructure for pub socket
 		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(_pubHeader, _outputBuffer);
 		SequenceBarrier pubSendBarrier = _outputBuffer.newBarrier();
-		SocketMutex pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
+		Mutex<Messenger> pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
 		_publisher = MessagingUtil.asSocketOwner(_outputBuffer, pubSendBarrier, new Publisher(_pubHeader), pubSocketPackageMutex);
 		
 		SequenceBarrier inputBarrier = _inputBuffer.newBarrier();

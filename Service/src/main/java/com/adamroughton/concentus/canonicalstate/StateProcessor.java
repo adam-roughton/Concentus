@@ -89,6 +89,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 		_clientHandlerEventTracker = new Int2LongOpenHashMap(50);
 		
 		_metricContainer = new MetricContainer<>(clock, 8, 
+			MetricEntry.class,
 			new ComponentFactory<MetricEntry>() {
 		
 				@Override
