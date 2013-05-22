@@ -202,9 +202,4 @@ public final class ZmqSocketMessenger implements Messenger {
 		return _socket;
 	}
 
-	@Override
-	public boolean hasPendingEvents() {
-		return (_socket.getEvents() & ZMQ.Poller.POLLIN) != 0;
-	}
-
 }

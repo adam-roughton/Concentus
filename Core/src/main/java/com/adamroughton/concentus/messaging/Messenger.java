@@ -50,13 +50,6 @@ public interface Messenger {
 			boolean isBlocking) throws MessengerClosedException;
 	 
 	 /**
-	  * {@code true} if a call to {@link Messenger#recv(byte[], IncomingEventHeader, boolean)} will
-	  * immediately return will an event.
-	  * @return
-	  */
-	 boolean hasPendingEvents();
-	 
-	 /**
 	  * Gets all of the end point IDs associated with this messenger.
 	  * @return an array of all end points associated with this messenger
 	  */

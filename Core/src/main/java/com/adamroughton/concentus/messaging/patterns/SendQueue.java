@@ -17,28 +17,28 @@ package com.adamroughton.concentus.messaging.patterns;
 
 import java.util.Objects;
 
+import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.disruptor.EventQueuePublisher;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.lmax.disruptor.RingBuffer;
 
 public class SendQueue<TSendHeader extends OutgoingEventHeader> {
 
 	private final TSendHeader _header;
-	private final RingBuffer<byte[]> _ringBuffer;
+	private final EventQueuePublisher<byte[]> _sendQueuePublisher;
 	
 	public SendQueue(final TSendHeader header, 
-			final RingBuffer<byte[]> buffer) {
+			final EventQueue<byte[]> sendQueue) {
 		_header = Objects.requireNonNull(header);
-		_ringBuffer = Objects.requireNonNull(buffer);
+		_sendQueuePublisher = sendQueue.createPublisher(true);
 	}
 	
 	public final void send(SendTask<TSendHeader> task) {
-		long seq = _ringBuffer.next();
+		byte[] outgoingBuffer = _sendQueuePublisher.next();
 		try {
-			byte[] outgoingBuffer = _ringBuffer.get(seq);
 			_header.reset(outgoingBuffer);
 			task.write(outgoingBuffer, _header);
 		} finally {
-			_ringBuffer.publish(seq);
+			_sendQueuePublisher.publish();
 		}
 	}
 	

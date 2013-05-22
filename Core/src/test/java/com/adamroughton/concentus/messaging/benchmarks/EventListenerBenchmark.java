@@ -23,15 +23,15 @@ import org.zeromq.ZMQ.Context;
 
 import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessengerMutex;
 import com.adamroughton.concentus.messaging.zmq.ZmqSocketMessenger;
 import com.adamroughton.concentus.util.Util;
 import com.google.caliper.Param;
-import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
-import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 public class EventListenerBenchmark extends MessagingBenchmarkBase {
@@ -39,7 +39,7 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 	private final int _port;
 	private ZMQ.Socket _sendSocket;
 	private IncomingEventHeader _header;
-	private RingBuffer<byte[]> _recvBuffer;
+	private EventQueue<byte[]> _recvQueue;
 	private byte[] _sendBuffer;
 	
 	@Param int messageCount;
@@ -56,11 +56,11 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 		
 		_header = new IncomingEventHeader(0, 1);
 		
-		_recvBuffer = new RingBuffer<>(
+		_recvQueue = new SingleProducerEventQueue<>(
 				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _header.getEventOffset())), 
-				new SingleThreadedClaimStrategy(1), 
+				1, 
 				new YieldingWaitStrategy());
-		_recvBuffer.setGatingSequences(new Sequence(Long.MAX_VALUE));
+		_recvQueue.setGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		_sendSocket = context.socket(ZMQ.DEALER);
 		_sendSocket.setLinger(0);
@@ -97,7 +97,7 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 			}
 		};
 		
-		final EventListener listener = new EventListener(_header, mutex, _recvBuffer, exCallback);
+		final EventListener listener = new EventListener(_header, mutex, _recvQueue, exCallback);
 		
 		return new Runnable() {
 
@@ -105,6 +105,8 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 			public void run() {
 				try {
 					listener.run();
+				} catch (Exception e) {
+					e.printStackTrace();
 				} finally {
 					recvSocket.close();
 				}
@@ -114,7 +116,7 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 	}
 	
 	public void timeListener() {
-		while (_recvBuffer.getCursor() < messageCount) {
+		while (_recvQueue.getCursor() < messageCount) {
 			_sendSocket.send(_sendBuffer, 0, 0);
 		}
 	}

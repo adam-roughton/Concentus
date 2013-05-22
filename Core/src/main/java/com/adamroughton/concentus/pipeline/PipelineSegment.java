@@ -22,31 +22,31 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.minlog.Log;
-import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
 
 class PipelineSegment<TEvent> {
 	
 	private final PipelineProcess<TEvent> _process;
-	private final Collection<RingBuffer<TEvent>> _connectors;
+	private final Collection<EventQueue<TEvent>> _connectors;
 	private final Clock _clock;
 	private boolean _isStarted = false;
 	
 	public PipelineSegment(PipelineProcess<TEvent> process, Clock clock) {
-		this(Collections.<RingBuffer<TEvent>>emptyList(), process, clock);
+		this(Collections.<EventQueue<TEvent>>emptyList(), process, clock);
 	}
 	
 	public PipelineSegment(
-			Collection<RingBuffer<TEvent>> connectors, 
+			Collection<EventQueue<TEvent>> connectors, 
 			ConsumingPipelineProcess<TEvent> process,
 			Clock clock) {
 		this(connectors, (PipelineProcess<TEvent>) process, clock);
 	}
 	
 	private PipelineSegment(
-			Collection<RingBuffer<TEvent>> connectors, 
+			Collection<EventQueue<TEvent>> connectors, 
 			PipelineProcess<TEvent> process,
 			Clock clock) {
 		_connectors = Objects.requireNonNull(connectors);
@@ -74,7 +74,7 @@ class PipelineSegment<TEvent> {
 			/*
 			 * Halt the consumers, ensuring all pending events are consumed
 			 */
-			for (RingBuffer<TEvent> connector : _connectors) {
+			for (EventQueue<TEvent> connector : _connectors) {
 				long finalCursor = connector.getCursor();
 				Sequence consumerSeq = consumingProcess.getSequence();
 				

@@ -20,8 +20,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventProcessor;
-import com.adamroughton.concentus.disruptor.NonBlockingRingBufferReader;
-import com.adamroughton.concentus.disruptor.NonBlockingRingBufferWriter;
+import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.disruptor.EventQueuePublisher;
+import com.adamroughton.concentus.disruptor.EventQueueReader;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 import com.lmax.disruptor.AlertException;
@@ -54,22 +55,22 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 	private final Mutex<Messenger> _messengerMutex;
 	private final OutgoingEventHeader _sendHeader;
 	private final IncomingEventHeader _recvHeader;
-	private final NonBlockingRingBufferWriter<byte[]> _recvBufferWriter;
-	private final NonBlockingRingBufferReader<byte[]> _sendBufferReader;
+	private final EventQueuePublisher<byte[]> _recvQueuePublisher;
+	private final EventQueueReader<byte[]> _sendQueueReader;
 	private final FatalExceptionCallback _exCallback;
 	
 	public SendRecvMessengerReactor(
 			Mutex<Messenger> messengerMutex,
 			OutgoingEventHeader sendHeader,
 			IncomingEventHeader recvHeader,
-			NonBlockingRingBufferWriter<byte[]> recvBufferWriter,
-			NonBlockingRingBufferReader<byte[]> sendBufferReader,
+			EventQueue<byte[]> recvQueue,
+			EventQueue<byte[]> sendQueue,
 			FatalExceptionCallback exCallback) {
 		_messengerMutex = Objects.requireNonNull(messengerMutex);
 		_sendHeader = Objects.requireNonNull(sendHeader);
 		_recvHeader = Objects.requireNonNull(recvHeader);
-		_recvBufferWriter = Objects.requireNonNull(recvBufferWriter);
-		_sendBufferReader = Objects.requireNonNull(sendBufferReader);
+		_recvQueuePublisher = recvQueue.createPublisher(false);
+		_sendQueueReader = sendQueue.createReader(false);
 		_exCallback = Objects.requireNonNull(exCallback);
 	}
 	
@@ -84,7 +85,7 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 							DeadlineBasedEventProcessor.class.getName()));
 				}
 				_processorThread = Thread.currentThread();
-				_sendBufferReader.getBarrier().clearAlert();
+				_sendQueueReader.getBarrier().clearAlert();
 				
 				try {
 					int inactivityCount = 0;
@@ -92,15 +93,15 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 						try {
 							boolean wasActivity = false;	
 							
-							byte[] recvBuffer = _recvBufferWriter.claimNoBlock();
+							byte[] recvBuffer = _recvQueuePublisher.next();
 							if (recvBuffer != null && messenger.recv(recvBuffer, _recvHeader, false)) {
-								_recvBufferWriter.publish();
+								_recvQueuePublisher.publish();
 								wasActivity = true;
 							}
 							
-							byte[] sendBuffer = _sendBufferReader.getIfReady();
+							byte[] sendBuffer = _sendQueueReader.get();
 							if (sendBuffer != null && messenger.send(sendBuffer, _sendHeader, false)) {
-								_sendBufferReader.advance();
+								_sendQueueReader.advance();
 								wasActivity = true;
 							}
 							
@@ -120,10 +121,10 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 				} catch (Throwable e) {
 					_exCallback.signalFatalException(e);
 				} finally {
-					if (_recvBufferWriter.hasUnpublished()) {
-						byte[] unpublishedEvent = _recvBufferWriter.getUnpublished();
+					if (_recvQueuePublisher.hasUnpublished()) {
+						byte[] unpublishedEvent = _recvQueuePublisher.next();
 						_recvHeader.setIsValid(unpublishedEvent, false);
-						_recvBufferWriter.publish();
+						_recvQueuePublisher.publish();
 					}
 					_processorThread = null;
 				}
@@ -134,13 +135,13 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 	
 	@Override
 	public Sequence getSequence() {
-		return _sendBufferReader.getSequence();
+		return _sendQueueReader.getSequence();
 	}
 
 	@Override
 	public void halt() {
 		boolean wasRunning = _running.getAndSet(false);
-		_sendBufferReader.getBarrier().alert();
+		_sendQueueReader.getBarrier().alert();
 		Thread processorThread = _processorThread;
 		if (wasRunning && processorThread != null) {
 			processorThread.interrupt();

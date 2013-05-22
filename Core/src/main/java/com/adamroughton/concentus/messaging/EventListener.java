@@ -18,25 +18,26 @@ package com.adamroughton.concentus.messaging;
 import java.util.Objects;
 
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.disruptor.EventQueuePublisher;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
-import com.lmax.disruptor.RingBuffer;
 
 public final class EventListener implements Runnable {
 	
 	private final IncomingEventHeader _header;
-	private final RingBuffer<byte[]> _ringBuffer;
+	private final EventQueuePublisher<byte[]> _recvQueuePublisher;
 	private final FatalExceptionCallback _exCallback;
 	private final Mutex<Messenger> _messengerMutex;
 	
 	public EventListener(
 			IncomingEventHeader header,
 			Mutex<Messenger> messengerMutex,
-			RingBuffer<byte[]> ringBuffer, 
+			EventQueue<byte[]> recvQueue, 
 			FatalExceptionCallback exCallback) {		
 		_header = Objects.requireNonNull(header);
 		_messengerMutex = Objects.requireNonNull(messengerMutex);
-		_ringBuffer = Objects.requireNonNull(ringBuffer);
+		_recvQueuePublisher = recvQueue.createPublisher(true);
 		_exCallback = Objects.requireNonNull(exCallback);
 	}
 
@@ -48,8 +49,12 @@ public final class EventListener implements Runnable {
 
 					@Override
 					public void asOwner(Messenger messenger) {
+						byte[] incomingBuffer;
 						while (!Thread.interrupted()) {
-							nextEvent(messenger);
+							incomingBuffer = _recvQueuePublisher.next();
+							if (messenger.recv(incomingBuffer, _header, true)) {
+								_recvQueuePublisher.publish();
+							}
 						}
 					}
 					
@@ -59,18 +64,12 @@ public final class EventListener implements Runnable {
 			} 
 		} catch (Throwable t) {
 			_exCallback.signalFatalException(t);
-		}
-	}
-	
-	private void nextEvent(Messenger messenger) {
-		final long seq = _ringBuffer.next();
-		final byte[] incomingBuffer = _ringBuffer.get(seq);
-		try {
-			if (!messenger.recv(incomingBuffer, _header, true)) {
-				_header.setIsValid(incomingBuffer, false);
-			}
 		} finally {
-			_ringBuffer.publish(seq);
+			if (_recvQueuePublisher.hasUnpublished()) {
+				byte[] unpublished = _recvQueuePublisher.next();
+				_header.setIsValid(unpublished, false);
+				_recvQueuePublisher.publish();
+			}
 		}
 	}
 	

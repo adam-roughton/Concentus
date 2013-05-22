@@ -20,18 +20,18 @@ import java.util.Arrays;
 import java.util.concurrent.Executor;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.disruptor.EventQueue;
 import com.lmax.disruptor.EventProcessor;
-import com.lmax.disruptor.RingBuffer;
 
 public class PipelineCyclicSection<TEvent> {
 
 	public static class CyclicStarter<TEvent>  {
 
-		private final RingBuffer<TEvent> _cycleConnector;
+		private final EventQueue<TEvent> _cycleConnector;
 		private final PipelineTopology<TEvent> _pipelineSegment;
 		private final Clock _clock;
 		
-		CyclicStarter(RingBuffer<TEvent> connector, Clock clock) {
+		CyclicStarter(EventQueue<TEvent> connector, Clock clock) {
 			_cycleConnector = connector;
 			_pipelineSegment = new PipelineTopology<>();
 			_clock = clock;
@@ -70,7 +70,7 @@ public class PipelineCyclicSection<TEvent> {
 			_clock = clock;
 		}
 		
-		public CyclicConnector<TEvent> thenConnector(RingBuffer<TEvent> connector) {
+		public CyclicConnector<TEvent> thenConnector(EventQueue<TEvent> connector) {
 			return new CyclicConnector<>(_cycleLink, _builder.thenConnector(connector), _clock);
 		}
 		
@@ -122,7 +122,7 @@ public class PipelineCyclicSection<TEvent> {
 		private final PipelineSegment<TEvent> _cycleLink;
 		private final ProcessingPipeline.PipelineSectionJoin<TEvent> _pipelineSectionJoin;
 		private final Clock _clock;
-		private final RingBuffer<TEvent> _cyclicConnector;
+		private final EventQueue<TEvent> _cyclicConnector;
 		
 		private final boolean _createLink;
 		
@@ -138,7 +138,7 @@ public class PipelineCyclicSection<TEvent> {
 		}
 		
 		CyclicPipelineSectionJoin(
-				RingBuffer<TEvent> cycleConnector,
+				EventQueue<TEvent> cycleConnector,
 				ProcessingPipeline.PipelineSectionJoin<TEvent> pipelineSectionJoin,
 				Clock clock) {
 			_cycleLink = null;
@@ -151,7 +151,7 @@ public class PipelineCyclicSection<TEvent> {
 		public CyclicBuilder<TEvent> into(ConsumingPipelineProcess<TEvent> process) {
 			if (_createLink) {
 				PipelineSegment<TEvent> cycleSegment = new CyclicPipelineSegment<>(_cyclicConnector, _pipelineSectionJoin._connectors, process, _clock);
-				for (RingBuffer<TEvent> connector : _pipelineSectionJoin._connectors) {
+				for (EventQueue<TEvent> connector : _pipelineSectionJoin._connectors) {
 					connector.setGatingSequences(process.getSequence());
 				}
 				PipelineTopology<TEvent> pipelineSection = _pipelineSectionJoin._pipeline.add(_pipelineSectionJoin._layerIndex, cycleSegment);

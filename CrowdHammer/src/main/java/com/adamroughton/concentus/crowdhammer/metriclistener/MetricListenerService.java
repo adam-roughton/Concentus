@@ -36,6 +36,8 @@ import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.concentus.crowdhammer.messaging.events.TestEventType;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
+import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
@@ -46,9 +48,6 @@ import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Util;
-import com.lmax.disruptor.BatchEventProcessor;
-import com.lmax.disruptor.RingBuffer;
-import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 import org.zeromq.*;
@@ -62,7 +61,7 @@ public class MetricListenerService implements CrowdHammerService {
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	private final ConcentusHandle<? extends CrowdHammerConfiguration> _concentusHandle;
 	private SocketManager _socketManager;
-	private RingBuffer<byte[]> _inputBuffer;
+	private EventQueue<byte[]> _inputQueue;
 	private final IncomingEventHeader _header;
 	
 	private ProcessingPipeline<byte[]> _pipeline;
@@ -127,15 +126,15 @@ public class MetricListenerService implements CrowdHammerService {
 	private void onSetUpTest(ClusterWorkerHandle cluster) {		
 		Configuration config = _concentusHandle.getConfig();
 		int recvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "recv");
-		_inputBuffer = new RingBuffer<>(Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
-				new SingleThreadedClaimStrategy(recvBufferLength), new YieldingWaitStrategy());
+		_inputQueue = new SingleProducerEventQueue<>(Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
+				recvBufferLength, new YieldingWaitStrategy());
 		
 		Mutex<Messenger> subMessengerMutex = _socketManager.getSocketMutex(_subSocketId);
-		_eventListener = new EventListener(_header, subMessengerMutex, _inputBuffer, _concentusHandle);
+		_eventListener = new EventListener(_header, subMessengerMutex, _inputQueue, _concentusHandle);
 		
 		_pipeline = ProcessingPipeline.<byte[]>build(_eventListener, _concentusHandle.getClock())
-				.thenConnector(_inputBuffer)
-				.then(new BatchEventProcessor<>(_inputBuffer, _inputBuffer.newBarrier(), _metricProcessor))
+				.thenConnector(_inputQueue)
+				.then(_inputQueue.createBatchEventProcessor(_metricProcessor))
 				.createPipeline(_executor);
 						
 		// get client count

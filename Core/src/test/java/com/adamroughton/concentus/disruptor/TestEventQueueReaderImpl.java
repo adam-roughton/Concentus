@@ -17,16 +17,15 @@ package com.adamroughton.concentus.disruptor;
 
 import org.junit.*;
 
-import com.adamroughton.concentus.disruptor.NonBlockingRingBufferReader;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.RingBuffer;
 
 import static org.junit.Assert.*;
 
-public class TestNonBlockingRingBufferReader {
+public class TestEventQueueReaderImpl {
 
 	private RingBuffer<byte[]> _ringBuffer;
-	private NonBlockingRingBufferReader<byte[]> _reader;
+	private EventQueueReaderImpl<byte[]> _reader;
 	
 	@Before
 	public void setUp() {
@@ -35,7 +34,7 @@ public class TestNonBlockingRingBufferReader {
 				return new byte[512];
 			}
 		}, 4);
-		_reader = new NonBlockingRingBufferReader<>(_ringBuffer, _ringBuffer.newBarrier());
+		_reader = new EventQueueReaderImpl<>(_ringBuffer, _ringBuffer.newBarrier(), false);
 		_ringBuffer.setGatingSequences(_reader.getSequence());	
 	}
 	
@@ -44,7 +43,7 @@ public class TestNonBlockingRingBufferReader {
 		long seq = _ringBuffer.next();
 		_ringBuffer.publish(seq);
 		
-		assertNotNull(_reader.getIfReady());
+		assertNotNull(_reader.get());
 		_reader.advance();
 
 		assertEquals(0, _reader.getSequence().get());
@@ -59,7 +58,7 @@ public class TestNonBlockingRingBufferReader {
 		}
 		// send the events
 		for (int i = 0; i < 3; i++) {
-			assertNotNull(_reader.getIfReady());
+			assertNotNull(_reader.get());
 			_reader.advance();
 		}
 		assertEquals(2, _reader.getSequence().get());
@@ -67,18 +66,18 @@ public class TestNonBlockingRingBufferReader {
 	
 	@Test
 	public void readWithNoEvents() throws Exception {	
-		assertNull(_reader.getIfReady());
+		assertNull(_reader.get());
 		assertEquals(-1, _reader.getSequence().get());
 	}
 	
 	@Test
 	public void readWithNoEventsThenReadWithEvents() throws Exception {				
-		assertNull(_reader.getIfReady());
+		assertNull(_reader.get());
 	
 		long seq = _ringBuffer.next();
 		_ringBuffer.publish(seq);
 				
-		assertNotNull(_reader.getIfReady());
+		assertNotNull(_reader.get());
 		_reader.advance();
 		assertEquals(0, _reader.getSequence().get());
 	}

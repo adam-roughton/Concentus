@@ -1,4 +1,4 @@
-package com.adamroughton.concentus.messaging;
+package com.adamroughton.concentus.disruptor;
 
 import java.util.Objects;
 

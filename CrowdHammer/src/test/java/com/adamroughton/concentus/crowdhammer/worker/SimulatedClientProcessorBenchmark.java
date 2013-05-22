@@ -22,15 +22,15 @@ import uk.co.real_logic.intrinsics.StructuredArray;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.DefaultClock;
+import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.events.ClientUpdateEvent;
 import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.util.Util;
-import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
-import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 public class SimulatedClientProcessorBenchmark {
@@ -39,7 +39,7 @@ public class SimulatedClientProcessorBenchmark {
 	private StructuredArray<Client> _clients;
 	private SimulatedClientProcessor _worker;
 	private IncomingEventHeader _header;
-	private RingBuffer<byte[]> _sendBuffer;
+	private EventQueue<byte[]> _sendQueue;
 	private long _testStartSeq;
 	
 	private byte[] _recvBuffer;
@@ -61,15 +61,15 @@ public class SimulatedClientProcessorBenchmark {
 		});
 		_recvBuffer = new byte[bufferSize];
 		
-		_sendBuffer = new RingBuffer<byte[]>(Util.msgBufferFactory(bufferSize), 
-				new SingleThreadedClaimStrategy(1),
+		_sendQueue = new SingleProducerEventQueue<>(Util.msgBufferFactory(bufferSize), 
+				1,
 				new YieldingWaitStrategy());
-		_sendBuffer.setGatingSequences(new Sequence(Long.MAX_VALUE));
+		_sendQueue.setGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		_header = new IncomingEventHeader(0, 2);
 		
-		SendQueue<OutgoingEventHeader> clientSendQueue = new SendQueue<>(new OutgoingEventHeader(0, 1), _sendBuffer);
-		SendQueue<OutgoingEventHeader> metricSendQueue = new SendQueue<>(new OutgoingEventHeader(0, 2), _sendBuffer);
+		SendQueue<OutgoingEventHeader> clientSendQueue = new SendQueue<>(new OutgoingEventHeader(0, 1), _sendQueue);
+		SendQueue<OutgoingEventHeader> metricSendQueue = new SendQueue<>(new OutgoingEventHeader(0, 2), _sendQueue);
 		
 		_worker = new SimulatedClientProcessor(0, _clock, _clients, clientCount, clientSendQueue, metricSendQueue, _header);
 		
@@ -110,7 +110,7 @@ public class SimulatedClientProcessorBenchmark {
 		}
 		connRes.releaseBackingArray();
 		
-		_testStartSeq = _sendBuffer.getCursor();
+		_testStartSeq = _sendQueue.getCursor();
 		_worker.onStart();
 	}	
 	
@@ -139,7 +139,7 @@ public class SimulatedClientProcessorBenchmark {
 	}
 	
 	public long eventSentCount() {
-		return _sendBuffer.getCursor() - _testStartSeq;
+		return _sendQueue.getCursor() - _testStartSeq;
 	}
 	
 	public static void main(String[] args) {

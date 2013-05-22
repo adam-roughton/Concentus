@@ -23,6 +23,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.disruptor.EventQueue.EventProcessorFactory;
 import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.AlertException;
 import com.lmax.disruptor.EventProcessor;
@@ -51,19 +53,19 @@ class CyclicPipelineSegment<TEvent> extends PipelineSegment<TEvent> {
 		HALTED
 	}
 	
-	private final RingBuffer<TEvent> _cyclicConnector;
+	private final EventQueue<TEvent> _cyclicConnector;
 	private final ConsumingPipelineProcess<TEvent> _process;
 	private final Clock _clock;
 	private State _state;
 	private Executor _executor;
 	private NoOpConsumer _consumer;
 	
-	public CyclicPipelineSegment(RingBuffer<TEvent> cyclicConnector,
+	public CyclicPipelineSegment(EventQueue<TEvent> cyclicConnector,
 			ConsumingPipelineProcess<TEvent> process, Clock clock) {
-		this(cyclicConnector, Collections.<RingBuffer<TEvent>>emptyList(), process, clock);
+		this(cyclicConnector, Collections.<EventQueue<TEvent>>emptyList(), process, clock);
 	}
 
-	public CyclicPipelineSegment(RingBuffer<TEvent> cyclicConnector, Collection<RingBuffer<TEvent>> connectors,
+	public CyclicPipelineSegment(EventQueue<TEvent> cyclicConnector, Collection<EventQueue<TEvent>> connectors,
 			ConsumingPipelineProcess<TEvent> process, Clock clock) {
 		super(connectors, process, clock);
 		_cyclicConnector = Objects.requireNonNull(cyclicConnector);
@@ -86,8 +88,14 @@ class CyclicPipelineSegment<TEvent> extends PipelineSegment<TEvent> {
 		
 		if (_state == State.STARTED) {
 			super.halt(timeout, unit);
-			SequenceBarrier consumerBarrier = _cyclicConnector.newBarrier();
-			_consumer = new NoOpConsumer(_process.getSequence(), consumerBarrier);
+			_consumer = _cyclicConnector.createEventProcessor(new EventProcessorFactory<TEvent, NoOpConsumer>() {
+
+				@Override
+				public NoOpConsumer createProcessor(
+						RingBuffer<TEvent> ringBuffer, SequenceBarrier barrier) {
+					return new NoOpConsumer(_process.getSequence(), barrier);
+				}
+			});
 			_executor.execute(_consumer);
 			_state = State.CONSUME_ONLY;
 		} else if (_state == State.CONSUME_ONLY) {

@@ -24,6 +24,8 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
 import com.adamroughton.concentus.DrivableClock;
+import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
@@ -43,9 +45,6 @@ import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.lmax.disruptor.BatchEventProcessor;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.EventHandler;
-import com.lmax.disruptor.RingBuffer;
-import com.lmax.disruptor.SequenceBarrier;
-import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 public class PerfTestClientHandlerProcessor {
@@ -57,15 +56,15 @@ public class PerfTestClientHandlerProcessor {
 		}
 	}
 	
-	private static RingBuffer<byte[]> createBuffer() {
-		return new RingBuffer<>(new EventFactory<byte[]>() {
+	private static EventQueue<byte[]> createQueue() {
+		return new SingleProducerEventQueue<>(new EventFactory<byte[]>() {
 
 			@Override
 			public byte[] newInstance() {
 				return new byte[512];
 			}
 			
-		}, new SingleThreadedClaimStrategy(1024 * 1024),
+		}, 1024 * 1024,
 			new YieldingWaitStrategy());
 	}
 	
@@ -128,8 +127,7 @@ public class PerfTestClientHandlerProcessor {
 		final OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, 2);
 		final DrivableClock testClock = new DrivableClock();
 		
-		final RingBuffer<byte[]> genericOutBuffer = createBuffer();
-		final SequenceBarrier consumerBarrier = genericOutBuffer.newBarrier();
+		final EventQueue<byte[]> genericOutQueue = createQueue();
 		
 		final AtomicLong testVal = new AtomicLong();
 		final AtomicLong updatesRecvd = new AtomicLong();
@@ -137,7 +135,7 @@ public class PerfTestClientHandlerProcessor {
 		final AtomicLong unknownEventCount = new AtomicLong();
 		final AtomicLong metricsRecv = new AtomicLong();
 		final AtomicLong stateInputsProc = new AtomicLong();
-		final BatchEventProcessor<byte[]> genericConsumer = new BatchEventProcessor<>(genericOutBuffer, consumerBarrier, new EventHandler<byte[]>() {
+		final BatchEventProcessor<byte[]> genericConsumer = genericOutQueue.createBatchEventProcessor(new EventHandler<byte[]>() {
 
 			final ClientUpdateEvent updateEvent = new ClientUpdateEvent();
 			final ConnectResponseEvent connectResEvent = new ConnectResponseEvent();
@@ -179,11 +177,10 @@ public class PerfTestClientHandlerProcessor {
 				}
 			}
 		});
-		genericOutBuffer.setGatingSequences(genericConsumer.getSequence());
 		
-		SendQueue<OutgoingEventHeader> routerSendQueue = new SendQueue<>(sendHeader, genericOutBuffer);
-		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(sendHeader, genericOutBuffer);
-		SendQueue<OutgoingEventHeader> metricSendQueue = new SendQueue<>(sendHeader, genericOutBuffer);
+		SendQueue<OutgoingEventHeader> routerSendQueue = new SendQueue<>(sendHeader, genericOutQueue);
+		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(sendHeader, genericOutQueue);
+		SendQueue<OutgoingEventHeader> metricSendQueue = new SendQueue<>(sendHeader, genericOutQueue);
 		
 		final int routerSocketId = 0;
 		final int subSocketId = 1;

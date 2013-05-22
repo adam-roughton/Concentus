@@ -20,14 +20,14 @@ import java.util.concurrent.TimeUnit;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.DefaultClock;
+import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.events.StateInputEvent;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.util.Util;
-import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
-import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 public class StateProcessorBenchmark {
@@ -35,7 +35,7 @@ public class StateProcessorBenchmark {
 	private Clock _clock;
 	private StateProcessor _stateProcessor;
 	private IncomingEventHeader _header;
-	private RingBuffer<byte[]> _sendBuffer;
+	private EventQueue<byte[]> _sendBuffer;
 	
 	private byte[] _recvBuffer;
 	
@@ -46,8 +46,8 @@ public class StateProcessorBenchmark {
 
 		_recvBuffer = new byte[bufferSize];
 		
-		_sendBuffer = new RingBuffer<byte[]>(Util.msgBufferFactory(bufferSize), 
-				new SingleThreadedClaimStrategy(1),
+		_sendBuffer = new SingleProducerEventQueue<byte[]>(Util.msgBufferFactory(bufferSize), 
+				1,
 				new YieldingWaitStrategy());
 		_sendBuffer.setGatingSequences(new Sequence(Long.MAX_VALUE));
 		

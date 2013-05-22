@@ -19,17 +19,17 @@ import java.util.ArrayList;
 import java.util.Collection;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline.PipelineSectionJoin;
-import com.lmax.disruptor.RingBuffer;
 
 public class PipelineSection<TEvent> {
 
 	private final int _layerIndex;
-	private final RingBuffer<TEvent> _sectionConnector;
+	private final EventQueue<TEvent> _sectionConnector;
 	private final PipelineTopology<TEvent> _pipelineSection;
 	private final Clock _clock;
 	
-	PipelineSection(int layerIndex, RingBuffer<TEvent> connector, PipelineTopology<TEvent> pipelineSection, Clock clock) {
+	PipelineSection(int layerIndex, EventQueue<TEvent> connector, PipelineTopology<TEvent> pipelineSection, Clock clock) {
 		_layerIndex = layerIndex;
 		_sectionConnector = connector;
 		_pipelineSection = pipelineSection;
@@ -48,7 +48,7 @@ public class PipelineSection<TEvent> {
 	public static abstract class PipelineSectionJoinBase<TEvent> {
 		
 		protected final int _layerIndex;
-		protected final Collection<RingBuffer<TEvent>> _connectors;
+		protected final Collection<EventQueue<TEvent>> _connectors;
 		protected final PipelineTopology<TEvent> _pipeline;
 		protected final Clock _clock;
 		
@@ -79,7 +79,7 @@ public class PipelineSection<TEvent> {
 		
 		protected PipelineSegment<TEvent> createSegment(ConsumingPipelineProcess<TEvent> process) {
 			PipelineSegment<TEvent> segment = new PipelineSegment<>(_connectors, process, _clock);
-			for (RingBuffer<TEvent> connector : _connectors) {
+			for (EventQueue<TEvent> connector : _connectors) {
 				connector.setGatingSequences(process.getSequence());
 			}
 			return segment;

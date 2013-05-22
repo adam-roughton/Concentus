@@ -23,8 +23,11 @@ import org.zeromq.ZMQ.Context;
 
 import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.FatalExceptionCallback;
-import com.adamroughton.concentus.disruptor.NonBlockingRingBufferReader;
-import com.adamroughton.concentus.disruptor.NonBlockingRingBufferWriter;
+import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.disruptor.EventQueueBase;
+import com.adamroughton.concentus.disruptor.EventQueuePublisher;
+import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
+import com.adamroughton.concentus.disruptor.SingleProducerEventQueuePublisher;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
@@ -36,7 +39,6 @@ import com.adamroughton.concentus.util.Util;
 import com.google.caliper.Param;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
-import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
@@ -46,8 +48,8 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 	private ZMQ.Socket _sendSocket;
 	private IncomingEventHeader _recvHeader;
 	private OutgoingEventHeader _sendHeader;
-	private RingBuffer<byte[]> _recvBuffer;
-	private RingBuffer<byte[]> _sendBuffer;
+	private EventQueue<byte[]> _recvQueue;
+	private EventQueue<byte[]> _sendQueue;
 	private byte[] _msg;
 	
 	@Param int messageCount;
@@ -65,24 +67,39 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 		_recvHeader = new IncomingEventHeader(0, 1);
 		_sendHeader = new OutgoingEventHeader(0, 1);
 		
-		_recvBuffer = new RingBuffer<>(
+		_recvQueue = new SingleProducerEventQueue<>(
 				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _recvHeader.getEventOffset())), 
-				new SingleThreadedClaimStrategy(1), 
+				1, 
 				new YieldingWaitStrategy());
-		_recvBuffer.setGatingSequences(new Sequence(Long.MAX_VALUE));
+		_recvQueue.setGatingSequences(new Sequence(Long.MAX_VALUE));
 		
-		_sendBuffer = new RingBuffer<>(
+		RingBuffer<byte[]> sendBuffer = new RingBuffer<>(
 				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _recvHeader.getEventOffset())), 
 				new SingleThreadedClaimStrategy(1), 
 				new YieldingWaitStrategy());
-		_sendBuffer.setGatingSequences(new Sequence(Long.MAX_VALUE));
+		_sendQueue = new EventQueueBase<byte[]>(sendBuffer) {
+
+			@Override
+			public boolean isShared() {
+				return false;
+			}
+
+			@Override
+			protected EventQueuePublisher<byte[]> doCreatePublisher(
+					RingBuffer<byte[]> ringBuffer, boolean isBlocking) {
+				return new SingleProducerEventQueuePublisher<>(ringBuffer, isBlocking);
+			}
+			
+		};
+		_sendQueue.setGatingSequences(new Sequence(Long.MAX_VALUE));
 		if (sendAndRecv) {
-			_sendBuffer.forcePublish(Long.MAX_VALUE);
+			sendBuffer.forcePublish(Long.MAX_VALUE);
 		}
 		
-		byte[] entryContent = _sendBuffer.get(0);
+		byte[] entryContent = sendBuffer.get(0);
 		_sendHeader.setSegmentMetaData(entryContent, 0, 0, messageSize);
 		_sendHeader.setIsValid(entryContent, true);
+		
 		
 		_sendSocket = context.socket(ZMQ.DEALER);
 		_sendSocket.setLinger(0);
@@ -124,11 +141,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 		
 		OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, 1);
 		
-		SequenceBarrier barrier = _sendBuffer.newBarrier();
-		NonBlockingRingBufferWriter<byte[]> recvWriter = new NonBlockingRingBufferWriter<>(_recvBuffer);
-		NonBlockingRingBufferReader<byte[]> sendReader = new NonBlockingRingBufferReader<>(_sendBuffer, barrier);
-		
-		final SendRecvMessengerReactor reactor = new SendRecvMessengerReactor(mutex, sendHeader, _recvHeader, recvWriter, sendReader, exCallback);
+		final SendRecvMessengerReactor reactor = new SendRecvMessengerReactor(mutex, sendHeader, _recvHeader, _recvQueue, _sendQueue, exCallback);
 		
 		return new Runnable() {
 
@@ -145,7 +158,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 	}
 	
 	public void timeListener() {
-		while (_recvBuffer.getCursor() < messageCount) {
+		while (_recvQueue.getCursor() < messageCount) {
 			_sendSocket.send(_msg, 0, 0);
 		}
 	}

@@ -15,6 +15,8 @@
  */
 package com.adamroughton.concentus.messaging;
 
+import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.disruptor.EventQueue.EventProcessorFactory;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 import com.lmax.disruptor.BatchEventProcessor;
@@ -27,41 +29,47 @@ import com.lmax.disruptor.SequenceBarrier;
 public class MessagingUtil {
 	
 	public static <TEvent> EventProcessor asSocketOwner(
-			final RingBuffer<TEvent> ringBuffer, 
-			final SequenceBarrier sequenceBarrier,
-			final MessengerDependentEventHandler<TEvent> eventHandler, 
-			final Mutex<Messenger> messengerMutex) {	
+			EventQueue<TEvent> eventQueue, 
+			MessengerDependentEventHandler<TEvent> eventHandler, 
+			final Mutex<Messenger> messengerMutex,
+			Sequence...gatingSequences) {	
 		final EventHandlerAdapter<TEvent> adapter = new EventHandlerAdapter<>(eventHandler);
-		
-		return new EventProcessor() {
+		return eventQueue.createEventProcessor(new EventProcessorFactory<TEvent, EventProcessor>() {
 
-			private final BatchEventProcessor<TEvent> _batchProcessor = 
-					new BatchEventProcessor<>(ringBuffer, sequenceBarrier, adapter);
-			
 			@Override
-			public void run() {
-				messengerMutex.runAsOwner(new OwnerDelegate<Messenger>() {
+			public EventProcessor createProcessor(
+					final RingBuffer<TEvent> ringBuffer, final SequenceBarrier barrier) {
+				return new EventProcessor() {
+
+					private final BatchEventProcessor<TEvent> _batchProcessor = 
+							new BatchEventProcessor<>(ringBuffer, barrier, adapter);
+					
+					@Override
+					public void run() {
+						messengerMutex.runAsOwner(new OwnerDelegate<Messenger>() {
+
+							@Override
+							public void asOwner(Messenger messenger) {
+								adapter.setMessenger(messenger);
+								_batchProcessor.run();
+							}
+							
+						});
+					}
 
 					@Override
-					public void asOwner(Messenger messenger) {
-						adapter.setMessenger(messenger);
-						_batchProcessor.run();
+					public Sequence getSequence() {
+						return _batchProcessor.getSequence();
+					}
+
+					@Override
+					public void halt() {
+						_batchProcessor.halt();
 					}
 					
-				});
+				};
 			}
-
-			@Override
-			public Sequence getSequence() {
-				return _batchProcessor.getSequence();
-			}
-
-			@Override
-			public void halt() {
-				_batchProcessor.halt();
-			}
-			
-		};
+		}, gatingSequences);
 	}
 	
 	public interface MessengerDependentEventHandler<TEvent> {

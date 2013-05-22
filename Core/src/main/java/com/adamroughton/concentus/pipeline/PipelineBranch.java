@@ -20,8 +20,8 @@ import java.util.Collection;
 import java.util.Objects;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.disruptor.EventQueue;
 import com.lmax.disruptor.EventProcessor;
-import com.lmax.disruptor.RingBuffer;
 
 public class PipelineBranch<TEvent> {
 
@@ -38,18 +38,18 @@ public class PipelineBranch<TEvent> {
 	public static class Starter<TEvent> {
 		
 		protected final int _layerIndex;
-		protected final RingBuffer<TEvent> _connector;
+		protected final EventQueue<TEvent> _connector;
 		protected final PipelineTopology<TEvent> _pipelineSection;
 		protected final Clock _clock;
 		
-		Starter(RingBuffer<TEvent> startConnector, Clock clock) {
+		Starter(EventQueue<TEvent> startConnector, Clock clock) {
 			_layerIndex = 0;
 			_connector = startConnector;
 			_pipelineSection = new PipelineTopology<>();
 			_clock = clock;
 		}
 		
-		Starter(int layerIndex, RingBuffer<TEvent> connector, PipelineTopology<TEvent> pipelineSection, Clock clock) {
+		Starter(int layerIndex, EventQueue<TEvent> connector, PipelineTopology<TEvent> pipelineSection, Clock clock) {
 			_layerIndex = layerIndex;
 			_connector = connector;
 			_pipelineSection = pipelineSection;
@@ -69,7 +69,7 @@ public class PipelineBranch<TEvent> {
 	
 	public static class Connector<TEvent> extends Starter<TEvent> {
 		
-		Connector(int layerIndex, RingBuffer<TEvent> connector, PipelineTopology<TEvent> pipelineSection, Clock clock) {
+		Connector(int layerIndex, EventQueue<TEvent> connector, PipelineTopology<TEvent> pipelineSection, Clock clock) {
 			super(layerIndex, connector, pipelineSection, clock);
 		}
 		
@@ -99,7 +99,7 @@ public class PipelineBranch<TEvent> {
 			_clock = clock;
 		}
 		
-		public Connector<TEvent> thenConnector(RingBuffer<TEvent> connector) {
+		public Connector<TEvent> thenConnector(EventQueue<TEvent> connector) {
 			Objects.requireNonNull(connector);
 			connector.setGatingSequences(_process.getSequence());
 			return new Connector<>(_layerIndex, connector, _pipelineSection, _clock);

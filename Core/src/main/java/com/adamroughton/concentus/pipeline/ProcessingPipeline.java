@@ -25,9 +25,9 @@ import java.util.concurrent.Executor;
 import java.util.concurrent.TimeUnit;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.EventProcessor;
-import com.lmax.disruptor.RingBuffer;
 
 public class ProcessingPipeline<TEvent> {
 
@@ -68,11 +68,11 @@ public class ProcessingPipeline<TEvent> {
 		return build(ProcessingPipeline.<TEvent>createProducerProcess(process, clock), clock);
 	}
 	
-	public static <TEvent> PipelineBranch.Starter<TEvent> startBranch(RingBuffer<TEvent> connector, Clock clock) {
+	public static <TEvent> PipelineBranch.Starter<TEvent> startBranch(EventQueue<TEvent> connector, Clock clock) {
 		return new PipelineBranch.Starter<>(connector, clock);
 	}
 	
-	public static <TEvent> PipelineCyclicSection.CyclicStarter<TEvent> startCyclicPipeline(RingBuffer<TEvent> connector, Clock clock) {
+	public static <TEvent> PipelineCyclicSection.CyclicStarter<TEvent> startCyclicPipeline(EventQueue<TEvent> connector, Clock clock) {
 		return new PipelineCyclicSection.CyclicStarter<>(connector, clock);
 	}
 	
@@ -94,7 +94,7 @@ public class ProcessingPipeline<TEvent> {
 			_layerIndex = layerIndex;
 		}
 		
-		public Connector<TEvent> thenConnector(RingBuffer<TEvent> connector) {
+		public Connector<TEvent> thenConnector(EventQueue<TEvent> connector) {
 			Objects.requireNonNull(connector);
 			return new Connector<>(_layerIndex, connector, _pipelineSection, _clock);
 		}
@@ -120,11 +120,11 @@ public class ProcessingPipeline<TEvent> {
 	public static class Connector<TEvent> {
 		
 		private final int _layerIndex;
-		private final RingBuffer<TEvent> _connector;
+		private final EventQueue<TEvent> _connector;
 		private final PipelineTopology<TEvent> _pipelineSection;
 		private final Clock _clock;
 		
-		Connector(int layerIndex, RingBuffer<TEvent> connector, PipelineTopology<TEvent> pipelineSection, Clock clock) {
+		Connector(int layerIndex, EventQueue<TEvent> connector, PipelineTopology<TEvent> pipelineSection, Clock clock) {
 			_layerIndex = layerIndex;
 			_connector = connector;
 			_pipelineSection = pipelineSection;

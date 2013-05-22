@@ -77,9 +77,4 @@ public class ZmqSocketSetMessenger implements Messenger {
 		return Arrays.copyOf(_socketIds, _socketIds.length);
 	}
 
-	@Override
-	public boolean hasPendingEvents() {
-		return _pollSet.pollNoBlock() != null;
-	}
-
 }

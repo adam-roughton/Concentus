@@ -15,11 +15,9 @@
  */
 package com.adamroughton.concentus.messaging.benchmarks;
 
-import java.lang.Thread.UncaughtExceptionHandler;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -40,24 +38,7 @@ public abstract class MessagingBenchmarkBase extends Benchmark {
 	protected final void setUp() throws Exception {
 		super.setUp();
 		_interactingPartyRunFlag = new AtomicBoolean(true);
-		_executor = Executors.newCachedThreadPool(new ThreadFactory() {
-			
-			@Override
-			public Thread newThread(Runnable r) {
-				final Thread mainThread = Thread.currentThread();
-				Thread otherThread = new Thread(r);
-				otherThread.setUncaughtExceptionHandler(new UncaughtExceptionHandler() {
-
-					@Override
-					public void uncaughtException(Thread t, Throwable e) {
-						e.printStackTrace();
-						mainThread.interrupt();
-					}
-					
-				});
-				return otherThread;
-			}
-		});
+		_executor = Executors.newCachedThreadPool();
 		_zmqContext = ZMQ.context(1);
 		setUp(_zmqContext);
 		_interactingPartyTaskThread = new AtomicReference<Thread>(null);
@@ -68,6 +49,20 @@ public abstract class MessagingBenchmarkBase extends Benchmark {
 			public void run() {
 				ref.set(Thread.currentThread());
 				createInteractingParty(_zmqContext, _interactingPartyRunFlag).run();
+			}
+			
+		});
+		final Thread mainThread = Thread.currentThread();
+		_executor.submit(new Runnable() {
+
+			@Override
+			public void run() {
+				try {
+					_interactingPartyTask.get();
+				} catch (Exception e) {
+					e.printStackTrace();
+					mainThread.interrupt();
+				}
 			}
 			
 		});

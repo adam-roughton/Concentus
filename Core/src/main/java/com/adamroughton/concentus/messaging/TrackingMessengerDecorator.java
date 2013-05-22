@@ -125,10 +125,4 @@ public final class TrackingMessengerDecorator implements Messenger {
 		return _messenger.getEndpointIds();
 	}
 
-
-	@Override
-	public boolean hasPendingEvents() {
-		return _messenger.hasPendingEvents();
-	}
-
 }

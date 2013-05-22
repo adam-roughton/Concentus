@@ -104,9 +104,4 @@ public final class StubMessenger implements Messenger {
 		return _endPointIds;
 	}
 
-	@Override
-	public boolean hasPendingEvents() {
-		return true;
-	}
-
 }

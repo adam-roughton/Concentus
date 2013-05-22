@@ -17,18 +17,17 @@ package com.adamroughton.concentus.disruptor;
 
 import org.junit.*;
 
-import com.adamroughton.concentus.disruptor.NonBlockingRingBufferWriter;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
 
 import static org.junit.Assert.*;
 
-public class TestNonBlockingRingBufferWriter {
+public class TestSingleProducerEventQueuePublisher {
 
 	private RingBuffer<byte[]> _ringBuffer;
 	private Sequence _gatingSeq = new Sequence(-1);
-	private NonBlockingRingBufferWriter<byte[]> _writer;
+	private SingleProducerEventQueuePublisher<byte[]> _publisher;
 	
 	@Before
 	public void setUp() {
@@ -46,22 +45,22 @@ public class TestNonBlockingRingBufferWriter {
 		}
 		// gating seq set such that no buffer space is available
 		_gatingSeq.set(-1);
-		_writer = new NonBlockingRingBufferWriter<>(_ringBuffer);
+		_publisher = new SingleProducerEventQueuePublisher<>(_ringBuffer, false);
 	}
 	
 	@Test
 	public void claimWithAvailableSpace() {
 		_gatingSeq.set(0);
 		
-		assertNotNull(_writer.claimNoBlock());
-		_writer.publish();
+		assertNotNull(_publisher.next());
+		_publisher.publish();
 		assertEquals(4, _ringBuffer.getCursor());
 	}
 	
 	@Test
 	public void claimWithNoBufferSpace() {
 		_gatingSeq.set(-1);
-		assertNull(_writer.claimNoBlock());		
+		assertNull(_publisher.next());		
 		assertEquals(3, _ringBuffer.getCursor());
 	}
 	
@@ -69,13 +68,13 @@ public class TestNonBlockingRingBufferWriter {
 	public void claimWithNoBufferSpaceThenClaimWithSpace() {
 		_gatingSeq.set(-1);
 		
-		assertNull(_writer.claimNoBlock());
+		assertNull(_publisher.next());
 		assertEquals(3, _ringBuffer.getCursor());
 		
 		_gatingSeq.set(3);
 		
-		assertNotNull(_writer.claimNoBlock());
-		_writer.publish();
+		assertNotNull(_publisher.next());
+		_publisher.publish();
 		
 		assertEquals(4, _ringBuffer.getCursor());
 	}
