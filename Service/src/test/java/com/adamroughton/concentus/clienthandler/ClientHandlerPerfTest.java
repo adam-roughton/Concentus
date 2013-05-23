@@ -395,8 +395,8 @@ public class ClientHandlerPerfTest {
 		System.in.read();
 		PrintStream consoleStream = System.out;
 		PrintStream nullPrintStream = new PrintStream(new NullOutputStream());
-		//System.setOut(nullPrintStream);
-		//System.setErr(nullPrintStream);
+		System.setOut(nullPrintStream);
+		System.setErr(nullPrintStream);
 		
 		while(true) {
 			ClientHandlerPerfTest perfTest = new ClientHandlerPerfTest(consoleStream);

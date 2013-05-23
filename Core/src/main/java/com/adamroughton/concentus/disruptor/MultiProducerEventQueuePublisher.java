@@ -42,8 +42,12 @@ public final class MultiProducerEventQueuePublisher<T> implements EventQueuePubl
 				return false;
 			}
 		}
-		T queueBuffer = _ringBuffer.get(seq);
-		_entryHandler.copy(_tmpBuffer, queueBuffer);
+		try {
+			T queueBuffer = _ringBuffer.get(seq);
+			_entryHandler.copy(_tmpBuffer, queueBuffer);
+		} finally {
+			_ringBuffer.publish(seq);
+		}
 		
 		_entryHandler.clear(_tmpBuffer);
 		_isPending = false;
