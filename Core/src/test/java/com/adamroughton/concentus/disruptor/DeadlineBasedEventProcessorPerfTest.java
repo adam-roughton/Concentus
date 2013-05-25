@@ -150,7 +150,7 @@ public class DeadlineBasedEventProcessorPerfTest {
 		}
 		
 		@Override
-		public void onEvent(byte[] event, long sequence, long nextDeadline)
+		public void onEvent(byte[] event, long sequence, boolean isEndOfBatch)
 				throws Exception {
 			_onEventCallCount++;
 			_val ^= busySpin(_onEventProcNanos);

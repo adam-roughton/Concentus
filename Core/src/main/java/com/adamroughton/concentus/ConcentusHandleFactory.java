@@ -34,6 +34,7 @@ public class ConcentusHandleFactory {
 	public final static String ZOOKEEPER_ADDRESS_OPTION = "z";
 	public final static String PROPERTIES_FILE_OPTION = "p";
 	public final static String NETWORK_ADDRESS_OPTION = "a";
+	public final static String TRACE_OPTION = "t";
 	
 	@SuppressWarnings("static-access")
 	public static Iterable<Option> getCommandLineOptions() {
@@ -52,20 +53,38 @@ public class ConcentusHandleFactory {
 					.hasArgs()
 					.isRequired(true)
 					.withDescription("address to bind sockets to")
-					.create(NETWORK_ADDRESS_OPTION)
+					.create(NETWORK_ADDRESS_OPTION),
+				OptionBuilder.withArgName("trace")
+					.hasArg(false)
+					.isRequired(false)
+					.withDescription("wraps select components with tracing versions that output to stdout")
+					.create(TRACE_OPTION)
 			);
 	}
 
 	public static <TConfig extends Configuration> ConcentusHandle<TConfig> createHandle(Class<TConfig> configType, Map<String, String> cmdLineValues) {
+		final boolean useTracingComponents = cmdLineValues.containsKey(TRACE_OPTION);
+		
 		final Clock clock = new DefaultClock();
 		
-		InstanceFactory<SocketManager> socketManagerFactory = new InstanceFactory<SocketManager>() {
-			
-			@Override
-			public SocketManager newInstance() {
-				return new TrackingSocketManagerDecorator(new SocketManagerImpl(clock), clock);
-			}
-		};
+		InstanceFactory<SocketManager> socketManagerFactory;
+		if (useTracingComponents) {
+			socketManagerFactory = new InstanceFactory<SocketManager>() {
+				
+				@Override
+				public SocketManager newInstance() {
+					return new TrackingSocketManagerDecorator(new SocketManagerImpl(clock), clock);
+				}
+			};
+		} else {
+			socketManagerFactory = new InstanceFactory<SocketManager>() {
+				
+				@Override
+				public SocketManager newInstance() {
+					return new SocketManagerImpl(clock);
+				}
+			};
+		}
 		
 		String configPath = cmdLineValues.get(PROPERTIES_FILE_OPTION);
 		TConfig config = Util.readConfig(configType, configPath);
@@ -86,7 +105,8 @@ public class ConcentusHandleFactory {
 			throw new RuntimeException(
 					String.format("The ZooKeeper App Root '%s' was not a valid root path " +
 							"(can be '/' or '/[A-Za-z0-9]+')", zooKeeperRoot));
-		}		
+		}	
+	
 		return new ConcentusHandle<TConfig>(socketManagerFactory, clock, config, networkAddress, zooKeeperAddress);
 	}
 

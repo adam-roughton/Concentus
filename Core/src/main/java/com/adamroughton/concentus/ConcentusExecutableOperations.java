@@ -109,7 +109,13 @@ public class ConcentusExecutableOperations {
 			CommandLine commandLine = parser.parse(cliOptions, args);
 			for (Object option : cliOptions.getOptions()) {
 				String opt = ((Option) option).getOpt();
-				parsedCommandLine.put(opt, commandLine.getOptionValue(opt).trim());
+				if (commandLine.hasOption(opt)) {
+					if (((Option) option).hasArgs()) {
+						parsedCommandLine.put(opt, commandLine.getOptionValue(opt).trim());
+					} else {
+						parsedCommandLine.put(opt, "");
+					}
+				}
 			}
 		} catch (ParseException eParse) {
 			HelpFormatter helpFormatter = new HelpFormatter();

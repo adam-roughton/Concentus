@@ -132,7 +132,7 @@ public class SimulatedClientProcessorBenchmark {
 				updateEvent.setSimTime(System.currentTimeMillis());
 				updateEvent.setHighestInputActionId(0);
 				updateEvent.setUsedLength(updateEvent.getMaxUpdateBufferLength());
-				_worker.onEvent(_recvBuffer, seq++, 0);
+				_worker.onEvent(_recvBuffer, seq++, true);
 			}
 		}
 		updateEvent.releaseBackingArray();

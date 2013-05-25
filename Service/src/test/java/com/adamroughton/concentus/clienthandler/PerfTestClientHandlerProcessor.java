@@ -209,7 +209,7 @@ public class PerfTestClientHandlerProcessor {
 							}
 							
 						});
-						clientHandler.onEvent(buffer, seq, 10000);
+						clientHandler.onEvent(buffer, seq, true);
 						testClock.advance(300, TimeUnit.NANOSECONDS);
 					} catch (Exception e) {
 						throw new RuntimeException(e);
@@ -257,7 +257,7 @@ public class PerfTestClientHandlerProcessor {
 								event.setUsedLength(updateLength);
 							}
 						});
-						clientHandler.onEvent(buffer, seq++, 10000);
+						clientHandler.onEvent(buffer, seq++, true);
 						
 						fakeRecv(buffer, recvHeader, EventType.STATE_INFO.getId(), subSocketId, infoEvent, new EventWriter<OutgoingEventHeader, StateUpdateInfoEvent>() {
 
@@ -274,7 +274,7 @@ public class PerfTestClientHandlerProcessor {
 								}
 							}
 						});
-						clientHandler.onEvent(buffer, seq++, 10000);
+						clientHandler.onEvent(buffer, seq++, true);
 					} 
 					
 					// recv input event
@@ -289,7 +289,7 @@ public class PerfTestClientHandlerProcessor {
 						}
 						
 					});
-					clientHandler.onEvent(buffer, seq++, 10000);
+					clientHandler.onEvent(buffer, seq++, true);
 					
 					
 					if (i % clientCount == 37) {

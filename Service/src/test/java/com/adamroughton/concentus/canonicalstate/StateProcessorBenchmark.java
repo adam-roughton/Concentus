@@ -23,6 +23,7 @@ import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
+import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.events.StateInputEvent;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
@@ -36,6 +37,7 @@ public class StateProcessorBenchmark {
 	private StateProcessor _stateProcessor;
 	private IncomingEventHeader _header;
 	private EventQueue<byte[]> _sendBuffer;
+	private StateInputEvent _inputEvent;
 	
 	private byte[] _recvBuffer;
 	
@@ -52,6 +54,18 @@ public class StateProcessorBenchmark {
 		_sendBuffer.setGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		_header = new IncomingEventHeader(0, 2);
+		
+		// set up recvBuffer header content
+		_inputEvent = new StateInputEvent();
+		_header.setIsValid(_recvBuffer, true);
+		int cursor = _header.getEventOffset();
+		_header.setSegmentMetaData(_recvBuffer, 0, cursor, 4);
+		MessageBytesUtil.writeInt(_recvBuffer, cursor, _inputEvent.getEventTypeId());
+		cursor += 4;
+		_inputEvent.setBackingArray(_recvBuffer, cursor);
+		_inputEvent.setUsedLength(50);
+		_header.setSegmentMetaData(_recvBuffer, 1, cursor, _inputEvent.getEventSize());
+		
 		
 		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(new OutgoingEventHeader(0, 2), _sendBuffer);
 		
@@ -73,22 +87,17 @@ public class StateProcessorBenchmark {
 	}	
 	
 	public void timeStateProcessor(long inputCount) throws Exception {
-		StateInputEvent inputEvent = new StateInputEvent();
-		inputEvent.setBackingArray(_recvBuffer, 0);
-		
 		long nextDeadline = _stateProcessor.moveToNextDeadline(0);
 		for (long inputSeq = 0; inputSeq < inputCount; inputSeq++) {
-			inputEvent.setInputId(inputSeq);
-			inputEvent.setClientHandlerId((int)(inputSeq % 8));
-			inputEvent.setUsedLength(50);
+			_inputEvent.setInputId(inputSeq);
+			_inputEvent.setClientHandlerId((int)(inputSeq % 8));
 			
-			_stateProcessor.onEvent(_recvBuffer, inputSeq, nextDeadline);
+			_stateProcessor.onEvent(_recvBuffer, inputSeq, true);
 			if (_clock.currentMillis() >= nextDeadline) {
 				_stateProcessor.onDeadline();
-				_stateProcessor.moveToNextDeadline(0);
+				nextDeadline = _stateProcessor.moveToNextDeadline(0);
 			}
 		}
-		inputEvent.releaseBackingArray();
 	}
 	
 	public long eventSentCount() {

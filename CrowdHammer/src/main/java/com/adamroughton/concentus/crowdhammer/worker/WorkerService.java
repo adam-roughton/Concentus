@@ -99,7 +99,6 @@ public final class WorkerService implements CrowdHammerService {
 				return new Client(index++, _concentusHandle.getClock());
 			}
 		});
-		
 		_clientSendHeader = new OutgoingEventHeader(0, 1);
 		_clientRecvHeader = new IncomingEventHeader(0, 1);
 		_metricSendHeader = new OutgoingEventHeader(0, 2);
@@ -258,8 +257,6 @@ public final class WorkerService implements CrowdHammerService {
 				.then(_clientRecvQueue.createDeadlineBasedEventProcessor(_clientProcessor, _concentusHandle.getClock(), _concentusHandle))
 				.attachBranch(metricSendBranch)
 				.completeCycle(_executor);
-		
-		
 	}
 	
 	private void executeTest(ClusterWorkerHandle cluster) throws Exception {

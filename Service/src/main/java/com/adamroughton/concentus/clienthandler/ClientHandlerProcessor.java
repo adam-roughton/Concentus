@@ -155,7 +155,7 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	 */
 	
 	@Override
-	public void onEvent(byte[] eventBytes, long sequence, long nextDeadline)
+	public void onEvent(byte[] eventBytes, long sequence, boolean isEndOfBatch)
 			throws Exception {
 		if (!_incomingQueueHeader.isValid(eventBytes)) return;
 		

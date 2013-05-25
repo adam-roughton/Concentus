@@ -109,7 +109,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 	}
 	
 	@Override
-	public void onEvent(byte[] event, long sequence, long nextDeadline)
+	public void onEvent(byte[] event, long sequence, boolean isEndOfBatch)
 			throws Exception {
 		boolean wasValid = _subHeader.isValid(event);
 		if (wasValid) {

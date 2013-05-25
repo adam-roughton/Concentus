@@ -23,10 +23,14 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 
+import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessengerMutex;
+import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.StubMessenger;
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerFactory;
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerMutex;
+import com.adamroughton.concentus.messaging.StubMessenger.FakeRecvDelegate;
+import com.adamroughton.concentus.messaging.StubMessenger.FakeSendDelegate;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 
@@ -101,12 +105,33 @@ public class StubSocketManager implements SocketManager {
 
 			@Override
 			public StubMessenger create(Collection<StubMessenger> messengers) {
+				final ArrayList<StubMessenger> messengersList = new ArrayList<>(messengers);
+				final Int2ObjectMap<StubMessenger> messengerLookup = new Int2ObjectArrayMap<>();
 				int[] socketIds = new int[messengers.size()];
 				int index = 0;
 				for (StubMessenger messenger : messengers) {
 					socketIds[index++] = messenger.getEndpointIds()[0];
+					messengerLookup.put(messenger.getEndpointIds()[0], messenger);
 				}
-				return new StubMessenger(socketIds);
+				StubMessenger multiMessenger = new StubMessenger(socketIds);
+				multiMessenger.setFakeRecvDelegate(new FakeRecvDelegate() {
+					
+					@Override
+					public boolean fakeRecv(int[] endPointIds, long recvSeq,
+							byte[] eventBuffer, IncomingEventHeader header, boolean isBlocking) {
+						return messengersList.get((int)(recvSeq % messengersList.size())).recv(eventBuffer, header, isBlocking);
+					}
+				});
+				multiMessenger.setFakeSendDelegate(new FakeSendDelegate() {
+					
+					@Override
+					public boolean fakeSend(long sendSeq, byte[] eventBuffer,
+							OutgoingEventHeader header, boolean isBlocking) {
+						int socketId = header.getTargetSocketId(eventBuffer);
+						return messengerLookup.get(socketId).send(eventBuffer, header, isBlocking);
+					}
+				});
+				return multiMessenger;
 			}
 			
 		}, messengerMutexes);

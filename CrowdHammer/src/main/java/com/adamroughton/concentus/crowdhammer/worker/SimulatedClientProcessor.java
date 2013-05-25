@@ -94,6 +94,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	private long _nextClientIndex = -1;
 	private long _lastProcessedMetricBucketId;
 	private boolean _sendMetric = false;
+	private boolean _delayedClientDeadline = false;
 	private long _nextDeadline = -1;
 		
 	public SimulatedClientProcessor(
@@ -150,7 +151,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	}
 	
 	@Override
-	public void onEvent(byte[] event, long sequence, long nextDeadline)
+	public void onEvent(byte[] event, long sequence, boolean isEndOfBatch)
 			throws Exception {
 		if (!_recvHeader.isValid(event)) return;
 		
@@ -185,19 +186,25 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 		if (_sendMetric) {
 			sendMetricEvents();
 		} else if (_isSendingInput) {
-			Client client = _clients.get(_nextClientIndex);	
-			client.onActionDeadline(_clientSendQueue, _metricContainer.getMetricEntry());
+			// only process the client if it will not block
+			if (_clientSendQueue.isFull()) {
+				_delayedClientDeadline = true;
+			} else {
+				Client client = _clients.get(_nextClientIndex);	
+				client.onActionDeadline(_clientSendQueue, _metricContainer.getMetricEntry());
+			}
 		}
 	}
 
 	@Override
 	public long moveToNextDeadline(long pendingEventCount) {
 		_metricContainer.getMetricEntry().pendingEventCount = pendingEventCount;
-		if (!_sendMetric) {
+		if (!_sendMetric && !_delayedClientDeadline) {
 			// if we didn't send a metric on the last deadline, advance for the next client
 			_nextClientIndex++;
 			if (_nextClientIndex >= _activeClientCount) _nextClientIndex = 0;
 		}
+
 		long nextMetricDeadline = _metricContainer.getMetricBucketEndTime(_lastProcessedMetricBucketId + 1);
 		// FIX: stop the same client deadline being returned when we are no longer sending input
 		long nextClientDeadline;
@@ -213,6 +220,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 			_nextDeadline = nextMetricDeadline;
 		} else {
 			_sendMetric = false;
+			_delayedClientDeadline = false;
 			_nextDeadline = nextClientDeadline;
 		}
 		return _nextDeadline;

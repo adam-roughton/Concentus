@@ -87,12 +87,12 @@ public class ClientHandlerPerfTest {
 			ClientInputEvent _inputEvent = new ClientInputEvent();
 			IncomingEventHeader _header = new IncomingEventHeader(0, 2);
 			
+			boolean hasStarted = false;
 			boolean hasStopped = false;
 			
 			@Override
 			public boolean fakeRecv(int[] endPointIds, long recvSeq, byte[] eventBuffer,
 					IncomingEventHeader header, boolean isBlocking) {
-				
 				if (recvSeq >= messageCount + clientCount) {
 					if (!hasStopped) {
 						_endLatch.countDown();
@@ -116,11 +116,14 @@ public class ClientHandlerPerfTest {
 						_connectEvent.setBackingArray(eventBuffer, cursor);
 						_connectEvent.setCallbackBits(recvSeq);
 					} else {
-						try {
-							_startLatch.await();
-						} catch (InterruptedException eInterrupted) {
-							Thread.currentThread().interrupt();
-							return false;
+						if (!hasStarted) {
+							try {
+								_startLatch.await();
+							} catch (InterruptedException eInterrupted) {
+								Thread.currentThread().interrupt();
+								return false;
+							}
+							hasStarted = true;
 						}
 						event = _inputEvent;
 						_inputEvent.setBackingArray(eventBuffer, cursor);
@@ -237,6 +240,7 @@ public class ClientHandlerPerfTest {
 				}
 				
 				_consolePrintStream.println(String.format("ClientHandlerMetric (B%d,%d): " +
+						"%d clients, " +
 						"%f action/s, " +
 						"%f conn/s, " +
 						"%f updatesProc/s, " +
@@ -246,6 +250,7 @@ public class ClientHandlerPerfTest {
 						"%d pending", 
 						event.getMetricBucketId(), 
 						event.getSourceId(), 
+						event.getActiveClientCount(),
 						inputActionthroughput, 
 						connectionRequestThroughput,
 						updateRecvThroughput,
@@ -281,7 +286,6 @@ public class ClientHandlerPerfTest {
 									public boolean fakeRecv(int[] endPointIds, long recvSeq, byte[] eventBuffer,
 											IncomingEventHeader header, boolean isBlocking) {
 										LockSupport.park();
-										System.out.println("Escaped");
 										return false;
 									}
 								});
@@ -401,10 +405,10 @@ public class ClientHandlerPerfTest {
 		while(true) {
 			ClientHandlerPerfTest perfTest = new ClientHandlerPerfTest(consoleStream);
 			perfTest.messageCount = 100000000;
-			perfTest.clientCount = 15000;
+			perfTest.clientCount = 32768;
 			perfTest.updateTickPeriod = 100;
-			perfTest.msgSendDelayNanos = 200;
-			perfTest.fakeStateUpdates = false;
+			perfTest.msgSendDelayNanos = 100;
+			perfTest.fakeStateUpdates = true;
 			perfTest.setUp();
 			
 			long startTime = System.nanoTime();

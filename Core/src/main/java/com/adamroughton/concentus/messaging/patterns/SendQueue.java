@@ -32,6 +32,16 @@ public class SendQueue<TSendHeader extends OutgoingEventHeader> {
 		_sendQueuePublisher = sendQueue.createPublisher(true);
 	}
 	
+	/**
+	 * Flag indicating whether the queue was full at the time
+	 * of the call. This indicates whether the queue will block
+	 * on the next send (assuming it remains full).
+	 * @return {@code true} if the queue is full
+	 */
+	public final boolean isFull() {
+		return _sendQueuePublisher.hasUnpublished();
+	}
+	
 	public final void send(SendTask<TSendHeader> task) {
 		byte[] outgoingBuffer = _sendQueuePublisher.next();
 		try {
@@ -40,6 +50,21 @@ public class SendQueue<TSendHeader extends OutgoingEventHeader> {
 		} finally {
 			_sendQueuePublisher.publish();
 		}
+	}
+	
+	/**
+	 * Sends the task if there is space, failing if the call
+	 * would block. This call is not thread safe.
+	 * @param task the task to send
+	 * @return {@code true} if the task was send without blocking,
+	 * {@code false} otherwise
+	 */
+	public final boolean trySend(SendTask<TSendHeader> task) {
+		boolean canSendNoBlock = !isFull();
+		if (canSendNoBlock) {
+			send(task);
+		}
+		return canSendNoBlock;
 	}
 	
 }

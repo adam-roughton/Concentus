@@ -66,7 +66,7 @@ public final class EventListener implements Runnable {
 			_exCallback.signalFatalException(t);
 		} finally {
 			if (_recvQueuePublisher.hasUnpublished()) {
-				byte[] unpublished = _recvQueuePublisher.next();
+				byte[] unpublished = _recvQueuePublisher.getUnpublished();
 				_header.setIsValid(unpublished, false);
 				_recvQueuePublisher.publish();
 			}

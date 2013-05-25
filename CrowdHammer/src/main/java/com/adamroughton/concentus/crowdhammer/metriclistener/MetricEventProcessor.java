@@ -264,6 +264,7 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 		}
 		
 		Log.info(String.format("ClientHandlerMetric (B%d,%d): " +
+				"%d clients, " +
 				"%f action/s, " +
 				"%f conn/s, " +
 				"%f updatesProc/s, " +
@@ -273,6 +274,7 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 				"%d pending", 
 				event.getMetricBucketId(), 
 				event.getSourceId(), 
+				event.getActiveClientCount(),
 				inputActionthroughput, 
 				connectionRequestThroughput,
 				updateRecvThroughput,

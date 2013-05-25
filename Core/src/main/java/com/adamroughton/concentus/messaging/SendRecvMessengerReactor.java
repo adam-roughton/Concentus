@@ -95,8 +95,9 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 							
 							byte[] recvBuffer = _recvQueuePublisher.next();
 							if (recvBuffer != null && messenger.recv(recvBuffer, _recvHeader, false)) {
-								_recvQueuePublisher.publish();
-								wasActivity = true;
+								if (_recvQueuePublisher.publish()) {
+									wasActivity = true;
+								}
 							}
 							
 							byte[] sendBuffer = _sendQueueReader.get();
@@ -122,7 +123,7 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 					_exCallback.signalFatalException(e);
 				} finally {
 					if (_recvQueuePublisher.hasUnpublished()) {
-						byte[] unpublishedEvent = _recvQueuePublisher.next();
+						byte[] unpublishedEvent = _recvQueuePublisher.getUnpublished();
 						_recvHeader.setIsValid(unpublishedEvent, false);
 						_recvQueuePublisher.publish();
 					}

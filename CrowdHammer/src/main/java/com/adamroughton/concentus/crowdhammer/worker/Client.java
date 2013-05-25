@@ -82,8 +82,8 @@ public final class Client {
 	}
 	
 	public long getNextDeadline() {
-		if (!hasConnected() && !_isConnecting) {
-			return _clock.currentMillis() + 1;
+		if (!hasConnected()) {
+			return _clock.currentMillis();
 		} else {
 			return _lastActionTime + TIME_STEP_IN_MS;
 		}
@@ -147,7 +147,7 @@ public final class Client {
 		for (long inputId = lastConfirmedInputId + 1; inputId <= updateEvent.getHighestInputActionId(); inputId++) {
 			if (_inputIdToSentTimeLookup.containsIndex(inputId)) {
 				long latency = updateRecvTime - _inputIdToSentTimeLookup.get(inputId);
-				metricEntry.addInputToUpdateLatency(latency);				
+				metricEntry.addInputToUpdateLatency(latency);	
 				_inputIdToSentTimeLookup.remove(inputId);
 			} else {
 				metricEntry.incrementInputToUpdateLateCount(1);

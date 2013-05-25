@@ -28,7 +28,7 @@ import java.util.concurrent.TimeUnit;
  */
 public interface DeadlineBasedEventHandler<T> {
 
-	void onEvent(T event, long sequence, long nextDeadline) throws Exception;
+	void onEvent(T event, long sequence, boolean isEndOfBatch) throws Exception;
 
 	/**
 	 * Called when the next deadline is reached in a best effort manner.
