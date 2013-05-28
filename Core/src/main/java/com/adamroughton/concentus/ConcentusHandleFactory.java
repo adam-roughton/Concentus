@@ -24,6 +24,8 @@ import org.apache.commons.cli.Option;
 import org.apache.commons.cli.OptionBuilder;
 
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.disruptor.EventQueueFactory;
+import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketManagerImpl;
 import com.adamroughton.concentus.messaging.zmq.TrackingSocketManagerDecorator;
@@ -68,6 +70,7 @@ public class ConcentusHandleFactory {
 		final Clock clock = new DefaultClock();
 		
 		InstanceFactory<SocketManager> socketManagerFactory;
+		EventQueueFactory eventQueueFactory;
 		if (useTracingComponents) {
 			socketManagerFactory = new InstanceFactory<SocketManager>() {
 				
@@ -76,6 +79,7 @@ public class ConcentusHandleFactory {
 					return new TrackingSocketManagerDecorator(new SocketManagerImpl(clock), clock);
 				}
 			};
+			eventQueueFactory = new StandardEventQueueFactory();
 		} else {
 			socketManagerFactory = new InstanceFactory<SocketManager>() {
 				
@@ -84,6 +88,7 @@ public class ConcentusHandleFactory {
 					return new SocketManagerImpl(clock);
 				}
 			};
+			eventQueueFactory = new StandardEventQueueFactory();
 		}
 		
 		String configPath = cmdLineValues.get(PROPERTIES_FILE_OPTION);
@@ -107,7 +112,7 @@ public class ConcentusHandleFactory {
 							"(can be '/' or '/[A-Za-z0-9]+')", zooKeeperRoot));
 		}	
 	
-		return new ConcentusHandle<TConfig>(socketManagerFactory, clock, config, networkAddress, zooKeeperAddress);
+		return new ConcentusHandle<TConfig>(socketManagerFactory, eventQueueFactory, clock, config, networkAddress, zooKeeperAddress);
 	}
 
 }

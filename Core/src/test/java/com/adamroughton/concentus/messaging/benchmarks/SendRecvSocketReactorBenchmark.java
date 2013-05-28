@@ -39,7 +39,6 @@ import com.adamroughton.concentus.util.Util;
 import com.google.caliper.Param;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
-import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
@@ -71,11 +70,11 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _recvHeader.getEventOffset())), 
 				1, 
 				new YieldingWaitStrategy());
-		_recvQueue.setGatingSequences(new Sequence(Long.MAX_VALUE));
+		_recvQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
-		RingBuffer<byte[]> sendBuffer = new RingBuffer<>(
+		RingBuffer<byte[]> sendBuffer = RingBuffer.createSingleProducer(
 				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _recvHeader.getEventOffset())), 
-				new SingleThreadedClaimStrategy(1), 
+				1, 
 				new YieldingWaitStrategy());
 		_sendQueue = new EventQueueBase<byte[]>(sendBuffer) {
 
@@ -91,9 +90,9 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 			}
 			
 		};
-		_sendQueue.setGatingSequences(new Sequence(Long.MAX_VALUE));
+		_sendQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		if (sendAndRecv) {
-			sendBuffer.forcePublish(Long.MAX_VALUE);
+			sendBuffer.publish(Long.MAX_VALUE);
 		}
 		
 		byte[] entryContent = sendBuffer.get(0);

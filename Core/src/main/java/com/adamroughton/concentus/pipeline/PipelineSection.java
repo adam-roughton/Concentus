@@ -80,7 +80,7 @@ public class PipelineSection<TEvent> {
 		protected PipelineSegment<TEvent> createSegment(ConsumingPipelineProcess<TEvent> process) {
 			PipelineSegment<TEvent> segment = new PipelineSegment<>(_connectors, process, _clock);
 			for (EventQueue<TEvent> connector : _connectors) {
-				connector.setGatingSequences(process.getSequence());
+				connector.addGatingSequences(process.getSequence());
 			}
 			return segment;
 		}

@@ -37,7 +37,7 @@ import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.concentus.crowdhammer.messaging.events.TestEventType;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
 import com.adamroughton.concentus.disruptor.EventQueue;
-import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
+import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
@@ -125,8 +125,10 @@ public class MetricListenerService implements CrowdHammerService {
 	
 	private void onSetUpTest(ClusterWorkerHandle cluster) {		
 		Configuration config = _concentusHandle.getConfig();
+		EventQueueFactory eventQueueFactory = _concentusHandle.getEventQueueFactory();
+		
 		int recvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "recv");
-		_inputQueue = new SingleProducerEventQueue<>(Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
+		_inputQueue = eventQueueFactory.createSingleProducerQueue(Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
 				recvBufferLength, new YieldingWaitStrategy());
 		
 		Mutex<Messenger> subMessengerMutex = _socketManager.getSocketMutex(_subSocketId);
@@ -134,7 +136,7 @@ public class MetricListenerService implements CrowdHammerService {
 		
 		_pipeline = ProcessingPipeline.<byte[]>build(_eventListener, _concentusHandle.getClock())
 				.thenConnector(_inputQueue)
-				.then(_inputQueue.createBatchEventProcessor(_metricProcessor))
+				.then(_inputQueue.createEventProcessor(_metricProcessor))
 				.createPipeline(_executor);
 						
 		// get client count

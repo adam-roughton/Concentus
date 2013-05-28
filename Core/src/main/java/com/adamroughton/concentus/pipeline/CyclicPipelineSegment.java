@@ -27,10 +27,11 @@ import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueue.EventProcessorFactory;
 import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.AlertException;
+import com.lmax.disruptor.DataProvider;
 import com.lmax.disruptor.EventProcessor;
-import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.SequenceBarrier;
+import com.lmax.disruptor.TimeoutException;
 
 /**
  * Specialised segment that is aware of the cyclic dependency that flows from 
@@ -92,7 +93,7 @@ class CyclicPipelineSegment<TEvent> extends PipelineSegment<TEvent> {
 
 				@Override
 				public NoOpConsumer createProcessor(
-						RingBuffer<TEvent> ringBuffer, SequenceBarrier barrier) {
+						DataProvider<TEvent> eventProvider, SequenceBarrier barrier) {
 					return new NoOpConsumer(_process.getSequence(), barrier);
 				}
 			});
@@ -130,7 +131,11 @@ class CyclicPipelineSegment<TEvent> extends PipelineSegment<TEvent> {
 
 			try {
 				while (true) {
-					_sequence.set(_barrier.waitFor(_sequence.get() + 1));
+					try {
+						_sequence.set(_barrier.waitFor(_sequence.get() + 1));
+					} catch (TimeoutException eTimeOut) {
+						// ignore and continue
+					}
 				}
 			} catch (AlertException | InterruptedException eEscape) {
 				// Do nothing

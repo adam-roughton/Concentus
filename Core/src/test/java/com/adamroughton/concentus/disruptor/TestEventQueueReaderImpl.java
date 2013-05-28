@@ -29,13 +29,13 @@ public class TestEventQueueReaderImpl {
 	
 	@Before
 	public void setUp() {
-		_ringBuffer = new RingBuffer<>(new EventFactory<byte[]>() {
+		_ringBuffer = RingBuffer.createMultiProducer(new EventFactory<byte[]>() {
 			public byte[] newInstance() {
 				return new byte[512];
 			}
 		}, 4);
 		_reader = new EventQueueReaderImpl<>(_ringBuffer, _ringBuffer.newBarrier(), false);
-		_ringBuffer.setGatingSequences(_reader.getSequence());	
+		_ringBuffer.addGatingSequences(_reader.getSequence());	
 	}
 	
 	@Test

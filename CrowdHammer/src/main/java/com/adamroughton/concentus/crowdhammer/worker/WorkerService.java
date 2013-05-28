@@ -32,7 +32,7 @@ import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.concentus.disruptor.EventQueue;
-import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
+import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.MessagingUtil;
@@ -180,15 +180,17 @@ public final class WorkerService implements CrowdHammerService {
 		int routerSendBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "routerSend");
 		int metricBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "metric");
 		
-		_clientRecvQueue = new SingleProducerEventQueue<>(
+		EventQueueFactory eventQueueFactory = _concentusHandle.getEventQueueFactory();
+		
+		_clientRecvQueue = eventQueueFactory.createSingleProducerQueue(
 				Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
 				routerRecvBufferLength, 
 				new YieldingWaitStrategy());
-		_clientSendQueue = new SingleProducerEventQueue<>(
+		_clientSendQueue = eventQueueFactory.createSingleProducerQueue(
 				Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
 				routerSendBufferLength, 
 				new YieldingWaitStrategy());
-		_metricSendQueue = new SingleProducerEventQueue<>(
+		_metricSendQueue = eventQueueFactory.createSingleProducerQueue(
 				Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
 				metricBufferLength, 
 				new YieldingWaitStrategy());
@@ -254,7 +256,7 @@ public final class WorkerService implements CrowdHammerService {
 		_pipeline = ProcessingPipeline.<byte[]>startCyclicPipeline(_clientSendQueue, _concentusHandle.getClock())
 				.then(_clientSocketReactor)
 				.thenConnector(_clientRecvQueue)
-				.then(_clientRecvQueue.createDeadlineBasedEventProcessor(_clientProcessor, _concentusHandle.getClock(), _concentusHandle))
+				.then(_clientRecvQueue.createEventProcessor(_clientProcessor, _concentusHandle.getClock(), _concentusHandle))
 				.attachBranch(metricSendBranch)
 				.completeCycle(_executor);
 	}

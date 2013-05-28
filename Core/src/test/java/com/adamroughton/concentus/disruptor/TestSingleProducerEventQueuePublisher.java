@@ -31,12 +31,12 @@ public class TestSingleProducerEventQueuePublisher {
 	
 	@Before
 	public void setUp() {
-		_ringBuffer = new RingBuffer<>(new EventFactory<byte[]>() {
+		_ringBuffer = RingBuffer.createMultiProducer(new EventFactory<byte[]>() {
 			public byte[] newInstance() {
 				return new byte[512];
 			}
 		}, 4);
-		_ringBuffer.setGatingSequences(_gatingSeq);
+		_ringBuffer.addGatingSequences(_gatingSeq);
 		
 		// fake publish to get to wrap around point
 		for (int i = 0; i < 4; i++) {

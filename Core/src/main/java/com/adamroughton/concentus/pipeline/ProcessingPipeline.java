@@ -132,7 +132,7 @@ public class ProcessingPipeline<TEvent> {
 		}
 		
 		public Builder<TEvent> then(ConsumingPipelineProcess<TEvent> process) {
-			_connector.setGatingSequences(process.getSequence());
+			_connector.addGatingSequences(process.getSequence());
 			return new Builder<>(_layerIndex + 1, _pipelineSection.add(_layerIndex, new PipelineSegment<>(Arrays.asList(_connector), process, _clock)), _clock);
 		}
 		

@@ -29,7 +29,7 @@ import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.disruptor.EventQueue;
-import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
+import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessagingUtil;
@@ -83,10 +83,12 @@ public class CanonicalStateService implements ConcentusService {
 		int recvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "recv");
 		int pubBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "pub");
 		
-		_inputQueue = new SingleProducerEventQueue<>(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
+		EventQueueFactory eventQueueFactory = _concentusHandle.getEventQueueFactory();
+		
+		_inputQueue = eventQueueFactory.createSingleProducerQueue(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
 				recvBufferLength, new YieldingWaitStrategy());
 		
-		_outputQueue = new SingleProducerEventQueue<>(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
+		_outputQueue = eventQueueFactory.createSingleProducerQueue(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
 				pubBufferLength, new YieldingWaitStrategy());
 		
 		_pubHeader = new OutgoingEventHeader(0, 2);
@@ -166,7 +168,7 @@ public class CanonicalStateService implements ConcentusService {
 		
 		_pipeline = ProcessingPipeline.<byte[]>build(_subListener, _concentusHandle.getClock())
 				.thenConnector(_inputQueue)
-				.then(_inputQueue.createDeadlineBasedEventProcessor(_stateProcessor, _concentusHandle.getClock(), _concentusHandle))
+				.then(_inputQueue.createEventProcessor(_stateProcessor, _concentusHandle.getClock(), _concentusHandle))
 				.thenConnector(_outputQueue)
 				.then(_publisher)
 				.createPipeline(_executor);

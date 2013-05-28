@@ -24,7 +24,6 @@ import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.SequenceBarrier;
-import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 public class DeadlineBasedEventProcessorPerfTest {
@@ -46,10 +45,8 @@ public class DeadlineBasedEventProcessorPerfTest {
 	public void setUp() {
 		Clock clock = new DefaultClock();
 		
-		_ringBuffer = new RingBuffer<>(Util.msgBufferFactory(512), 
-				new SingleThreadedClaimStrategy(1), 
-				new YieldingWaitStrategy());
-		_ringBuffer.setGatingSequences(new Sequence(Long.MAX_VALUE));
+		_ringBuffer = RingBuffer.createSingleProducer(Util.msgBufferFactory(512), 1, new YieldingWaitStrategy());
+		_ringBuffer.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		SequenceBarrier barrier = _ringBuffer.newBarrier();
 		
@@ -90,7 +87,7 @@ public class DeadlineBasedEventProcessorPerfTest {
 				}
 				if (eventsToAdd > 0) {
 					long currSeq = _ringBuffer.getCursor();
-					_ringBuffer.forcePublish(currSeq + eventsToAdd);
+					_ringBuffer.publish(currSeq + eventsToAdd);
 				}
 			}
 		} while (currentTime < deadline);

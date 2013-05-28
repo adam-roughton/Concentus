@@ -21,8 +21,9 @@ import com.lmax.disruptor.AlertException;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.SequenceBarrier;
+import com.lmax.disruptor.TimeoutException;
 
-public class EventQueueReaderImpl<T> implements EventQueueReader<T> {
+public final class EventQueueReaderImpl<T> implements EventQueueReader<T> {
 
 	private final RingBuffer<T> _ringBuffer;
 	private final boolean _isBlocking;
@@ -40,15 +41,30 @@ public class EventQueueReaderImpl<T> implements EventQueueReader<T> {
 	@Override
 	public T get() throws AlertException, InterruptedException {
 		long nextSeq = _sequence.get() + 1;
-		_barrier.checkAlert();
 		
-		if (nextSeq > _availableSeq) {
-			if (_isBlocking) {
+		if (nextSeq <= _availableSeq) {
+			return _ringBuffer.get(nextSeq);
+		} else if (_isBlocking) {
+			return blockingGet(nextSeq);
+		} else {
+			return nonBlockingGet(nextSeq);
+		}
+	}
+	
+	private T blockingGet(long nextSeq) throws InterruptedException, AlertException {
+		while (nextSeq > _availableSeq) {
+			try {
 				_availableSeq = _barrier.waitFor(nextSeq);
-			} else {
-				_availableSeq = _barrier.getCursor();				
+			} catch (TimeoutException e) {
+				// ignore
 			}
 		}
+		return _ringBuffer.get(nextSeq);
+	}
+	
+	private T nonBlockingGet(long nextSeq) throws AlertException {
+		_barrier.checkAlert();
+		_availableSeq = _barrier.getCursor();
 		if (nextSeq <= _availableSeq) {
 			return _ringBuffer.get(nextSeq);
 		} else {

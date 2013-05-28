@@ -20,9 +20,9 @@ import com.adamroughton.concentus.disruptor.EventQueue.EventProcessorFactory;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 import com.lmax.disruptor.BatchEventProcessor;
+import com.lmax.disruptor.DataProvider;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.EventProcessor;
-import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.SequenceBarrier;
 
@@ -38,11 +38,11 @@ public class MessagingUtil {
 
 			@Override
 			public EventProcessor createProcessor(
-					final RingBuffer<TEvent> ringBuffer, final SequenceBarrier barrier) {
+					final DataProvider<TEvent> eventProvider, final SequenceBarrier barrier) {
 				return new EventProcessor() {
 
 					private final BatchEventProcessor<TEvent> _batchProcessor = 
-							new BatchEventProcessor<>(ringBuffer, barrier, adapter);
+							new BatchEventProcessor<>(eventProvider, barrier, adapter);
 					
 					@Override
 					public void run() {

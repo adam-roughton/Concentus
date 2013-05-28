@@ -32,8 +32,7 @@ import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.disruptor.EventEntryHandler;
 import com.adamroughton.concentus.disruptor.EventQueue;
-import com.adamroughton.concentus.disruptor.SharedEventQueue;
-import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
+import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
@@ -50,9 +49,7 @@ import com.adamroughton.concentus.pipeline.PipelineBranch;
 import com.adamroughton.concentus.pipeline.PipelineSection;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
-import com.lmax.disruptor.BusySpinWaitStrategy;
 import com.lmax.disruptor.EventProcessor;
-import com.lmax.disruptor.MultiThreadedClaimStrategy;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 import static com.adamroughton.concentus.Constants.*;
@@ -103,7 +100,9 @@ public class ClientHandlerService implements ConcentusService {
 		int pubBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "pub");
 		int metricBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "metric");
 		
-		_recvQueue = new SharedEventQueue<>(
+		EventQueueFactory eventQueueFactory = _concentusHandle.getEventQueueFactory();
+		
+		_recvQueue = eventQueueFactory.createMultiProducerQueue(
 				new EventEntryHandler<byte[]>() {
 
 					@Override
@@ -121,17 +120,17 @@ public class ClientHandlerService implements ConcentusService {
 						System.arraycopy(source, 0, destination, 0, source.length);
 					}
 				}, 
-				new MultiThreadedClaimStrategy(recvBufferLength), 
+				recvBufferLength, 
 				new YieldingWaitStrategy());
-		_routerSendQueue = new SingleProducerEventQueue<>(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
+		_routerSendQueue = eventQueueFactory.createSingleProducerQueue(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
 				routerSendBufferLength, 
 				new YieldingWaitStrategy());
-		_pubQueue = new SingleProducerEventQueue<>(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
+		_pubQueue = eventQueueFactory.createSingleProducerQueue(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
 				pubBufferLength, 
 				new YieldingWaitStrategy());
-		_metricSendQueue = new SingleProducerEventQueue<>(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
+		_metricSendQueue = eventQueueFactory.createSingleProducerQueue(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
 				metricBufferLength, 
-				new BusySpinWaitStrategy());
+				new YieldingWaitStrategy());
 		_outgoingHeader = new OutgoingEventHeader(0, 2);
 		_incomingHeader = new IncomingEventHeader(0, 2);
 		
@@ -259,7 +258,7 @@ public class ClientHandlerService implements ConcentusService {
 				.then(_routerReactor)
 				.thenConnector(_recvQueue)
 				.join(subRecvSection)
-				.into(_recvQueue.createDeadlineBasedEventProcessor(_processor, _concentusHandle.getClock(), _concentusHandle))
+				.into(_recvQueue.createEventProcessor(_processor, _concentusHandle.getClock(), _concentusHandle))
 				.attachBranches(metricSendBranch, pubSendBranch)
 				.completeCycle(_executor);
 		

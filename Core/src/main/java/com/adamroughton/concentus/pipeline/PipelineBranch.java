@@ -57,7 +57,7 @@ public class PipelineBranch<TEvent> {
 		}
 		
 		public Builder<TEvent> then(ConsumingPipelineProcess<TEvent> process) {
-			_connector.setGatingSequences(process.getSequence());
+			_connector.addGatingSequences(process.getSequence());
 			return new Builder<>(_layerIndex + 1, process, _pipelineSection.add(_layerIndex, new PipelineSegment<>(Arrays.asList(_connector), process, _clock)), _clock);
 		}
 		
@@ -101,7 +101,7 @@ public class PipelineBranch<TEvent> {
 		
 		public Connector<TEvent> thenConnector(EventQueue<TEvent> connector) {
 			Objects.requireNonNull(connector);
-			connector.setGatingSequences(_process.getSequence());
+			connector.addGatingSequences(_process.getSequence());
 			return new Connector<>(_layerIndex, connector, _pipelineSection, _clock);
 		}
 		

@@ -38,7 +38,7 @@ public class PipelineCyclicSection<TEvent> {
 		}
 		
 		public CyclicBuilder<TEvent> then(ConsumingPipelineProcess<TEvent> process) {
-			_cycleConnector.setGatingSequences(process.getSequence());
+			_cycleConnector.addGatingSequences(process.getSequence());
 			PipelineSegment<TEvent> segment = new CyclicPipelineSegment<>(_cycleConnector, process, _clock);
 			PipelineTopology<TEvent> topology = _pipelineSegment.add(0, segment);
 			return new CyclicBuilder<>(segment, new ProcessingPipeline.Builder<>(1, topology, _clock), _clock);
@@ -152,7 +152,7 @@ public class PipelineCyclicSection<TEvent> {
 			if (_createLink) {
 				PipelineSegment<TEvent> cycleSegment = new CyclicPipelineSegment<>(_cyclicConnector, _pipelineSectionJoin._connectors, process, _clock);
 				for (EventQueue<TEvent> connector : _pipelineSectionJoin._connectors) {
-					connector.setGatingSequences(process.getSequence());
+					connector.addGatingSequences(process.getSequence());
 				}
 				PipelineTopology<TEvent> pipelineSection = _pipelineSectionJoin._pipeline.add(_pipelineSectionJoin._layerIndex, cycleSegment);
 				return new CyclicBuilder<>(_cycleLink, new ProcessingPipeline.Builder<>(_pipelineSectionJoin._layerIndex + 1, pipelineSection, _clock), _clock);

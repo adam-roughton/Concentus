@@ -42,9 +42,9 @@ import com.adamroughton.concentus.messaging.events.StateUpdateInfoEvent;
 import com.adamroughton.concentus.messaging.patterns.EventReader;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
-import com.lmax.disruptor.BatchEventProcessor;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.EventHandler;
+import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 public class PerfTestClientHandlerProcessor {
@@ -135,7 +135,7 @@ public class PerfTestClientHandlerProcessor {
 		final AtomicLong unknownEventCount = new AtomicLong();
 		final AtomicLong metricsRecv = new AtomicLong();
 		final AtomicLong stateInputsProc = new AtomicLong();
-		final BatchEventProcessor<byte[]> genericConsumer = genericOutQueue.createBatchEventProcessor(new EventHandler<byte[]>() {
+		final EventProcessor genericConsumer = genericOutQueue.createEventProcessor(new EventHandler<byte[]>() {
 
 			final ClientUpdateEvent updateEvent = new ClientUpdateEvent();
 			final ConnectResponseEvent connectResEvent = new ConnectResponseEvent();

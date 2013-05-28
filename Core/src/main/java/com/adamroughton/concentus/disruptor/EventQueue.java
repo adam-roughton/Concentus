@@ -17,7 +17,7 @@ package com.adamroughton.concentus.disruptor;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.FatalExceptionCallback;
-import com.lmax.disruptor.BatchEventProcessor;
+import com.lmax.disruptor.DataProvider;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.RingBuffer;
@@ -45,28 +45,25 @@ public interface EventQueue<T> {
 	 * @param isBlocking
 	 * @return
 	 */
-	EventQueueReader<T> createReader(boolean isBlocking, Sequence...gatingSequences);
+	EventQueueReader<T> createReader(boolean isBlocking, Sequence...sequencesToTrack);
 	
 	/**
 	 * Creates an event processor that wraps the provided event handler.
 	 * @param eventHandler the event handler to wrap
 	 * @return an event processor that consumes events on the queue
 	 */
-	BatchEventProcessor<T> createBatchEventProcessor(EventHandler<T> eventHandler, Sequence... gatingSequences);
+	EventProcessor createEventProcessor(EventHandler<T> eventHandler, Sequence... sequencesToTrack);
 	
-	DeadlineBasedEventProcessor<T> createDeadlineBasedEventProcessor(DeadlineBasedEventHandler<T> eventHandler, Clock clock, 
-			FatalExceptionCallback exceptionCallback, Sequence... gatingSequences);
+	EventProcessor createEventProcessor(DeadlineBasedEventHandler<T> eventHandler, Clock clock, 
+			FatalExceptionCallback exceptionCallback, Sequence... sequencesToTrack);
 	
-	<TProcessor extends EventProcessor> TProcessor createEventProcessor(EventProcessorFactory<T, TProcessor> processorFactory, Sequence...gatingSequences);
+	<TProcessor extends EventProcessor> TProcessor createEventProcessor(EventProcessorFactory<T, TProcessor> processorFactory, Sequence...sequencesToTrack);
 	
-	/**
-	 * Finalises the set of sequences that the underlying ring buffer
-	 * gates on, including both the sequences given and those of created
-	 * event queue readers.
-	 * @param additionalSequences the sequences to gate on in addition to those
-	 * of created event queue readers.
-	 */
-	void setGatingSequences(Sequence...additionalSequences);
+	void addGatingSequences(Sequence...sequences);
+	
+	boolean removeGatingSequence(Sequence sequence);
+	
+	SequenceBarrier newBarrier(Sequence...sequencesToTrack);
 	
 	/**
 	 * @see {@link RingBuffer#getCursor()}
@@ -88,6 +85,6 @@ public interface EventQueue<T> {
 	 * @param <TProcessor> the processor type
 	 */
 	public interface EventProcessorFactory<TEvent, TProcessor extends EventProcessor> {
-		TProcessor createProcessor(RingBuffer<TEvent> ringBuffer, SequenceBarrier barrier);
+		TProcessor createProcessor(DataProvider<TEvent> eventProvider, SequenceBarrier barrier);
 	}
 }

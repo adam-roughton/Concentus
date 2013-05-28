@@ -21,9 +21,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.FatalExceptionCallback;
 import com.lmax.disruptor.AlertException;
+import com.lmax.disruptor.DataProvider;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.LifecycleAware;
-import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.SequenceBarrier;
 
@@ -36,20 +36,20 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 	private final Clock _clock;
 	
 	private final DeadlineBasedEventHandler<T> _eventHandler;
-	private final RingBuffer<T> _ringBuffer;
+	private final DataProvider<T> _eventProvider;
 	private final SequenceBarrier _barrier;
 	private final FatalExceptionCallback _exceptionCallback;
 	
 	public DeadlineBasedEventProcessor(
 			Clock clock,
 			DeadlineBasedEventHandler<T> eventHandler,
-			RingBuffer<T> ringBuffer,
+			DataProvider<T> eventProvider,
 			SequenceBarrier barrier,
 			FatalExceptionCallback exceptionCallback) {
 		_clock = Objects.requireNonNull(clock);
 		//_eventHandler = new TrackingDeadlineBasedEventHandlerDecorator<>(eventHandler, clock);// Objects.requireNonNull(eventHandler);
 		_eventHandler = Objects.requireNonNull(eventHandler);
-		_ringBuffer = Objects.requireNonNull(ringBuffer);
+		_eventProvider = Objects.requireNonNull(eventProvider);
 		_barrier = Objects.requireNonNull(barrier);
 		_exceptionCallback = Objects.requireNonNull(exceptionCallback);
 		
@@ -72,7 +72,7 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 		long availableSeq = -1;
 		while(true) {
 			try {
-				long pendingCount = _ringBuffer.getCursor() - (nextSequence - 1);
+				long pendingCount = _barrier.getCursor() - (nextSequence - 1);
 				long nextDeadline = _eventHandler.moveToNextDeadline(pendingCount);
 				
 				// wait until the next sequence
@@ -81,7 +81,7 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 				// process at least one event per deadline
 				do {
 					if (nextSequence <= availableSeq) {
-						_eventHandler.onEvent(_ringBuffer.get(nextSequence), nextSequence, nextSequence == availableSeq);
+						_eventHandler.onEvent(_eventProvider.get(nextSequence), nextSequence, nextSequence == availableSeq);
 						 nextSequence++;
 					} else {
 						_sequence.set(nextSequence - 1);

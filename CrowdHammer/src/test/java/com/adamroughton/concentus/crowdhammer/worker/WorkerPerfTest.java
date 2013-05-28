@@ -38,6 +38,7 @@ import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.concentus.crowdhammer.config.StubCrowdHammerConfiguration;
 import com.adamroughton.concentus.crowdhammer.messaging.events.WorkerMetricEvent;
+import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
@@ -221,7 +222,7 @@ public class WorkerPerfTest {
 				});
 			}
 			
-		}, new DefaultClock(), new StubCrowdHammerConfiguration(30), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
+		}, new StandardEventQueueFactory(), new DefaultClock(), new StubCrowdHammerConfiguration(30), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
 		_worker = new WorkerService(concentusHandle, 100000);
 		
 		_clusterHandle = new ClusterWorkerHandle() {

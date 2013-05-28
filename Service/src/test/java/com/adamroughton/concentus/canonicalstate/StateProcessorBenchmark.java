@@ -51,7 +51,7 @@ public class StateProcessorBenchmark {
 		_sendBuffer = new SingleProducerEventQueue<byte[]>(Util.msgBufferFactory(bufferSize), 
 				1,
 				new YieldingWaitStrategy());
-		_sendBuffer.setGatingSequences(new Sequence(Long.MAX_VALUE));
+		_sendBuffer.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		_header = new IncomingEventHeader(0, 2);
 		

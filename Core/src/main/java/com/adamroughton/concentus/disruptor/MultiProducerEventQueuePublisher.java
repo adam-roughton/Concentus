@@ -53,7 +53,7 @@ public final class MultiProducerEventQueuePublisher<T> implements EventQueuePubl
 			seq = _ringBuffer.next();
 		} else {
 			try {
-				seq = _ringBuffer.tryNext(1);
+				seq = _ringBuffer.tryNext();
 			} catch (InsufficientCapacityException eNoCapacity) {
 				return false;
 			}

@@ -36,6 +36,7 @@ import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.configuration.StubConfiguration;
+import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
@@ -295,7 +296,7 @@ public class ClientHandlerPerfTest {
 				});
 			}
 			
-		}, new DefaultClock(), new StubConfiguration(), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
+		}, new StandardEventQueueFactory(), new DefaultClock(), new StubConfiguration(), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
 		_clientHandler = new ClientHandlerService(concentusHandle);
 		
 		_clusterHandle = new ClusterWorkerHandle() {

@@ -49,7 +49,7 @@ public class SingleProducerEventQueuePublisher<T> implements EventQueuePublisher
 				_unpubClaimedSeq = _ringBuffer.next();
 			} else {
 				try {
-					_unpubClaimedSeq = _ringBuffer.tryNext(1);			
+					_unpubClaimedSeq = _ringBuffer.tryNext();			
 				} catch (InsufficientCapacityException eNoCapacity) {
 					_unpubClaimedSeq = -1;
 				}

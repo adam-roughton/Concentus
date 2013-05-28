@@ -17,13 +17,12 @@ package com.adamroughton.concentus.disruptor;
 
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.RingBuffer;
-import com.lmax.disruptor.SingleThreadedClaimStrategy;
 import com.lmax.disruptor.WaitStrategy;
 
 public class SingleProducerEventQueue<T> extends EventQueueBase<T> {
 
-	public SingleProducerEventQueue(EventFactory<T> eventFactory, int queueSize, WaitStrategy waitStrategy) {
-		super(new RingBuffer<>(eventFactory, new SingleThreadedClaimStrategy(queueSize), waitStrategy));
+	public SingleProducerEventQueue(EventFactory<T> eventFactory, int size, WaitStrategy waitStrategy) {
+		super(RingBuffer.createSingleProducer(eventFactory, size, waitStrategy));
 	}
 	
 	@Override
