@@ -19,6 +19,7 @@ import java.util.Objects;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.util.RunningStats;
+import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.LifecycleAware;
 
@@ -53,13 +54,7 @@ public class TrackingDeadlineBasedEventHandlerDecorator<T> implements DeadlineBa
 	}
 	
 	private void traceStats(String name, RunningStats stats) {
-		Log.info(String.format("    %s: %d invocations, %f avg, %f stdDev, %f max, %f min",
-				name,
-				stats.getCount(), 
-				stats.getMean(), 
-				stats.getStandardDeviation(), 
-				stats.getMax(), 
-				stats.getMin()));
+		Log.info(String.format("    %s", Util.statsToString(name, stats)));
 		stats.reset();
 	}
 	

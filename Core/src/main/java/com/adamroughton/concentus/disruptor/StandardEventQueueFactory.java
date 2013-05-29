@@ -5,6 +5,11 @@ import com.lmax.disruptor.WaitStrategy;
 
 public class StandardEventQueueFactory implements EventQueueFactory {
 
+	public StandardEventQueueFactory() {
+	}
+	
+	
+	
 	@Override
 	public <T> EventQueue<T> createSingleProducerQueue(
 			EventFactory<T> eventFactory, int size, WaitStrategy waitStrategy) {

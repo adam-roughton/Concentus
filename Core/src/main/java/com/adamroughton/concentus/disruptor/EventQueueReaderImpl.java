@@ -18,21 +18,21 @@ package com.adamroughton.concentus.disruptor;
 import java.util.Objects;
 
 import com.lmax.disruptor.AlertException;
-import com.lmax.disruptor.RingBuffer;
+import com.lmax.disruptor.DataProvider;
 import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.SequenceBarrier;
 import com.lmax.disruptor.TimeoutException;
 
 public final class EventQueueReaderImpl<T> implements EventQueueReader<T> {
 
-	private final RingBuffer<T> _ringBuffer;
+	private final DataProvider<T> _eventProvider;
 	private final boolean _isBlocking;
 	private final SequenceBarrier _barrier;
 	private final Sequence _sequence;
 	private long _availableSeq = -1;
 	
-	public EventQueueReaderImpl(RingBuffer<T> ringBuffer, SequenceBarrier barrier, boolean isBlocking) {
-		_ringBuffer = Objects.requireNonNull(ringBuffer);
+	public EventQueueReaderImpl(DataProvider<T> eventProvider, SequenceBarrier barrier, boolean isBlocking) {
+		_eventProvider = Objects.requireNonNull(eventProvider);
 		_isBlocking = isBlocking;
 		_barrier = Objects.requireNonNull(barrier);
 		_sequence = new Sequence(-1);
@@ -43,7 +43,7 @@ public final class EventQueueReaderImpl<T> implements EventQueueReader<T> {
 		long nextSeq = _sequence.get() + 1;
 		
 		if (nextSeq <= _availableSeq) {
-			return _ringBuffer.get(nextSeq);
+			return _eventProvider.get(nextSeq);
 		} else if (_isBlocking) {
 			return blockingGet(nextSeq);
 		} else {
@@ -59,14 +59,14 @@ public final class EventQueueReaderImpl<T> implements EventQueueReader<T> {
 				// ignore
 			}
 		}
-		return _ringBuffer.get(nextSeq);
+		return _eventProvider.get(nextSeq);
 	}
 	
 	private T nonBlockingGet(long nextSeq) throws AlertException {
 		_barrier.checkAlert();
 		_availableSeq = _barrier.getCursor();
 		if (nextSeq <= _availableSeq) {
-			return _ringBuffer.get(nextSeq);
+			return _eventProvider.get(nextSeq);
 		} else {
 			return null;
 		}

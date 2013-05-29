@@ -33,9 +33,15 @@ public abstract class EventQueueBase<T> implements EventQueue<T> {
 
 	protected final RingBuffer<T> _ringBuffer;
 	private final Set<Sequence> _gatingSequences = new HashSet<Sequence>();
+	private final QueueMetricHandler _queueMetricHandler;
 	
-	public EventQueueBase(RingBuffer<T> ringBuffer) {
+	protected EventQueueBase(RingBuffer<T> ringBuffer) {
+		this(ringBuffer, null);
+	}
+	
+	protected EventQueueBase(RingBuffer<T> ringBuffer, QueueMetricHandler queueMetricHandler) {
 		_ringBuffer = Objects.requireNonNull(ringBuffer);
+		_queueMetricHandler = queueMetricHandler;
 	}
 
 	@Override

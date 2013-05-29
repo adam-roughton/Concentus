@@ -47,6 +47,7 @@ import com.adamroughton.concentus.pipeline.PipelineBranch;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Util;
+import com.lmax.disruptor.BlockingWaitStrategy;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
@@ -193,7 +194,7 @@ public final class WorkerService implements CrowdHammerService {
 		_metricSendQueue = eventQueueFactory.createSingleProducerQueue(
 				Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
 				metricBufferLength, 
-				new YieldingWaitStrategy());
+				new BlockingWaitStrategy());
 		
 		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _concentusHandle.getNetworkAddress().getHostAddress()));
 	}

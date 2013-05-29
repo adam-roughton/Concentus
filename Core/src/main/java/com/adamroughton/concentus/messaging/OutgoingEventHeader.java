@@ -41,7 +41,7 @@ public class OutgoingEventHeader extends EventHeader {
 	protected OutgoingEventHeader(final int startOffset, final int segmentCount, final int additionalLength, final int additionalFlagCount) {
 		super(startOffset, segmentCount, additionalLength + ADDITIONAL_LENGTH, additionalFlagCount + FLAG_COUNT);
 		_nextSegmentOffset = super.getAdditionalOffset();
-		_sentTimeOffset = super.getAdditionalOffset() + NEXT_SEGMENT_LENGTH;
+		_sentTimeOffset = _nextSegmentOffset + NEXT_SEGMENT_LENGTH;
 		_targetSocketIdOffset = _sentTimeOffset + SENT_TIME_LENGTH;
 		_isPartiallySentFlagIndex = super.getAdditionalFlagsStartIndex();
 	}

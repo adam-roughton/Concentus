@@ -37,7 +37,7 @@ public class IncomingEventHeader extends EventHeader {
 	protected IncomingEventHeader(final int startOffset, final int segmentCount, final int additionalLength, final int additionalFlagCount) {
 		super(startOffset, segmentCount, additionalLength + ADDITIONAL_LENGTH, additionalFlagCount);
 		_socketIdOffset = super.getAdditionalOffset();
-		_recvTimeOffset = super.getAdditionalOffset() + SOCKET_ID_LENGTH;
+		_recvTimeOffset = _socketIdOffset + SOCKET_ID_LENGTH;
 	}
 	
 	@Override

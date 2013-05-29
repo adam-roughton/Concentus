@@ -49,6 +49,7 @@ import com.adamroughton.concentus.pipeline.PipelineBranch;
 import com.adamroughton.concentus.pipeline.PipelineSection;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
+import com.lmax.disruptor.BlockingWaitStrategy;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
@@ -130,7 +131,7 @@ public class ClientHandlerService implements ConcentusService {
 				new YieldingWaitStrategy());
 		_metricSendQueue = eventQueueFactory.createSingleProducerQueue(msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
 				metricBufferLength, 
-				new YieldingWaitStrategy());
+				new BlockingWaitStrategy());
 		_outgoingHeader = new OutgoingEventHeader(0, 2);
 		_incomingHeader = new IncomingEventHeader(0, 2);
 		

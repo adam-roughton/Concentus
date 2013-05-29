@@ -52,6 +52,9 @@ public class SendQueue<TSendHeader extends OutgoingEventHeader> {
 		}
 	}
 	
+	//TODO: this is wrong - need to semantically ensure that
+	// an entry is checked and claimed atomically to avoid
+	// blocking on multi-producer ring buffers
 	/**
 	 * Sends the task if there is space, failing if the call
 	 * would block. This call is not thread safe.

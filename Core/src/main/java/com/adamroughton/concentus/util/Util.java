@@ -230,4 +230,14 @@ public class Util {
 		}
 	}
 	
+	public static String statsToString(String name, RunningStats stats) {
+		return String.format("%s: %d samples, %f mean, %f stdDev, %f max, %f min",
+				name,
+				stats.getCount(), 
+				stats.getMean(), 
+				stats.getStandardDeviation(), 
+				stats.getMax(), 
+				stats.getMin());
+	}
+	
 }
