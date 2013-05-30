@@ -17,11 +17,9 @@ package com.adamroughton.concentus.crowdhammer;
 
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.Map.Entry;
 import java.util.concurrent.TimeUnit;
 import java.util.Objects;
 
@@ -65,36 +63,11 @@ public final class TestRunner implements Runnable {
 				// get worker assignment requests
 				List<AssignmentRequest> workerAssignmentReqs = 
 						_cluster.getAssignmentRequests(WorkerService.SERVICE_TYPE);
-				int globalMaxWorkers = 0;
-				Map<String, Integer> workerMaxCountLookup = new HashMap<>(workerAssignmentReqs.size());
-				for (AssignmentRequest assignmentReq : workerAssignmentReqs) {
-					int maxWorkers = MessageBytesUtil.readInt(assignmentReq.getRequestBytes(), 0);
-					globalMaxWorkers += maxWorkers;
-					workerMaxCountLookup.put(assignmentReq.getServiceId(), maxWorkers);
-				}
-				int remainingCount = clientCount;
-				List<WorkerAllocation> assignmentAllocations = new ArrayList<>();
-				for (Entry<String, Integer> worker : workerMaxCountLookup.entrySet()) {
-					int allocatedCount = (int) (((double) worker.getValue() / (double) globalMaxWorkers) * clientCount);
-					remainingCount -= allocatedCount;
-					UUID workerId = UUID.fromString(worker.getKey());
-					assignmentAllocations.add(new WorkerAllocation(workerId, allocatedCount));
-					workers.add(new WorkerInfo(_workerIdLookup.get(workerId), allocatedCount));
-				}
-				int index = 0;
-				while(remainingCount > 0 && index < assignmentAllocations.size()) {
-					WorkerAllocation prevAllocation = assignmentAllocations.get(index);
-					assignmentAllocations.remove(index);
-					workers.remove(index);
-					int newAllocation = prevAllocation.getAllocation() + 1;
-					assignmentAllocations.add(index, new WorkerAllocation(prevAllocation.getWorkerId(), newAllocation));
-					workers.add(new WorkerInfo(_workerIdLookup.get(prevAllocation.getWorkerId()), newAllocation));
-					index = (index + 1) % assignmentAllocations.size();
-				}
-				for (WorkerAllocation allocation : assignmentAllocations) {
+				for (WorkerAllocation allocation : createWorkerAllocations(clientCount, workerAssignmentReqs)) {
 					byte[] res = new byte[4];
 					MessageBytesUtil.writeInt(res, 0, allocation.getAllocation());
 					_cluster.setAssignment(WorkerService.SERVICE_TYPE, allocation.getWorkerId(), res);
+					workers.add(new WorkerInfo(_workerIdLookup.get(allocation.getWorkerId()), allocation.getAllocation()));
 				}
 				
 				// get metric listener client count req				
@@ -145,7 +118,7 @@ public final class TestRunner implements Runnable {
 		}		
 	}
 	
-	private static class WorkerAllocation {
+	static class WorkerAllocation {
 		private final UUID _workerId;
 		private final int _allocation;
 		
@@ -161,6 +134,66 @@ public final class TestRunner implements Runnable {
 		public int getAllocation() {
 			return _allocation;
 		}
+	}
+	
+	static List<WorkerAllocation> createWorkerAllocations(int testClientCount, List<AssignmentRequest> workerAssignmentRequests) {
+		int workerCount = workerAssignmentRequests.size();
+		List<WorkerAllocation> workerAllocations = new ArrayList<>(workerCount);
+		int[] workerMaxClientCountLookup = new int[workerCount];
+		double[] targetWorkerRatioLookup = new double[workerCount];
+		double maxWorkerRatio = 0;
+		int globalMaxClients = 0;
+		
+		for (int i = 0; i < workerCount; i++) {
+			AssignmentRequest assignmentReq = workerAssignmentRequests.get(i);
+			int workerMaxClientCount = MessageBytesUtil.readInt(assignmentReq.getRequestBytes(), 0);
+			workerMaxClientCountLookup[i] = workerMaxClientCount;
+			globalMaxClients += workerMaxClientCount;
+			workerAllocations.add(i, new WorkerAllocation(UUID.fromString(assignmentReq.getServiceId()), 0));
+		}
+		
+		if (testClientCount > globalMaxClients)
+			throw new RuntimeException(String.format("The total available client count %d is less than " +
+					"the requested test client count %d.", globalMaxClients, testClientCount));
+		
+		for (int i = 0; i < workerCount; i++) {
+			double workerClientRatio = (double) workerMaxClientCountLookup[i] / (double) globalMaxClients;
+			targetWorkerRatioLookup[i] = workerClientRatio;
+			if (workerClientRatio > maxWorkerRatio) maxWorkerRatio = workerClientRatio;
+		}
+		
+		WorkerAllocation workerAllocation;
+		int remainingCount = testClientCount;
+		while (remainingCount * maxWorkerRatio >= 1) {
+			/* we will be able to allocate at least one on this run by applying
+			 * the target ratios, so continue
+			 */
+			long runAllocationCount = remainingCount;
+			long amountAllocatedOnRun = 0;
+			for (int i = 0; i < workerCount; i++) {
+				workerAllocation = workerAllocations.get(i);
+				int allocationChange = (int) (runAllocationCount * targetWorkerRatioLookup[i]);
+				workerAllocations.set(i, new WorkerAllocation(workerAllocation.getWorkerId(), workerAllocation.getAllocation() + allocationChange));
+				amountAllocatedOnRun += allocationChange;
+			}
+			remainingCount -= amountAllocatedOnRun;
+		}
+		
+		int currentWorkerIndex = 0;
+		while (remainingCount > 0) {
+			/* all target ratios will give 0 for the remaining amount,
+			 * so resort to adding one at a time up to the maximum
+			 * amount for each worker
+			 */
+			workerAllocation = workerAllocations.get(currentWorkerIndex);
+			if (workerAllocation.getAllocation() + 1 <= workerMaxClientCountLookup[currentWorkerIndex]) {
+				workerAllocations.set(currentWorkerIndex, new WorkerAllocation(workerAllocation.getWorkerId(), workerAllocation.getAllocation() + 1));
+				remainingCount--;
+			}
+			currentWorkerIndex = (currentWorkerIndex + 1) % workerCount;
+		}
+
+		return workerAllocations;
 	}
 	
 }
