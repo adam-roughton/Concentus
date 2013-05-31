@@ -153,7 +153,7 @@ public final class SocketManagerImpl implements SocketManager {
 
 			@Override
 			public Messenger create(Collection<ZmqSocketMessenger> messengers) {
-				return new ZmqSocketSetMessenger(new HackSocketPollInSet(messengers.toArray(new ZmqSocketMessenger[messengers.size()])));
+				return new ZmqSocketSetMessenger(new AlphaSocketPollInSet(messengers.toArray(new ZmqSocketMessenger[messengers.size()])));
 			}
 			
 		}, messengerMutexes);
