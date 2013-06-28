@@ -24,10 +24,11 @@ import org.zeromq.ZMQ.Context;
 import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.disruptor.EventQueue;
-import com.adamroughton.concentus.disruptor.EventQueueBase;
+import com.adamroughton.concentus.disruptor.EventQueueImpl;
 import com.adamroughton.concentus.disruptor.EventQueuePublisher;
-import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
+import com.adamroughton.concentus.disruptor.EventQueueStrategyBase;
 import com.adamroughton.concentus.disruptor.SingleProducerEventQueuePublisher;
+import com.adamroughton.concentus.disruptor.SingleProducerQueueStrategy;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
@@ -66,30 +67,26 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 		_recvHeader = new IncomingEventHeader(0, 1);
 		_sendHeader = new OutgoingEventHeader(0, 1);
 		
-		_recvQueue = new SingleProducerEventQueue<>(
+		_recvQueue = new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", 
 				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _recvHeader.getEventOffset())), 
 				1, 
-				new YieldingWaitStrategy());
+				new YieldingWaitStrategy()));
 		_recvQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
-		RingBuffer<byte[]> sendBuffer = RingBuffer.createSingleProducer(
+		final RingBuffer<byte[]> sendBuffer = RingBuffer.createSingleProducer(
 				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _recvHeader.getEventOffset())), 
 				1, 
 				new YieldingWaitStrategy());
-		_sendQueue = new EventQueueBase<byte[]>(sendBuffer) {
+		_sendQueue = new EventQueueImpl<>(new EventQueueStrategyBase<byte[]>("", sendBuffer) {
 
 			@Override
-			public boolean isShared() {
-				return false;
-			}
-
-			@Override
-			protected EventQueuePublisher<byte[]> doCreatePublisher(
-					RingBuffer<byte[]> ringBuffer, boolean isBlocking) {
-				return new SingleProducerEventQueuePublisher<>(ringBuffer, isBlocking);
+			public EventQueuePublisher<byte[]> newQueuePublisher(
+					String name,
+					boolean isBlocking) {
+				return new SingleProducerEventQueuePublisher<>(name, sendBuffer, isBlocking);
 			}
 			
-		};
+		});
 		_sendQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		if (sendAndRecv) {
 			sendBuffer.publish(Long.MAX_VALUE);
@@ -126,7 +123,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 		dealerSocket.setLinger(0);
 		dealerSocket.setHWM(1); // drop out-bound messages (DEALER behaviour)
 		dealerSocket.bind("tcp://127.0.0.1:" + _port);
-		ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, dealerSocket, new DefaultClock());
+		ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, "", dealerSocket, new DefaultClock());
 		
 		Mutex<Messenger> mutex = new MessengerMutex<ZmqSocketMessenger>(messenger);
 		FatalExceptionCallback exCallback = new FatalExceptionCallback() {
@@ -140,7 +137,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 		
 		OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, 1);
 		
-		final SendRecvMessengerReactor reactor = new SendRecvMessengerReactor(mutex, sendHeader, _recvHeader, _recvQueue, _sendQueue, exCallback);
+		final SendRecvMessengerReactor reactor = new SendRecvMessengerReactor("", mutex, sendHeader, _recvHeader, _recvQueue, _sendQueue, exCallback);
 		
 		return new Runnable() {
 

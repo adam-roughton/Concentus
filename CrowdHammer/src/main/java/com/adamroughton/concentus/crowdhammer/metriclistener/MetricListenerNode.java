@@ -15,33 +15,51 @@
  */
 package com.adamroughton.concentus.crowdhammer.metriclistener;
 
-import com.adamroughton.concentus.ConcentusExecutableOperations;
-import com.adamroughton.concentus.ConcentusExecutableOperations.FactoryDelegate;
-import com.adamroughton.concentus.ConcentusHandle;
-import com.adamroughton.concentus.ConcentusNode;
-import com.adamroughton.concentus.ConcentusProcessFactory;
-import com.adamroughton.concentus.NoArgsConcentusProcessFactory;
-import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
+import java.util.Collections;
+import java.util.Map;
 
-public class MetricListenerNode implements ConcentusNode<MetricListenerService, CrowdHammerConfiguration> {
+import org.apache.commons.cli.Option;
+
+import com.adamroughton.concentus.ConcentusExecutableOperations;
+import com.adamroughton.concentus.ConcentusHandle;
+import com.adamroughton.concentus.ConcentusWorkerNode;
+import com.adamroughton.concentus.cluster.worker.ClusterListener;
+import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
+import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
+import com.adamroughton.concentus.metric.MetricContext;
+
+public class MetricListenerNode implements ConcentusWorkerNode<CrowdHammerConfiguration, CrowdHammerServiceState> {
 
 	public static void main(String[] args) {
 		ConcentusExecutableOperations.executeClusterWorker(args, new MetricListenerNode());
 	}
 
 	@Override
-	public ConcentusProcessFactory<MetricListenerService, CrowdHammerConfiguration> getProcessFactory() {
-		return new NoArgsConcentusProcessFactory<>("Metric Listener", 
-			new FactoryDelegate<MetricListenerService, CrowdHammerConfiguration>() {
+	public Iterable<Option> getCommandLineOptions() {
+		return Collections.emptyList();
+	}
 
-			@Override
-			public MetricListenerService create(
-					ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle) {
-				return new MetricListenerService(concentusHandle);
-			}
-		}, 
-		MetricListenerService.class,
-		CrowdHammerConfiguration.class);
+	@Override
+	public String getProcessName() {
+		return "Metric Listener";
+	}
+
+	@Override
+	public Class<CrowdHammerConfiguration> getConfigType() {
+		return CrowdHammerConfiguration.class;
+	}
+
+	@Override
+	public ClusterListener<CrowdHammerServiceState> createService(
+			Map<String, String> commandLineOptions,
+			ConcentusHandle<? extends CrowdHammerConfiguration> handle,
+			MetricContext metricContext) {
+		return new MetricListenerService(handle);
+	}
+
+	@Override
+	public Class<CrowdHammerServiceState> getClusterStateClass() {
+		return CrowdHammerServiceState.class;
 	}
 
 }

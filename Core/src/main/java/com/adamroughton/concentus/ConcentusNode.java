@@ -15,10 +15,16 @@
  */
 package com.adamroughton.concentus;
 
+import org.apache.commons.cli.Option;
+
 import com.adamroughton.concentus.config.Configuration;
 
-public interface ConcentusNode<TProcess, TConfig extends Configuration> {
+public interface ConcentusNode<TConfig extends Configuration> {
 	
-	ConcentusProcessFactory<TProcess, TConfig> getProcessFactory();
+	Iterable<Option> getCommandLineOptions();
+	
+	String getProcessName();
+	
+	Class<TConfig> getConfigType();
 	
 }

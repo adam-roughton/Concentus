@@ -32,7 +32,11 @@ import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.cluster.ClusterParticipant;
 import com.adamroughton.concentus.cluster.ClusterState;
 import com.adamroughton.concentus.cluster.coordinator.ParticipatingNodes.ParticipatingNodesLatch;
+import com.adamroughton.concentus.cluster.data.MetricPublisherInfo;
+import com.adamroughton.concentus.cluster.data.TestRunInfo;
+import com.adamroughton.concentus.cluster.data.WorkerAllocationInfo;
 import com.adamroughton.concentus.cluster.worker.ClusterStateValue;
+import com.adamroughton.concentus.util.Util;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.api.BackgroundCallback;
 import com.netflix.curator.framework.api.CuratorEvent;
@@ -52,6 +56,19 @@ public final class ClusterCoordinatorHandle extends ClusterParticipant implement
 	public ClusterCoordinatorHandle(String zooKeeperAddress, String root, UUID clusterId,
 			FatalExceptionCallback exHandler) {
 		super(zooKeeperAddress, root, clusterId, exHandler);
+	}
+	
+	public void setRunInfo(TestRunInfo runInfo) {
+		createOrSetEphemeral(getPath(RUN_INFO), Util.intToBytes(runInfo.getRunId()));
+		createOrSetEphemeral(getPath(RUN_CLIENT_COUNT), Util.intToBytes(runInfo.getClientCount()));
+		createOrSetEphemeral(getPath(RUN_DURATION), Util.longToBytes(runInfo.getDuration()));
+	}
+	
+	public void setWorkerAllocations(List<WorkerAllocationInfo> allocations) {
+		for (WorkerAllocationInfo allocation : allocations) {
+			String path = ZKPaths.makePath(getPath(RUN_WORKER_ALLOCATIONS), allocation.getWorkerId().toString());
+			createOrSetEphemeral(path, allocation.getBytes());
+		}
 	}
 	
 	public List<String> getAssignmentRequestServiceTypes() {
@@ -251,4 +268,25 @@ public final class ClusterCoordinatorHandle extends ClusterParticipant implement
 		}
 	}
 	
+	public static class MetricRegistrationRequest {
+		private final UUID _serviceId;
+		private final MetricPublisherInfo _info;
+		
+		public MetricRegistrationRequest(UUID serviceId, MetricPublisherInfo info) {
+			_serviceId = Objects.requireNonNull(serviceId);
+			_info = Objects.requireNonNull(info);
+		}
+		
+		public MetricRegistrationRequest(String serviceId, MetricPublisherInfo info) {
+			this(UUID.fromString(serviceId), info);
+		}
+		
+		public UUID getServiceId() {
+			return _serviceId;
+		}
+		
+		public MetricPublisherInfo getInfo() {
+			return _info;
+		}
+	}
 }

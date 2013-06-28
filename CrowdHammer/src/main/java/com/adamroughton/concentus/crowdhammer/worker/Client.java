@@ -26,6 +26,8 @@ import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
 import com.adamroughton.concentus.messaging.patterns.EventPattern;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.metric.CountMetric;
+import com.adamroughton.concentus.metric.StatsMetric;
 import com.adamroughton.concentus.util.SlidingWindowLongMap;
 import com.adamroughton.concentus.util.Util;
 
@@ -97,19 +99,19 @@ public final class Client {
 		return _clientId != -1;
 	}
 	
-	public void onActionDeadline(SendQueue<OutgoingEventHeader> clientSendQueue, MetricEntry metricEntry) {
+	public void onActionDeadline(SendQueue<OutgoingEventHeader> clientSendQueue, CountMetric sentActionThroughputMetric) {
 		if (_clientId == -1) {
 			// if we are waiting to connect, do nothing with this client
 			if (_isConnecting) return;
 			connect(clientSendQueue);
 			_isConnecting = true;
 		} else {
-			sendInputAction(clientSendQueue, metricEntry);
+			sendInputAction(clientSendQueue, sentActionThroughputMetric);
 		}
 		_lastActionTime = _clock.currentMillis();
 	}
 	
-	private void sendInputAction(SendQueue<OutgoingEventHeader> clientSendQueue, MetricEntry metricEntry) {
+	private void sendInputAction(SendQueue<OutgoingEventHeader> clientSendQueue, CountMetric sentActionThroughputMetric) {
 		clientSendQueue.send(EventPattern.asTask(_inputEvent, new EventWriter<OutgoingEventHeader, ClientInputEvent>() {
 
 			@Override
@@ -123,7 +125,7 @@ public final class Client {
 			}
 			
 		}));
-		metricEntry.incrementSentInputCount(1);
+		sentActionThroughputMetric.push(1);
 	}
 	
 	private void connect(SendQueue<OutgoingEventHeader> clientSendQueue) {
@@ -138,7 +140,7 @@ public final class Client {
 		}));
 	}
 	
-	public void onClientUpdate(ClientUpdateEvent updateEvent, MetricEntry metricEntry) {
+	public void onClientUpdate(ClientUpdateEvent updateEvent, StatsMetric actionEffectLatencyMetric, CountMetric lateActionEffectMetric) {
 		long updateRecvTime = _clock.currentMillis();
 		_updateIdToRecvTimeLookup.put(updateEvent.getUpdateId(), updateRecvTime);
 		
@@ -146,17 +148,17 @@ public final class Client {
 		long lastConfirmedInputId = _lastConfirmedInputId;
 		for (long inputId = lastConfirmedInputId + 1; inputId <= updateEvent.getHighestInputActionId(); inputId++) {
 			if (_inputIdToSentTimeLookup.containsIndex(inputId)) {
-				long latency = updateRecvTime - _inputIdToSentTimeLookup.get(inputId);
-				metricEntry.addInputToUpdateLatency(latency);	
+				long latency = updateRecvTime - _inputIdToSentTimeLookup.getDirect(inputId);
+				actionEffectLatencyMetric.push(latency);
 				_inputIdToSentTimeLookup.remove(inputId);
 			} else {
-				metricEntry.incrementInputToUpdateLateCount(1);
+				lateActionEffectMetric.push(1);
 			}
 		}
 		_lastConfirmedInputId = updateEvent.getHighestInputActionId();
 	}
 	
-	public void onConnectResponse(ConnectResponseEvent connectResEvent, MetricEntry metricEntry) {
+	public void onConnectResponse(ConnectResponseEvent connectResEvent, CountMetric clientCountMetric) {
 		if (!_isConnecting) 
 			throw new RuntimeException(String.format("Expected the client (index = %d) to be connecting on reception of a connect response event.", _index));
 		if (connectResEvent.getResponseCode() != ConnectResponseEvent.RES_OK) {
@@ -165,7 +167,7 @@ public final class Client {
 		}
 		_clientId = connectResEvent.getClientIdBits();
 		_isConnecting = false;
-		metricEntry.incrementConnectedClientCount(1);
+		clientCountMetric.push(1);
 	}
 	
 	public void reset() {

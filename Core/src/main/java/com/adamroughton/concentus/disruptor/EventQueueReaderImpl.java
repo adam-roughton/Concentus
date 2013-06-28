@@ -25,13 +25,15 @@ import com.lmax.disruptor.TimeoutException;
 
 public final class EventQueueReaderImpl<T> implements EventQueueReader<T> {
 
+	private final String _name;
 	private final DataProvider<T> _eventProvider;
 	private final boolean _isBlocking;
 	private final SequenceBarrier _barrier;
 	private final Sequence _sequence;
 	private long _availableSeq = -1;
 	
-	public EventQueueReaderImpl(DataProvider<T> eventProvider, SequenceBarrier barrier, boolean isBlocking) {
+	public EventQueueReaderImpl(String readerName, DataProvider<T> eventProvider, SequenceBarrier barrier, boolean isBlocking) {
+		_name = Objects.requireNonNull(readerName);
 		_eventProvider = Objects.requireNonNull(eventProvider);
 		_isBlocking = isBlocking;
 		_barrier = Objects.requireNonNull(barrier);
@@ -85,6 +87,11 @@ public final class EventQueueReaderImpl<T> implements EventQueueReader<T> {
 	@Override
 	public SequenceBarrier getBarrier() {
 		return _barrier;
+	}
+
+	@Override
+	public String getName() {
+		return _name;
 	}
 
 }

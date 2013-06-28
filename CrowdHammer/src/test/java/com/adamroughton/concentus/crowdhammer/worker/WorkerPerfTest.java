@@ -18,6 +18,8 @@ package com.adamroughton.concentus.crowdhammer.worker;
 import java.io.PrintStream;
 import java.net.InetAddress;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -29,17 +31,18 @@ import org.apache.commons.io.output.NullOutputStream;
 import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.ConcentusHandle;
+import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.InstanceFactory;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService;
+import com.adamroughton.concentus.cluster.data.MetricPublisherInfo;
+import com.adamroughton.concentus.cluster.data.TestRunInfo;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.concentus.crowdhammer.config.StubCrowdHammerConfiguration;
-import com.adamroughton.concentus.crowdhammer.messaging.events.WorkerMetricEvent;
 import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
-import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
@@ -53,8 +56,8 @@ import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager.StubMessengerConfigurator;
-import com.adamroughton.concentus.util.RunningStats;
-import com.esotericsoftware.minlog.Log;
+import com.adamroughton.concentus.metric.LogMetricContext;
+import com.netflix.curator.framework.api.CuratorWatcher;
 
 import static com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState.*;
 
@@ -159,50 +162,6 @@ public class WorkerPerfTest {
 			
 		};
 		
-		final FakeSendDelegate metricSendDelegate = new FakeSendDelegate() {
-			
-			WorkerMetricEvent metricEvent = new WorkerMetricEvent();
-			
-			@Override
-			public boolean fakeSend(long sendSeq, byte[] eventBuffer,
-					OutgoingEventHeader header, boolean isBlocking) {
-				if (!header.isValid(eventBuffer)) return true;
-				int contentIndex = header.getSegmentCount() - 1;
-				int segmentMetaData = header.getSegmentMetaData(eventBuffer, contentIndex);
-				int contentOffset = EventHeader.getSegmentOffset(segmentMetaData);
-				
-				if (MessageBytesUtil.readInt(eventBuffer, contentOffset) == metricEvent.getEventTypeId()) {
-					metricEvent.setBackingArray(eventBuffer, contentOffset);
-					processWorkerMetric(metricEvent);
-					metricEvent.releaseBackingArray();
-				} 
-				return true;
-			}
-			
-			private void processWorkerMetric(final WorkerMetricEvent event) {
-				RunningStats inputToActionLatencyStats = event.getInputToUpdateLatency();
-				
-				long actionsSent = event.getSentInputActionsCount();
-				long duration = event.getBucketDuration();
-				double throughput = 0;
-				if (duration > 0) {
-					throughput = ((double) actionsSent / (double) duration) * 1000;
-				}
-				
-				Log.info(String.format("WorkerMetric (B%d,%d): %f input/s, %d clients, %d errors, %d pending events, [%f mean, %f stddev, %f max, %f min] input to update latency", 
-						event.getMetricBucketId(), 
-						event.getSourceId(), 
-						throughput, 
-						event.getConnectedClientCount(), 
-						event.getEventErrorCount(),
-						event.getPendingEventCount(),
-						inputToActionLatencyStats.getMean(),
-						inputToActionLatencyStats.getStandardDeviation(),
-						inputToActionLatencyStats.getMax(),
-						inputToActionLatencyStats.getMin()));
-			}
-		};
-		
 		ConcentusHandle<CrowdHammerConfiguration> concentusHandle = new ConcentusHandle<CrowdHammerConfiguration>(new InstanceFactory<SocketManager>() {
 
 			@Override
@@ -215,15 +174,13 @@ public class WorkerPerfTest {
 						if (socketType == ZMQ.DEALER) {
 							messenger.setFakeRecvDelegate(clientRecvDelegate);
 							messenger.setFakeSendDelegate(clientSendDelegate);
-						} else if (socketType == ZMQ.PUB) {
-							messenger.setFakeSendDelegate(metricSendDelegate);
-						} 
+						}
 					}
 				});
 			}
 			
 		}, new StandardEventQueueFactory(), new DefaultClock(), new StubCrowdHammerConfiguration(30), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
-		_worker = new WorkerService(concentusHandle, 100000);
+		_worker = new WorkerService(concentusHandle, 100000, new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), new DefaultClock()));
 		
 		_clusterHandle = new ClusterWorkerHandle() {
 			
@@ -290,6 +247,28 @@ public class WorkerPerfTest {
 			
 			@Override
 			public void deleteAssignmentRequest(String serviceType) {
+			}
+
+			@Override
+			public TestRunInfo getCurrentRunInfo() {
+				// TODO Auto-generated method stub
+				return null;
+			}
+
+			@Override
+			public void registerAsMetricPublisher(String type,
+					String pubAddress, String metaDataReqAddress) {
+			}
+
+			@Override
+			public List<MetricPublisherInfo> getMetricPublishers() {
+				return Collections.singletonList(new MetricPublisherInfo(_id, "", "", ""));
+			}
+
+			@Override
+			public List<MetricPublisherInfo> getMetricPublishers(
+					CuratorWatcher watcher) {
+				return Collections.singletonList(new MetricPublisherInfo(_id, "", "", ""));
 			}
 		};
 		_testThreadBarrier = new CyclicBarrier(2);

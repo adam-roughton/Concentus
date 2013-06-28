@@ -16,59 +16,26 @@
 package com.adamroughton.concentus;
 
 import java.net.InetAddress;
-import java.net.UnknownHostException;
-import java.util.Arrays;
-import java.util.Map;
-
-import org.apache.commons.cli.Option;
-import org.apache.commons.cli.OptionBuilder;
 
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
+import com.adamroughton.concentus.disruptor.MetricTrackingEventQueueFactory;
 import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketManagerImpl;
 import com.adamroughton.concentus.messaging.zmq.TrackingSocketManagerDecorator;
+import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.util.Util;
 
 public class ConcentusHandleFactory {
 
-	public final static String ZOOKEEPER_ADDRESS_OPTION = "z";
-	public final static String PROPERTIES_FILE_OPTION = "p";
-	public final static String NETWORK_ADDRESS_OPTION = "a";
-	public final static String TRACE_OPTION = "t";
-	
-	@SuppressWarnings("static-access")
-	public static Iterable<Option> getCommandLineOptions() {
-		return Arrays.asList(
-				OptionBuilder.withArgName("ZooKeeper Address")
-					.hasArgs()
-					.isRequired(true)
-					.withDescription("the address of the ZooKeeper server")
-					.create(ZOOKEEPER_ADDRESS_OPTION),
-				OptionBuilder.withArgName("file path")
-					.hasArgs()
-					.isRequired(true)
-					.withDescription("path to the properties file")
-					.create(PROPERTIES_FILE_OPTION),
-				OptionBuilder.withArgName("network address")
-					.hasArgs()
-					.isRequired(true)
-					.withDescription("address to bind sockets to")
-					.create(NETWORK_ADDRESS_OPTION),
-				OptionBuilder.withArgName("trace")
-					.hasArg(false)
-					.isRequired(false)
-					.withDescription("wraps select components with tracing versions that output to stdout")
-					.create(TRACE_OPTION)
-			);
-	}
-
-	public static <TConfig extends Configuration> ConcentusHandle<TConfig> createHandle(Class<TConfig> configType, Map<String, String> cmdLineValues) {
-		final boolean useTracingComponents = cmdLineValues.containsKey(TRACE_OPTION);
-		
-		final Clock clock = new DefaultClock();
-		
+	public static <TConfig extends Configuration> ConcentusHandle<TConfig> createHandle(
+			final Clock clock, 
+			TConfig config, 
+			String zooKeeperAddress, 
+			InetAddress nodeAddress, 
+			final MetricContext metricContext,
+			boolean useTracingComponents) {
 		InstanceFactory<SocketManager> socketManagerFactory;
 		EventQueueFactory eventQueueFactory;
 		if (useTracingComponents) {
@@ -76,7 +43,7 @@ public class ConcentusHandleFactory {
 				
 				@Override
 				public SocketManager newInstance() {
-					return new TrackingSocketManagerDecorator(new SocketManagerImpl(clock), clock);
+					return new TrackingSocketManagerDecorator(metricContext, new SocketManagerImpl(clock), clock);
 				}
 			};
 			eventQueueFactory = new StandardEventQueueFactory();
@@ -90,19 +57,7 @@ public class ConcentusHandleFactory {
 			};
 			eventQueueFactory = new StandardEventQueueFactory();
 		}
-		
-		String configPath = cmdLineValues.get(PROPERTIES_FILE_OPTION);
-		TConfig config = Util.readConfig(configType, configPath);
-		
-		String zooKeeperAddress = cmdLineValues.get(ZOOKEEPER_ADDRESS_OPTION);
-		
-		String addressString = cmdLineValues.get(NETWORK_ADDRESS_OPTION);
-		InetAddress networkAddress;
-		try {
-			networkAddress = InetAddress.getByName(addressString);
-		} catch (UnknownHostException eBadIP) {
-			throw new RuntimeException(String.format("IP address '%s' is not address for this host.", addressString));
-		}
+		eventQueueFactory = new MetricTrackingEventQueueFactory(metricContext, clock);
 		
 		String zooKeeperRoot = config.getZooKeeper().getAppRoot();
 		//TODO move validation into configuration class
@@ -112,7 +67,7 @@ public class ConcentusHandleFactory {
 							"(can be '/' or '/[A-Za-z0-9]+')", zooKeeperRoot));
 		}	
 	
-		return new ConcentusHandle<TConfig>(socketManagerFactory, eventQueueFactory, clock, config, networkAddress, zooKeeperAddress);
+		return new ConcentusHandle<TConfig>(socketManagerFactory, eventQueueFactory, clock, config, nodeAddress, zooKeeperAddress);
 	}
 
 }

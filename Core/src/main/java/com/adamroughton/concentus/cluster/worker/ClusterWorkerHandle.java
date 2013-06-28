@@ -15,23 +15,39 @@
  */
 package com.adamroughton.concentus.cluster.worker;
 
+import java.util.List;
 import java.util.UUID;
+
+import com.adamroughton.concentus.cluster.data.MetricPublisherInfo;
+import com.adamroughton.concentus.cluster.data.TestRunInfo;
+import com.netflix.curator.framework.api.CuratorWatcher;
 
 public interface ClusterWorkerHandle {
 	
-	void registerService(final String serviceType, final String address);
+	TestRunInfo getCurrentRunInfo();
 	
-	void unregisterService(final String serviceType);
+	/**
+	 * Registers the worker as a metric publisher with the generated {@link ClusterWorkerHandle#getMyId() worker ID} for the cluster.
+	 */
+	void registerAsMetricPublisher(String type, String pubAddress, String metaDataReqAddress);
 	
-	String getServiceAtRandom(final String serviceType);
+	List<MetricPublisherInfo> getMetricPublishers();
 	
-	String[] getAllServices(final String serviceType);
+	List<MetricPublisherInfo> getMetricPublishers(CuratorWatcher watcher);
 	
-	void requestAssignment(final String serviceType, final byte[] requestBytes);
+	void registerService(String serviceType, String address);
 	
-	byte[] getAssignment(final String serviceType);
+	void unregisterService(String serviceType);
 	
-	void deleteAssignmentRequest(final String serviceType);
+	String getServiceAtRandom(String serviceType);
+	
+	String[] getAllServices(String serviceType);
+	
+	void requestAssignment(String serviceType, byte[] requestBytes);
+	
+	byte[] getAssignment(String serviceType);
+	
+	void deleteAssignmentRequest(String serviceType);
 	
 	void signalReady();
 	

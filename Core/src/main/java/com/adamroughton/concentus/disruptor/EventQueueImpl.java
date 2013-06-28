@@ -25,54 +25,47 @@ import com.lmax.disruptor.BatchEventProcessor;
 import com.lmax.disruptor.DataProvider;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.EventProcessor;
-import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.SequenceBarrier;
 
-public abstract class EventQueueBase<T> implements EventQueue<T> {
+public class EventQueueImpl<T> implements EventQueue<T> {
 
-	protected final RingBuffer<T> _ringBuffer;
+	protected final EventQueueStrategy<T> _queueStrategy;
 	private final Set<Sequence> _gatingSequences = new HashSet<Sequence>();
-	private final QueueMetricHandler _queueMetricHandler;
-	
-	protected EventQueueBase(RingBuffer<T> ringBuffer) {
-		this(ringBuffer, null);
-	}
-	
-	protected EventQueueBase(RingBuffer<T> ringBuffer, QueueMetricHandler queueMetricHandler) {
-		_ringBuffer = Objects.requireNonNull(ringBuffer);
-		_queueMetricHandler = queueMetricHandler;
+
+	public EventQueueImpl(EventQueueStrategy<T> queueStrategy) {
+		_queueStrategy = Objects.requireNonNull(queueStrategy);
 	}
 
 	@Override
-	public final EventQueuePublisher<T> createPublisher(boolean isBlocking) {
-		return doCreatePublisher(_ringBuffer, isBlocking);
+	public final EventQueuePublisher<T> createPublisher(String publisherName, boolean isBlocking) {
+		return _queueStrategy.newQueuePublisher(publisherName, isBlocking);
 	}
 	
-	protected abstract EventQueuePublisher<T> doCreatePublisher(RingBuffer<T> ringBuffer, boolean isBlocking);
-
 	@Override
-	public final EventQueueReader<T> createReader(boolean isBlocking, Sequence...sequencesToTrack) {
+	public final EventQueueReader<T> createReader(String readerName, boolean isBlocking, Sequence...sequencesToTrack) {
 		SequenceBarrier barrier = newBarrier(sequencesToTrack);
-		EventQueueReaderImpl<T> queueReader = new EventQueueReaderImpl<>(_ringBuffer, barrier, isBlocking);
+		EventQueueReaderImpl<T> queueReader = new EventQueueReaderImpl<>(readerName, _queueStrategy.newQueueReader(readerName), barrier, isBlocking);
 		addGatingSequences(queueReader.getSequence());
 		return queueReader;
 	}
 
 	@Override
 	public final long getCursor() {
-		return _ringBuffer.getCursor();
+		return _queueStrategy.getCursor();
 	}
 
 	@Override
 	public final long getQueueSize() {
-		return _ringBuffer.getBufferSize();
+		return _queueStrategy.getLength();
 	}
 
 	@Override
-	public EventProcessor createEventProcessor(final EventHandler<T> eventHandler,
+	public EventProcessor createEventProcessor(
+			String processorName,
+			final EventHandler<T> eventHandler,
 			Sequence... sequencesToTrack) {
-		return createEventProcessor(new EventProcessorFactory<T, BatchEventProcessor<T>>() {
+		return createEventProcessor(processorName, new EventProcessorFactory<T, BatchEventProcessor<T>>() {
 
 			@Override
 			public BatchEventProcessor<T> createProcessor(
@@ -84,9 +77,12 @@ public abstract class EventQueueBase<T> implements EventQueue<T> {
 
 	@Override
 	public EventProcessor createEventProcessor(
-			final DeadlineBasedEventHandler<T> eventHandler, final Clock clock,
-			final FatalExceptionCallback exceptionCallback, Sequence... sequencesToTrack) {
-		return createEventProcessor(new EventProcessorFactory<T, DeadlineBasedEventProcessor<T>>() {
+			String processorName,
+			final DeadlineBasedEventHandler<T> eventHandler, 
+			final Clock clock,
+			final FatalExceptionCallback exceptionCallback, 
+			Sequence... sequencesToTrack) {
+		return createEventProcessor(processorName, new EventProcessorFactory<T, DeadlineBasedEventProcessor<T>>() {
 
 			@Override
 			public DeadlineBasedEventProcessor<T> createProcessor(DataProvider<T> eventProvider,
@@ -97,10 +93,12 @@ public abstract class EventQueueBase<T> implements EventQueue<T> {
 	}
 
 	@Override
-	public <TProcessor extends EventProcessor> TProcessor createEventProcessor(EventProcessorFactory<T, TProcessor> processorFactory,
+	public <TProcessor extends EventProcessor> TProcessor createEventProcessor(
+			String processorName,
+			EventProcessorFactory<T, TProcessor> processorFactory,
 			Sequence... sequencesToTrack) {
 		SequenceBarrier barrier = newBarrier(sequencesToTrack);
-		TProcessor eventProcessor = processorFactory.createProcessor(_ringBuffer, barrier);
+		TProcessor eventProcessor = processorFactory.createProcessor(_queueStrategy.newQueueReader(processorName), barrier);
 		addGatingSequences(eventProcessor.getSequence());
 		return eventProcessor;
 	}
@@ -110,7 +108,7 @@ public abstract class EventQueueBase<T> implements EventQueue<T> {
 		synchronized(_gatingSequences) {
 			for (Sequence sequence : sequences) {
 				if (_gatingSequences.add(sequence)) {
-					_ringBuffer.addGatingSequences(sequence);
+					_queueStrategy.addGatingSequences(sequence);
 				}
 			}
 		}
@@ -118,12 +116,17 @@ public abstract class EventQueueBase<T> implements EventQueue<T> {
 	
 	@Override
 	public boolean removeGatingSequence(Sequence sequence) {
-		return _ringBuffer.removeGatingSequence(sequence);
+		return _queueStrategy.removeGatingSequence(sequence);
 	}
 
 	@Override
 	public SequenceBarrier newBarrier(Sequence... sequencesToTrack) {
-		return _ringBuffer.newBarrier(sequencesToTrack);
+		return _queueStrategy.newBarrier(sequencesToTrack);
+	}
+
+	@Override
+	public String getName() {
+		return _queueStrategy.getQueueName();
 	}
 	
 }

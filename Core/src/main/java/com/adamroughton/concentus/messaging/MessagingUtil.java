@@ -29,12 +29,13 @@ import com.lmax.disruptor.SequenceBarrier;
 public class MessagingUtil {
 	
 	public static <TEvent> EventProcessor asSocketOwner(
+			String name,
 			EventQueue<TEvent> eventQueue, 
 			MessengerDependentEventHandler<TEvent> eventHandler, 
 			final Mutex<Messenger> messengerMutex,
 			Sequence...gatingSequences) {	
 		final EventHandlerAdapter<TEvent> adapter = new EventHandlerAdapter<>(eventHandler);
-		return eventQueue.createEventProcessor(new EventProcessorFactory<TEvent, EventProcessor>() {
+		return eventQueue.createEventProcessor(name, new EventProcessorFactory<TEvent, EventProcessor>() {
 
 			@Override
 			public EventProcessor createProcessor(

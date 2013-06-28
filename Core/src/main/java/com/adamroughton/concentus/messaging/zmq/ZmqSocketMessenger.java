@@ -30,11 +30,13 @@ import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 public final class ZmqSocketMessenger implements Messenger {
 
 	private final int _socketId;
+	private final String _name;
 	private final ZMQ.Socket _socket;
 	private final Clock _clock;
 	
-	public ZmqSocketMessenger(int socketId, ZMQ.Socket socket, Clock clock) {
+	public ZmqSocketMessenger(int socketId, String name, ZMQ.Socket socket, Clock clock) {
 		_socketId = socketId;
+		_name = Objects.requireNonNull(name);
 		_socket = Objects.requireNonNull(socket);
 		_clock = Objects.requireNonNull(clock);
 	}
@@ -200,6 +202,11 @@ public final class ZmqSocketMessenger implements Messenger {
 	
 	public ZMQ.Socket getSocket() {
 		return _socket;
+	}
+
+	@Override
+	public String name() {
+		return _name;
 	}
 
 }

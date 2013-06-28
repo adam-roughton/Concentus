@@ -76,6 +76,48 @@ public class Util {
 		return intBytes;
 	}
 	
+	public static byte[] longToBytes(long value) {
+		byte[] longBytes = new byte[8];
+		MessageBytesUtil.writeLong(longBytes, 0, value);
+		return longBytes;
+	}
+	
+	public static byte[] floatToBytes(float value) {
+		byte[] floatBytes = new byte[4];
+		MessageBytesUtil.writeFloat(floatBytes, 0, value);
+		return floatBytes;
+	}
+	
+	public static byte[] doubleToBytes(double value) {
+		byte[] doubleBytes = new byte[8];
+		MessageBytesUtil.writeDouble(doubleBytes, 0, value);
+		return doubleBytes;
+	}
+	
+	public static int bytesToInt(byte[] bytes) {
+		if (bytes.length != 4)
+			throw new IllegalArgumentException("Expected 4 bytes for int");
+		return MessageBytesUtil.readInt(bytes, 0);
+	}
+	
+	public static long bytesToLong(byte[] bytes) {
+		if (bytes.length != 8)
+			throw new IllegalArgumentException("Expected 8 bytes for long");
+		return MessageBytesUtil.readLong(bytes, 0);
+	}
+	
+	public static float bytesToFloat(byte[] bytes) {
+		if (bytes.length != 4)
+			throw new IllegalArgumentException("Expected 4 bytes for float");
+		return MessageBytesUtil.readFloat(bytes, 0);
+	}
+	
+	public static double bytesToDouble(byte[] bytes) {
+		if (bytes.length != 8)
+			throw new IllegalArgumentException("Expected 8 bytes for double");
+		return MessageBytesUtil.readDouble(bytes, 0);
+	}
+	
 	public static void writeSubscriptionBytes(EventType eventType, byte[] buffer, int offset) {
 		MessageBytesUtil.writeInt(buffer, offset, eventType.getId());
 	}

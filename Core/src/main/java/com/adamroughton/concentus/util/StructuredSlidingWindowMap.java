@@ -23,7 +23,7 @@ import uk.co.real_logic.intrinsics.ComponentFactory;
 import uk.co.real_logic.intrinsics.StructuredArray;
 
 /**
- * Variant of {@link SlidingWindowMap} that uses an in-place array of collocated
+ * Variant of {@link SlidingWindowArrayMap} that uses an in-place array of collocated
  * entries (utilising the {@link StructuredArray} object). Instead of placing items
  * into the map, entries are first prepared by calling {@link StructuredSlidingWindowMap#advance()}
  * and then filled using {@link StructuredSlidingWindowMap#get(long)}.
@@ -31,7 +31,7 @@ import uk.co.real_logic.intrinsics.StructuredArray;
  *
  * @param <T>
  */
-public class StructuredSlidingWindowMap<T> {
+public class StructuredSlidingWindowMap<T> implements SlidingWindowMap<T> {
 		
 	private final int _mask;
 	private final boolean[] _contentFlags;
@@ -120,7 +120,7 @@ public class StructuredSlidingWindowMap<T> {
 	 * in the map. This is an O(n) operation
 	 * @return
 	 */
-	public final int size() {
+	public final int count() {
 		int count = 0;
 		for (final Object val : _window) {
 			if (val != null) count++;
@@ -132,13 +132,18 @@ public class StructuredSlidingWindowMap<T> {
 	 * Gets the size of the sliding window.
 	 * @return
 	 */
-	public final int windowSize() {
+	public final int getLength() {
 		return (int)_window.getLength();
 	}
 	
 	public final boolean containsIndex(long index) {
-		int relIndex = (int) (_currentIndex - index);
-		return relIndex >= 0 && relIndex < _window.getLength() && _contentFlags[(int)(index & _mask)];
+		return 
+			// is less than the current index?
+			Math.min(index, _currentIndex) == index &&
+			// is within the window?
+			Math.max(_currentIndex - _window.getLength() + 1, index) == index
+			// entry is not null
+			&& _contentFlags[(int)(index & _mask)];
 	}
 	
 	public final void clear() {
@@ -148,4 +153,5 @@ public class StructuredSlidingWindowMap<T> {
 		}
 		_currentIndex = -1;
 	}
+
 }

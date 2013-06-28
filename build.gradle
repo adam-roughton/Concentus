@@ -191,6 +191,7 @@ project(':Service') {
 project(':CrowdHammer') {
 	dependencies {
 		compile project(':Service')
+		compile 'org.xerial:sqlite-jdbc:3.7.2'
 		testCompile project(path: ':Core', configuration: 'tests')
 	}
 	

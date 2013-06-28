@@ -16,86 +16,80 @@
 package com.adamroughton.concentus.messaging;
 
 import java.util.Objects;
-import java.util.concurrent.TimeUnit;
 
 import com.adamroughton.concentus.Clock;
-import com.esotericsoftware.minlog.Log;
+import com.adamroughton.concentus.metric.CountMetric;
+import com.adamroughton.concentus.metric.MetricContext;
+import com.adamroughton.concentus.metric.MetricGroup;
+import com.adamroughton.concentus.metric.StatsMetric;
 
 public final class TrackingMessengerDecorator implements Messenger {
-
+	
 	private final Messenger _messenger;
 	private final Clock _clock;
 	
-	private long _sendInvocations = 0;
-	private long _recvInvocations = 0;
-	private long _sentCount = 0;
-	private long _failedSendCount = 0;
-	private long _recvCount = 0;
-	private long _lastReportTime = 0;
-	private long _nanosBlockingForSend = 0;
-	private long _nanosBlockingForRecv = 0;
+	private final MetricContext _metricContext;
+	private final MetricGroup _metrics;
+	private final CountMetric _sendInvocationThroughputMetric;
+	private final CountMetric _recvInvocationThroughputMetric;
+	private final CountMetric _sentThroughputMetric;
+	private final CountMetric _failedSendThroughputMetric;
+	private final CountMetric _recvThroughputMetric;
+	private final StatsMetric _nanosBlockingForSendStatsMetric;
+	private final StatsMetric _nanosBlockingForRecvStatsMetric;
 	
-	public TrackingMessengerDecorator(Messenger messenger, Clock clock) {
+	public TrackingMessengerDecorator(MetricContext metricContext, Messenger messenger, Clock clock) {
 		_messenger = Objects.requireNonNull(messenger);
 		_clock = Objects.requireNonNull(clock);
+
+		_metricContext = Objects.requireNonNull(metricContext);
+		_metrics = new MetricGroup();
+		String reference = String.format("Messenger(%s)", messenger.name());
+		_sendInvocationThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "sendInvocationThroughput", false));
+		_recvInvocationThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "recvInvocationThroughput", false));
+		_sentThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "sentThroughput", false));
+		_failedSendThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "failedSendThroughput", false));
+		_recvThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "recvThroughput", false));
+		_nanosBlockingForSendStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "nanosBlockingForSendStats", false));
+		_nanosBlockingForRecvStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "nanosBlockingForRecvStats", false));
 	}
 	
 	private boolean onSend(boolean wasSent) {
-		_sendInvocations++;
+		_sendInvocationThroughputMetric.push(1);
 		if (wasSent) {
-			_sentCount++;
+			_sentThroughputMetric.push(1);
 		} else {
-			_failedSendCount++;
+			_failedSendThroughputMetric.push(1);
 		}
-		logTick();
+		emitMetricIfReady();
 		return wasSent;
 	}
 	
 	private boolean onBlockingSend(long startTime, boolean wasSent) {
 		long blockingDuration = _clock.nanoTime() - startTime;
-		_nanosBlockingForSend += blockingDuration;
+		_nanosBlockingForSendStatsMetric.push(blockingDuration);
 		return onSend(wasSent);
 	}
 	
 	private boolean onRecv(boolean didRecv) {
-		_recvInvocations++;
+		_recvInvocationThroughputMetric.push(1);
 		if (didRecv) {
-			_recvCount++;
-			logTick();
+			_recvThroughputMetric.push(1);
+			emitMetricIfReady();
 		}
 		return didRecv;
 	}
 	
 	private boolean onBlockingRecv(long startTime, boolean didRecv) {
 		long blockingDuration = _clock.nanoTime() - startTime;
-		_nanosBlockingForRecv += blockingDuration;
+		_nanosBlockingForRecvStatsMetric.push(blockingDuration);
 		return onRecv(didRecv);
 	}
 	
-	private void logTick() {
-		long now = _clock.currentMillis();
-		long elapsed = now - _lastReportTime;
-		if (elapsed > 1000) {
-			double sentThroughput = getThroughput(_sentCount, elapsed);
-			double failedSendThroughput = getThroughput(_failedSendCount, elapsed);
-			double recvThroughput = getThroughput(_recvCount, elapsed);
-			long millisBlockingForSend = TimeUnit.NANOSECONDS.toMillis(_nanosBlockingForSend);
-			long millisBlockingForRecv = TimeUnit.NANOSECONDS.toMillis(_nanosBlockingForRecv);
-			Log.info(String.format("Messaging (%s): %d sendCalls, %f sent/s, %f failedSend/s, %d millisBlockingInSend, %d recvCalls, %f recv/s, %d millisBlockingForRecv", 
-					_messenger.toString(), _sendInvocations, sentThroughput, failedSendThroughput, millisBlockingForSend, _recvInvocations, recvThroughput, millisBlockingForRecv));
-			_lastReportTime = now;
-			_sendInvocations = 0;
-			_recvInvocations = 0;
-			_sentCount = 0;
-			_recvCount = 0;
-			_failedSendCount = 0;
-			_nanosBlockingForSend = 0;
-			_nanosBlockingForRecv = 0;
+	private void emitMetricIfReady() {
+		if (_clock.currentMillis() >= _metrics.nextBucketReadyTime()) {
+			_metrics.publishPending();
 		}
-	}
-	
-	private double getThroughput(long counter, long elapsedMillis) {
-		return ((double) counter) / elapsedMillis * 1000;
 	}
 
 	@Override
@@ -123,6 +117,11 @@ public final class TrackingMessengerDecorator implements Messenger {
 	@Override
 	public int[] getEndpointIds() {
 		return _messenger.getEndpointIds();
+	}
+
+	@Override
+	public String name() {
+		return _messenger.name();
 	}
 
 }

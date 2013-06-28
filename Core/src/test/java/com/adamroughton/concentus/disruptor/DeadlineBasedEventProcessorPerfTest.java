@@ -114,8 +114,8 @@ public class DeadlineBasedEventProcessorPerfTest {
 		while (true) {
 			DeadlineBasedEventProcessorPerfTest perfTest = new DeadlineBasedEventProcessorPerfTest();
 			perfTest.deadlinePeriod = 100;
-			perfTest.deadlineProcNanos = 100;
-			perfTest.onEventProcNanos = 1;
+			perfTest.deadlineProcNanos = 10000;
+			perfTest.onEventProcNanos = 10000;
 			perfTest.recvEventsPerSec = 10000000;
 			perfTest.setUp();
 			long duration = perfTest.doTest(testPeriod);

@@ -19,13 +19,19 @@ import java.util.Objects;
 import com.netflix.curator.utils.ZKPaths;
 
 public enum ClusterPath {
-	APP_ROOT	(""),
-	STATE		("state"),
-	COORDINATOR	("coordinator"),
-	ASSIGN_REQ	(STATE, "assignments/req"),
-	ASSIGN_RES	(STATE, "assignments/res"),
-	SERVICES	("services"),
-	READY		(STATE, "ready");
+	APP_ROOT				(""),
+	STATE					("state"),
+	COORDINATOR				("coordinator"),
+	ASSIGN_REQ				(STATE, "assignments/req"),
+	ASSIGN_RES				(STATE, "assignments/res"),
+	RUN_INFO				("currentRun"),
+	RUN_CLIENT_COUNT		(RUN_INFO, "clientCount"),
+	RUN_DURATION			(RUN_INFO, "duration"),
+	RUN_WORKER_ALLOCATIONS 	(RUN_INFO, "workerAllocations"),
+	SERVICES				("services"),
+	READY					(STATE, "ready"),
+	METRIC					("metric"),
+	METRIC_PUBLISHERS 		(METRIC, "publishers");
 	
 	private final String _relativePathToRoot;
 	

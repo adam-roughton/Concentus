@@ -35,20 +35,15 @@ import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
-import com.adamroughton.concentus.messaging.MessagingUtil;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.Publisher;
 import com.adamroughton.concentus.messaging.SendRecvMessengerReactor;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
-import com.adamroughton.concentus.messaging.zmq.SocketSettings;
-import com.adamroughton.concentus.pipeline.PipelineBranch;
+import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Util;
-import com.lmax.disruptor.BlockingWaitStrategy;
-import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 import uk.co.real_logic.intrinsics.ComponentFactory;
@@ -64,33 +59,30 @@ public final class WorkerService implements CrowdHammerService {
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	
 	private final ConcentusHandle<? extends CrowdHammerConfiguration> _concentusHandle;
+	private final MetricContext _metricContext;
 	
 	private EventQueue<byte[]> _clientRecvQueue;
 	private EventQueue<byte[]> _clientSendQueue;
-	private EventQueue<byte[]> _metricSendQueue;
 	
 	private ProcessingPipeline<byte[]> _pipeline;
 	
 	private final OutgoingEventHeader _clientSendHeader;
 	private final IncomingEventHeader _clientRecvHeader;
-	private final OutgoingEventHeader _metricSendHeader;
 	
 	private SocketManager _socketManager;
-	private int _metricPubSocketId;
 	private final int _maxClients;
 	private final StructuredArray<Client> _clients;
 	
-	private long _workerId = -1;
 	private int _clientCountForTest;
 	private SimulatedClientProcessor _clientProcessor;
-	private EventProcessor _metricPublisher;
 	
 	private SendRecvMessengerReactor _clientSocketReactor;
 	private int[] _handlerIds;
 	
-	public WorkerService(final ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle, int maxClientCount) {
+	public WorkerService(final ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle, int maxClientCount, MetricContext metricContext) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_maxClients = maxClientCount;
+		_metricContext = Objects.requireNonNull(metricContext);
 		_clients = StructuredArray.newInstance(nextPowerOf2(_maxClients), Client.class, new ComponentFactory<Client>() {
 
 			long index = 0;
@@ -102,18 +94,13 @@ public final class WorkerService implements CrowdHammerService {
 		});
 		_clientSendHeader = new OutgoingEventHeader(0, 1);
 		_clientRecvHeader = new IncomingEventHeader(0, 1);
-		_metricSendHeader = new OutgoingEventHeader(0, 2);
 	}
 
 	@Override
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
 			ClusterWorkerHandle cluster) throws Exception {
 		LOG.info(String.format("Entering state %s", newClusterState.name()));
-		if (newClusterState == CrowdHammerServiceState.INIT) {
-			init(cluster);
-		} else if (newClusterState == CrowdHammerServiceState.CONNECT) {
-			connect(cluster);
-		} else if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
+		if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
 			initTest(cluster);
 		} else if (newClusterState == CrowdHammerServiceState.SET_UP_TEST) {
 			setUpTest(cluster);
@@ -137,18 +124,6 @@ public final class WorkerService implements CrowdHammerService {
 		return CrowdHammerServiceState.class;
 	}
 	
-	private void init(ClusterWorkerHandle cluster) throws Exception {		
-		// request workerId
-		cluster.requestAssignment(SERVICE_TYPE, new byte[0]);
-	}
-	
-	private void connect(ClusterWorkerHandle cluster) throws Exception {
-		// read in the workerId
-		byte[] res = cluster.getAssignment(SERVICE_TYPE);
-		if (res.length != 8) throw new RuntimeException("Expected a long value");
-		_workerId = MessageBytesUtil.readLong(res, 0);
-	}
-	
 	private void initTest(ClusterWorkerHandle cluster) throws Exception {
 		_socketManager = _concentusHandle.newSocketManager();
 		
@@ -156,12 +131,6 @@ public final class WorkerService implements CrowdHammerService {
 		byte[] reqBytes = new byte[4];
 		MessageBytesUtil.writeInt(reqBytes, 0, _maxClients);
 		cluster.requestAssignment(SERVICE_TYPE, reqBytes);
-
-		// metric socket
-		int metricsPubPort = ConfigurationUtil.getPort(_concentusHandle.getConfig(), SERVICE_TYPE, "pub");
-		SocketSettings metricSocketSettings = SocketSettings.create()
-				.bindToPort(metricsPubPort);
-		_metricPubSocketId = _socketManager.create(ZMQ.PUB, metricSocketSettings);
 	}
 
 	private void setUpTest(ClusterWorkerHandle cluster) throws Exception {
@@ -179,22 +148,19 @@ public final class WorkerService implements CrowdHammerService {
 		CrowdHammerConfiguration config = _concentusHandle.getConfig();
 		int routerRecvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "routerRecv");
 		int routerSendBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "routerSend");
-		int metricBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "metric");
 		
 		EventQueueFactory eventQueueFactory = _concentusHandle.getEventQueueFactory();
 		
 		_clientRecvQueue = eventQueueFactory.createSingleProducerQueue(
+				"clientRecvQueue",
 				Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
 				routerRecvBufferLength, 
 				new YieldingWaitStrategy());
 		_clientSendQueue = eventQueueFactory.createSingleProducerQueue(
+				"clientSendQueue",
 				Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
 				routerSendBufferLength, 
 				new YieldingWaitStrategy());
-		_metricSendQueue = eventQueueFactory.createSingleProducerQueue(
-				Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
-				metricBufferLength, 
-				new BlockingWaitStrategy());
 		
 		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _concentusHandle.getNetworkAddress().getHostAddress()));
 	}
@@ -211,7 +177,7 @@ public final class WorkerService implements CrowdHammerService {
 			String connString = String.format("%s:%d", 
 					clientHandlerConnStrings[clientHandlerIndex],
 					clientHandlerPort);
-			int handlerSocketId = _socketManager.create(ZMQ.DEALER);
+			int handlerSocketId = _socketManager.create(ZMQ.DEALER, "clientHandler" + clientHandlerIndex + " (" + connString + ")");
 			_socketManager.connectSocket(handlerSocketId, connString);
 			_handlerIds[clientHandlerIndex] = handlerSocketId;
 		}
@@ -233,8 +199,8 @@ public final class WorkerService implements CrowdHammerService {
 		Mutex<Messenger> clientHandlerSet = _socketManager.createPollInSet(_handlerIds);
 		
 		// infrastructure for client socket
-		SendQueue<OutgoingEventHeader> clientSendQueue = new SendQueue<>(_clientSendHeader, _clientSendQueue);
 		_clientSocketReactor = new SendRecvMessengerReactor(
+				"clientSocketReactor",
 				clientHandlerSet, 
 				_clientSendHeader, 
 				_clientRecvHeader,
@@ -242,23 +208,14 @@ public final class WorkerService implements CrowdHammerService {
 				_clientSendQueue, 
 				_concentusHandle);
 
-		// infrastructure for metric socket
-		SendQueue<OutgoingEventHeader> metricSendQueue = new SendQueue<>(_metricSendHeader, _metricSendQueue);
-		Mutex<Messenger> pubSocketPackageMutex = _socketManager.getSocketMutex(_metricPubSocketId);
-		_metricPublisher = MessagingUtil.asSocketOwner(_metricSendQueue, new Publisher(_metricSendHeader), pubSocketPackageMutex);
-		
 		// event processing infrastructure
-		_clientProcessor = new SimulatedClientProcessor(_workerId, _concentusHandle.getClock(), _clients, _clientCountForTest, clientSendQueue, metricSendQueue, _clientRecvHeader);
-		
-		PipelineBranch<byte[]> metricSendBranch = ProcessingPipeline.startBranch(_metricSendQueue, _concentusHandle.getClock())
-				.then(_metricPublisher)
-				.create();
+		SendQueue<OutgoingEventHeader> clientSendQueue = new SendQueue<>("clientProcessor", _clientSendHeader, _clientSendQueue);
+		_clientProcessor = new SimulatedClientProcessor(_concentusHandle.getClock(), _clients, _clientCountForTest, clientSendQueue, _clientRecvHeader, _metricContext);
 		
 		_pipeline = ProcessingPipeline.<byte[]>startCyclicPipeline(_clientSendQueue, _concentusHandle.getClock())
 				.then(_clientSocketReactor)
 				.thenConnector(_clientRecvQueue)
-				.then(_clientRecvQueue.createEventProcessor(_clientProcessor, _concentusHandle.getClock(), _concentusHandle))
-				.attachBranch(metricSendBranch)
+				.then(_clientRecvQueue.createEventProcessor("clientProcessor", _clientProcessor, _concentusHandle.getClock(), _concentusHandle))
 				.completeCycle(_executor);
 	}
 	

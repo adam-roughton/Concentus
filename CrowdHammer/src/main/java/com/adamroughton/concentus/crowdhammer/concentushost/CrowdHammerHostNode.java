@@ -15,6 +15,7 @@
  */
 package com.adamroughton.concentus.crowdhammer.concentushost;
 
+import java.lang.reflect.TypeVariable;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
@@ -24,42 +25,38 @@ import org.apache.commons.cli.OptionBuilder;
 
 import com.adamroughton.concentus.ConcentusExecutableOperations;
 import com.adamroughton.concentus.ConcentusHandle;
-import com.adamroughton.concentus.ConcentusNode;
-import com.adamroughton.concentus.ConcentusProcessFactory;
-import com.adamroughton.concentus.ConcentusService;
+import com.adamroughton.concentus.ConcentusServiceState;
+import com.adamroughton.concentus.ConcentusWorkerNode;
+import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.config.Configuration;
-import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
+import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
+import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.util.Util;
 
-public class CrowdHammerHostNode implements ConcentusNode<CrowdHammerService, CrowdHammerConfiguration> {
+public class CrowdHammerHostNode implements ConcentusWorkerNode<CrowdHammerConfiguration, CrowdHammerServiceState> {
 
 	public static final String PROCESS_NAME = "CrowdHammer Worker";
 	public static final String CONCENTUS_NODE_CLASS_OPTION = "c";
 	
-	private final ConcentusProcessFactory<ConcentusService, Configuration> _serviceFactory;
+	private final ConcentusWorkerNode<Configuration, ConcentusServiceState> _adaptedNode;
 	
-	public CrowdHammerHostNode(ConcentusProcessFactory<ConcentusService, Configuration> serviceFactory) {
-		_serviceFactory = Objects.requireNonNull(serviceFactory);
-	}
-	
-	@Override
-	public ConcentusProcessFactory<CrowdHammerService, CrowdHammerConfiguration> getProcessFactory() {
-		return new AdapterFactory(_serviceFactory);
+	public CrowdHammerHostNode(ConcentusWorkerNode<Configuration, ConcentusServiceState> adaptedNode) {
+		_adaptedNode = Objects.requireNonNull(adaptedNode);
 	}
 	
 	public static void main(String[] args) {
 		/*
-		 * We first get the service factory class passed as an argument
+		 * We first get the adapted node class passed as an argument
 		 */
 		Map<String, String> commandLineArgs = ConcentusExecutableOperations.parseCommandLine(PROCESS_NAME, Arrays.asList(getServiceOption()), args, true);
 		String concentusNodeClassName = commandLineArgs.get(CONCENTUS_NODE_CLASS_OPTION);
-		ConcentusNode<?, ?> concentusNode = getConcentusNode(concentusNodeClassName);
+		ConcentusWorkerNode<Configuration, ConcentusServiceState> adaptedNode = getAdaptedNode(concentusNodeClassName);
 		
 		/*
-		 * Execute the wrapped service 
+		 * Execute the adapted node
 		 */
-		ConcentusExecutableOperations.executeClusterWorker(args, new CrowdHammerHostNode(getServiceFactory(concentusNode)));
+		ConcentusExecutableOperations.executeClusterWorker(args, new CrowdHammerHostNode(adaptedNode));
 	}
 	
 	@SuppressWarnings("static-access")
@@ -71,80 +68,70 @@ public class CrowdHammerHostNode implements ConcentusNode<CrowdHammerService, Cr
 				.create(CONCENTUS_NODE_CLASS_OPTION);
 	}
 	
-	private static ConcentusNode<?, ?> getConcentusNode(String concentusNodeClassName) {
+	@SuppressWarnings("unchecked")
+	private static ConcentusWorkerNode<Configuration, ConcentusServiceState> getAdaptedNode(String concentusNodeClassName) {
 		try {
 			Class<?> concentusServiceFactoryClass = Class.forName(concentusNodeClassName);
 			Object object = concentusServiceFactoryClass.newInstance();
 			
-			if (!(object instanceof ConcentusNode<?, ?>)) {
-				throw new RuntimeException(String.format("The class %s is not a concentus node", 
-						concentusNodeClassName));
+			if (!(object instanceof ConcentusWorkerNode<?, ?>)) {
+				throw new RuntimeException(String.format("The class %s is not of type %s", 
+						concentusNodeClassName,
+						ConcentusWorkerNode.class.getName()));
 			}
-			return (ConcentusNode<?, ?>) object;
+			ConcentusWorkerNode<?,?> node = (ConcentusWorkerNode<?, ?>) object;
+			
+			if (!node.getConfigType().equals(Configuration.class)) {
+				throw new RuntimeException(String.format("This host node only wraps worker nodes that use a configuration of type %1$s. " +
+						"The given node class %2$s expected a %3$s typed configuration.", 
+						Configuration.class.getName(), node.getClass().getName(), node.getConfigType().getName()));
+			}
+			
+			if (!node.getClusterStateClass().equals(ConcentusServiceState.class)) {
+				throw new RuntimeException(String.format("This host node only wraps worker nodes using a service state type of %1$s. " +
+						"The given node class %2$s expected a %3$s service state.", 
+						Configuration.class.getName(), node.getClass().getName(), node.getClusterStateClass().getName()));
+			}
+			return (ConcentusWorkerNode<Configuration, ConcentusServiceState>) node;
 		} catch (ClassNotFoundException eNotFound){
-			throw new RuntimeException(String.format("Could not find the service factory class '%1$s'.", concentusNodeClassName), eNotFound);
+			throw new RuntimeException(String.format("Could not find the worker node class '%1$s'.", concentusNodeClassName), eNotFound);
 		} catch (InstantiationException | IllegalAccessException | SecurityException e) {
-			throw new RuntimeException(String.format("Could not instantiate the service factory class %1$s.", concentusNodeClassName), e);
+			throw new RuntimeException(String.format("Could not instantiate the worker node class %1$s.", concentusNodeClassName), e);
 		}
 	}
-	
-	@SuppressWarnings("unchecked")
-	private static ConcentusProcessFactory<ConcentusService, Configuration> getServiceFactory(ConcentusNode<?, ?> concentusNode) {
-		ConcentusProcessFactory<?, ?> processFactory = concentusNode.getProcessFactory();
-		
-		if (!ConcentusService.class.isAssignableFrom(processFactory.getSupportedType())) {
-			throw new RuntimeException(String.format("This host node only supports processes of type %1$s. The given node class %2$s does not create %1$s typed processes.", 
-					ConcentusService.class.getName(), concentusNode.getClass().getName()));
-		}
-		if (!processFactory.getConfigType().equals(Configuration.class)) {
-			throw new RuntimeException(String.format("This host node only supports processes that uses a configuration of type %1$s. " +
-					"The given node class %2$s expected a %3$s typed configuration.", 
-					Configuration.class.getName(), concentusNode.getClass().getName(), processFactory.getConfigType().getName()));
-		}
-		return (ConcentusProcessFactory<ConcentusService, Configuration>) processFactory;
+
+	@Override
+	@SuppressWarnings("static-access")
+	public Iterable<Option> getCommandLineOptions() {
+		return Util.newIterable(_adaptedNode.getCommandLineOptions(),
+				OptionBuilder.withArgName("service process factory class")
+				.hasArgs()
+				.isRequired(true)
+				.withDescription("fully qualified class name of the service process factory class.")
+				.create(CONCENTUS_NODE_CLASS_OPTION));
 	}
 
-	private static final class AdapterFactory implements ConcentusProcessFactory<CrowdHammerService, CrowdHammerConfiguration> {
+	@Override
+	public String getProcessName() {
+		return PROCESS_NAME;
+	}
 
-		private final ConcentusProcessFactory<ConcentusService, Configuration> _serviceFactory;
-		
-		public AdapterFactory(ConcentusProcessFactory<ConcentusService, Configuration> serviceFactory) {
-			_serviceFactory = serviceFactory;
-		}
-		
-		@Override
-		public CrowdHammerService create(
-				ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle,
-				Map<String, String> commandLineOptions) {
-			return new ConcentusServiceAdapter(concentusHandle, _serviceFactory, commandLineOptions);
-		}
+	@Override
+	public Class<CrowdHammerConfiguration> getConfigType() {
+		return CrowdHammerConfiguration.class;
+	}
 
-		@Override
-		@SuppressWarnings("static-access")
-		public Iterable<Option> getCommandLineOptions() {
-			return Util.newIterable(_serviceFactory.getCommandLineOptions(),
-					OptionBuilder.withArgName("service process factory class")
-					.hasArgs()
-					.isRequired(true)
-					.withDescription("fully qualified class name of the service process factory class.")
-					.create(CONCENTUS_NODE_CLASS_OPTION));
-		}		
+	@Override
+	public ClusterListener<CrowdHammerServiceState> createService(
+			Map<String, String> commandLineOptions,
+			ConcentusHandle<? extends CrowdHammerConfiguration> handle,
+			MetricContext metricContext) {
+		return new ConcentusServiceAdapter(handle, _adaptedNode, commandLineOptions, metricContext);
+	}
 
-		@Override
-		public String getProcessName() {
-			return PROCESS_NAME;
-		}
-
-		@Override
-		public Class<CrowdHammerService> getSupportedType() {
-			return CrowdHammerService.class;
-		}
-
-		@Override
-		public Class<CrowdHammerConfiguration> getConfigType() {
-			return CrowdHammerConfiguration.class;
-		}
-		
+	@Override
+	public Class<CrowdHammerServiceState> getClusterStateClass() {
+		return CrowdHammerServiceState.class;
 	}
 	
 }

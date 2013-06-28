@@ -89,7 +89,7 @@ class CyclicPipelineSegment<TEvent> extends PipelineSegment<TEvent> {
 		
 		if (_state == State.STARTED) {
 			super.halt(timeout, unit);
-			_consumer = _cyclicConnector.createEventProcessor(new EventProcessorFactory<TEvent, NoOpConsumer>() {
+			_consumer = _cyclicConnector.createEventProcessor("NoOpConsumer", new EventProcessorFactory<TEvent, NoOpConsumer>() {
 
 				@Override
 				public NoOpConsumer createProcessor(

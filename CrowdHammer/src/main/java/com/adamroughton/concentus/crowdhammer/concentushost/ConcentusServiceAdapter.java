@@ -17,6 +17,7 @@ package com.adamroughton.concentus.crowdhammer.concentushost;
 
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
@@ -24,33 +25,40 @@ import java.util.UUID;
 import java.util.logging.Logger;
 
 import com.adamroughton.concentus.ConcentusHandle;
-import com.adamroughton.concentus.ConcentusProcessFactory;
-import com.adamroughton.concentus.ConcentusService;
 import com.adamroughton.concentus.ConcentusServiceState;
+import com.adamroughton.concentus.ConcentusWorkerNode;
+import com.adamroughton.concentus.cluster.data.MetricPublisherInfo;
+import com.adamroughton.concentus.cluster.data.TestRunInfo;
+import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
+import com.adamroughton.concentus.metric.MetricContext;
+import com.netflix.curator.framework.api.CuratorWatcher;
 
 public class ConcentusServiceAdapter implements CrowdHammerService {
 
 	private final Logger _log;
 	
-	private final ConcentusProcessFactory<ConcentusService, Configuration> _serviceFactory;
+	private final ConcentusWorkerNode<Configuration, ConcentusServiceState> _adaptedNode;
 	private final Map<String, String> _commandLineOptions;
 	private final ConcentusHandle<? extends CrowdHammerConfiguration> _concentusHandle;
+	private final MetricContext _metricContext;
 	
-	private ConcentusService _currentInstance;
+	private ClusterListener<ConcentusServiceState> _currentInstance;
 	
 	public ConcentusServiceAdapter(
-			final ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle,
-			final ConcentusProcessFactory<ConcentusService, Configuration> serviceFactory, 
-			final Map<String, String> commandLineOptions) {
+			ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle,
+			ConcentusWorkerNode<Configuration, ConcentusServiceState> adaptedNode,
+			Map<String, String> commandLineOptions,
+			MetricContext metricContext) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
-		_serviceFactory = Objects.requireNonNull(serviceFactory);
+		_adaptedNode = Objects.requireNonNull(adaptedNode);
 		_commandLineOptions = Collections.unmodifiableMap(Objects.requireNonNull(commandLineOptions));
-		_log = Logger.getLogger(String.format("CrowdHammer wrapping '%s'", _serviceFactory.getProcessName()));
+		_metricContext = Objects.requireNonNull(metricContext);
+		_log = Logger.getLogger(String.format("CrowdHammer wrapping '%s'", _adaptedNode.getProcessName()));
 	}
 
 	@Override
@@ -60,7 +68,7 @@ public class ConcentusServiceAdapter implements CrowdHammerService {
 		
 		_log.info(String.format("Entering state %s", newClusterState.name()));
 		if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
-			_currentInstance = _serviceFactory.create(_concentusHandle, _commandLineOptions);
+			_currentInstance = _adaptedNode.createService(_commandLineOptions, _concentusHandle, _metricContext);
 		}
 		ConcentusServiceState consentusState = newClusterState.getEquivalentSUTState();
 		if (consentusState != null) {
@@ -140,6 +148,30 @@ public class ConcentusServiceAdapter implements CrowdHammerService {
 				_wrappedCluster.unregisterService(serviceReg);
 			}
 			_registeredServiceNames.clear();
+		}
+
+		@Override
+		public TestRunInfo getCurrentRunInfo() {
+			return _wrappedCluster.getCurrentRunInfo();
+		}
+
+		@Override
+		public void registerAsMetricPublisher(
+				String type,
+				String pubAddress,
+				String metaDataReqAddress) {
+			_wrappedCluster.registerAsMetricPublisher(type, pubAddress, metaDataReqAddress);
+		}
+
+		@Override
+		public List<MetricPublisherInfo> getMetricPublishers() {
+			return _wrappedCluster.getMetricPublishers();
+		}
+
+		@Override
+		public List<MetricPublisherInfo> getMetricPublishers(
+				CuratorWatcher watcher) {
+			return _wrappedCluster.getMetricPublishers(watcher);
 		}
 		
 	}

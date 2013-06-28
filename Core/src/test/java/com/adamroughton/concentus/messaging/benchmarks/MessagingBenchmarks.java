@@ -64,7 +64,7 @@ public class MessagingBenchmarks {
 			_testSocket = context.socket(ZMQ.DEALER);
 			_testSocket.setLinger(0);
 			_testSocket.connect("tcp://127.0.0.1:9080");
-			_messenger = new ZmqSocketMessenger(0, _testSocket, new DefaultClock());
+			_messenger = new ZmqSocketMessenger(0, "", _testSocket, new DefaultClock());
 		}
 		
 		@Override
@@ -180,7 +180,7 @@ public class MessagingBenchmarks {
 			} else {
 				_testSocket.connect("tcp://127.0.0.1:9080");				
 			}
-			_messenger = new ZmqSocketMessenger(0, _testSocket, new DefaultClock());
+			_messenger = new ZmqSocketMessenger(0, "", _testSocket, new DefaultClock());
 		}
 		
 		@Override
@@ -197,7 +197,7 @@ public class MessagingBenchmarks {
 			}
 			
 			if (!recvDirect) {
-				final ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, socket, new DefaultClock());
+				final ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, "", socket, new DefaultClock());
 				final IncomingEventHeader header = new IncomingEventHeader(0, msgSegmentCount);
 				
 				return new Runnable() {
@@ -395,7 +395,7 @@ public class MessagingBenchmarks {
 					_testSockets[i].connect("tcp://127.0.0.1:9080");				
 				}
 				Clock clock = new DefaultClock();
-				_messengers[i] = new ZmqSocketMessenger(i, _testSockets[i], clock);
+				_messengers[i] = new ZmqSocketMessenger(i, "", _testSockets[i], clock);
 			}
 		}
 		
@@ -414,7 +414,7 @@ public class MessagingBenchmarks {
 			}
 			
 			if (!recvDirect) {
-				final ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, socket, new DefaultClock());
+				final ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, "", socket, new DefaultClock());
 				final IncomingEventHeader header = new IncomingEventHeader(0, 2);
 				
 				return new Runnable() {
@@ -548,7 +548,7 @@ public class MessagingBenchmarks {
 				}
 				
 				Clock clock = new DefaultClock();
-				_messengers[i] = new ZmqSocketMessenger(i, _testSockets[i], clock);
+				_messengers[i] = new ZmqSocketMessenger(i, "", _testSockets[i], clock);
 			}
 		}
 		
@@ -567,7 +567,7 @@ public class MessagingBenchmarks {
 			}
 			
 			if (!recvDirect) {
-				final ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, socket, new DefaultClock());
+				final ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, "", socket, new DefaultClock());
 				final IncomingEventHeader header = new IncomingEventHeader(0, 2);
 				
 				return new Runnable() {

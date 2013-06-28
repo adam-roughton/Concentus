@@ -15,81 +15,41 @@
  */
 package com.adamroughton.concentus.crowdhammer;
 
-import java.util.HashMap;
-import java.util.List;
+import java.util.Collections;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.logging.Logger;
 
-import com.adamroughton.concentus.ConcentusCoordinatorProcess;
+import org.apache.commons.cli.Option;
+
+import com.adamroughton.concentus.ConcentusCoordinatorNode;
 import com.adamroughton.concentus.ConcentusExecutableOperations;
-import com.adamroughton.concentus.ConcentusExecutableOperations.FactoryDelegate;
 import com.adamroughton.concentus.ConcentusHandle;
-import com.adamroughton.concentus.ConcentusNode;
-import com.adamroughton.concentus.ConcentusProcessFactory;
-import com.adamroughton.concentus.NoArgsConcentusProcessFactory;
 import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle;
-import com.adamroughton.concentus.cluster.coordinator.ParticipatingNodes;
-import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle.AssignmentRequest;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
-import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.esotericsoftware.minlog.Log;
 
 import asg.cliche.Command;
 import asg.cliche.Shell;
 import asg.cliche.ShellFactory;
 
-public final class CrowdHammerCoordinatorNode implements ConcentusNode<ConcentusCoordinatorProcess, CrowdHammerConfiguration> {
+public final class CrowdHammerCoordinatorNode implements ConcentusCoordinatorNode<CrowdHammerConfiguration> {
 
 	public static final String PROCESS_NAME = "CrowdHammer Coordinator";
-	private final static Logger LOG = Logger.getLogger("CrowdHammerCoordinator");
-	
-	@Override
-	public ConcentusProcessFactory<ConcentusCoordinatorProcess, CrowdHammerConfiguration> getProcessFactory() {
-		return new NoArgsConcentusProcessFactory<>(PROCESS_NAME, 
-			new FactoryDelegate<ConcentusCoordinatorProcess, CrowdHammerConfiguration>() {
-
-				@Override
-				public ConcentusCoordinatorProcess create(
-						ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle) {
-					return new CrowdHammerCoordinatorProcess(concentusHandle);
-				}
-			
-			}, 
-			ConcentusCoordinatorProcess.class,
-			CrowdHammerConfiguration.class);
-	}
 	
 	public static void main(String[] args) {
 		ConcentusExecutableOperations.executeClusterCoordinator(args, new CrowdHammerCoordinatorNode());
 	}
 	
-	public static void setAndWait(CrowdHammerServiceState newState, ParticipatingNodes participatingNodes, ClusterCoordinatorHandle cluster) 
-			throws InterruptedException {
-		LOG.info(String.format("Setting state to %s", newState.name()));
-		cluster.setState(newState);
-		LOG.info("Waiting for nodes...");
-		while (!cluster.waitForReady(participatingNodes));
-		LOG.info("All nodes ready, proceeding...");
-	}
-	
-	public static class CrowdHammerCoordinatorProcess implements ConcentusCoordinatorProcess {
+	public static class CrowdHammerCoordinatorProcess {
 		private final ExecutorService _executor = Executors.newCachedThreadPool();
 		private final ConcentusHandle<? extends CrowdHammerConfiguration> _concentusHandle;
 		private ClusterCoordinatorHandle _clusterHandle;
 		
 		private Future<?> _currentTask = null;
-		private boolean _hasInitdTestInfrastructure = false;
-		private ParticipatingNodes _participatingNodes = null;
-		
-		private Map<UUID, Long> _workerIdMapping = new HashMap<>();
-		
-		private long _nextWorkerId = 0;
+		private CrowdHammerCoordinator _coordinator;
 			
 		public CrowdHammerCoordinatorProcess(ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle) {
 			_concentusHandle = Objects.requireNonNull(concentusHandle);
@@ -97,26 +57,7 @@ public final class CrowdHammerCoordinatorNode implements ConcentusNode<Concentus
 		
 		@Command(name="start")
 		public void startRun(int... simClientCounts) throws Exception {
-			if (!_hasInitdTestInfrastructure) {
-				_participatingNodes = _clusterHandle.getNodeSnapshot();
-				System.out.println("Initialising test infrastructure");
-				
-				// give each worker a unique ID
-				List<AssignmentRequest> workerAssignmentReqs = 
-						_clusterHandle.getAssignmentRequests(WorkerService.SERVICE_TYPE);
-				for (AssignmentRequest req : workerAssignmentReqs) {
-					UUID serviceId = UUID.fromString(req.getServiceId());
-					long workerId = _nextWorkerId++;
-					byte[] res = new byte[8];
-					MessageBytesUtil.writeLong(res, 0, workerId);
-					_clusterHandle.setAssignment(WorkerService.SERVICE_TYPE, serviceId, res);
-					_workerIdMapping.put(serviceId, workerId);
-				}
-				
-				setAndWait(CrowdHammerServiceState.BIND, _participatingNodes, _clusterHandle);
-				setAndWait(CrowdHammerServiceState.CONNECT, _participatingNodes, _clusterHandle);
-				_hasInitdTestInfrastructure = true;
-			}
+			_coordinator.ensureTestInfrastructureInitialised();
 			
 			System.out.print("Starting test run with client counts: [");
 			for (int i = 0; i < simClientCounts.length; i++) {
@@ -128,7 +69,7 @@ public final class CrowdHammerCoordinatorNode implements ConcentusNode<Concentus
 			clearExisting();
 			int testExecDur = _concentusHandle.getConfig().getCrowdHammer().getTestRunDurationInSeconds();
 			
-			TestRunner runner = new TestRunner(_participatingNodes, _clusterHandle, testExecDur, simClientCounts, _workerIdMapping);
+			TestRunner runner = new TestRunner(_coordinator, testExecDur, simClientCounts);
 			_currentTask = _executor.submit(runner);
 		}
 		
@@ -156,9 +97,9 @@ public final class CrowdHammerCoordinatorNode implements ConcentusNode<Concentus
 			}
 		}
 
-		@Override
 		public void run(ClusterCoordinatorHandle coordinatorHandle) {
 			_clusterHandle = coordinatorHandle;
+			_coordinator = new CrowdHammerCoordinator(_clusterHandle);
 			try {
 				System.out.println("Starting CrowdHammer Coordinator");
 				System.out.println("Connecting to ZooKeeper server");
@@ -173,6 +114,29 @@ public final class CrowdHammerCoordinatorNode implements ConcentusNode<Concentus
 		}
 		
 		
+	}
+
+	@Override
+	public Iterable<Option> getCommandLineOptions() {
+		return Collections.emptyList();
+	}
+
+	@Override
+	public String getProcessName() {
+		return PROCESS_NAME;
+	}
+
+	@Override
+	public Class<CrowdHammerConfiguration> getConfigType() {
+		return CrowdHammerConfiguration.class;
+	}
+
+	@Override
+	public void run(Map<String, String> commandLineArgs,
+			ConcentusHandle<CrowdHammerConfiguration> processHandle,
+			ClusterCoordinatorHandle clusterHandle) {
+		CrowdHammerCoordinatorProcess coordinatorProcess = new CrowdHammerCoordinatorProcess(processHandle);
+		coordinatorProcess.run(clusterHandle);
 	}
 	
 }

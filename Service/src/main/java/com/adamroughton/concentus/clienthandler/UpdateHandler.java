@@ -82,7 +82,7 @@ class UpdateHandler {
 	}
 	
 	public void sendUpdates(final long updateId, final Iterable<ClientProxy> clients, final SendQueue<OutgoingEventHeader> updateQueue) {
-		final long highestHandlerSeq = _updateToInputSeqMap.get(updateId);
+		final long highestHandlerSeq = _updateToInputSeqMap.getDirect(updateId);
 		final byte[] updateBufferEntry = _updateBuffer.get(updateId);
 		try {
 			_updateEvent.setBackingArray(updateBufferEntry, 4);

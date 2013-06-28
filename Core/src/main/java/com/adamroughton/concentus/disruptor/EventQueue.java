@@ -26,18 +26,7 @@ import com.lmax.disruptor.SequenceBarrier;
 
 public interface EventQueue<T> {
 	
-	/**
-	 * Flag indicating whether this event queue is shared between two or
-	 * more event producers. This is useful for determining whether entries
-	 * can be claimed and held during blocking calls (entries from shared queues 
-	 * should never be held while blocking). Exclusive ownership of the queue
-	 * can be utilised for blocking zero copy operations.
-	 * @return {@code true} if this queue is shared between two or more event
-	 * producers, {@code false} otherwise
-	 */
-	boolean isShared();
-	
-	EventQueuePublisher<T> createPublisher(boolean isBlocking);
+	EventQueuePublisher<T> createPublisher(String publisherName, boolean isBlocking);
 	
 	/**
 	 * Creates a new queue reader that waits on the given sequences and the cursor
@@ -45,19 +34,19 @@ public interface EventQueue<T> {
 	 * @param isBlocking
 	 * @return
 	 */
-	EventQueueReader<T> createReader(boolean isBlocking, Sequence...sequencesToTrack);
+	EventQueueReader<T> createReader(String readerName, boolean isBlocking, Sequence...sequencesToTrack);
 	
 	/**
 	 * Creates an event processor that wraps the provided event handler.
 	 * @param eventHandler the event handler to wrap
 	 * @return an event processor that consumes events on the queue
 	 */
-	EventProcessor createEventProcessor(EventHandler<T> eventHandler, Sequence... sequencesToTrack);
+	EventProcessor createEventProcessor(String processorName, EventHandler<T> eventHandler, Sequence... sequencesToTrack);
 	
-	EventProcessor createEventProcessor(DeadlineBasedEventHandler<T> eventHandler, Clock clock, 
+	EventProcessor createEventProcessor(String processorName, DeadlineBasedEventHandler<T> eventHandler, Clock clock, 
 			FatalExceptionCallback exceptionCallback, Sequence... sequencesToTrack);
 	
-	<TProcessor extends EventProcessor> TProcessor createEventProcessor(EventProcessorFactory<T, TProcessor> processorFactory, Sequence...sequencesToTrack);
+	<TProcessor extends EventProcessor> TProcessor createEventProcessor(String processorName, EventProcessorFactory<T, TProcessor> processorFactory, Sequence...sequencesToTrack);
 	
 	void addGatingSequences(Sequence...sequences);
 	
@@ -75,6 +64,8 @@ public interface EventQueue<T> {
 	 * @return
 	 */
 	long getQueueSize();
+	
+	String getName();
 	
 	/**
 	 * Factory for creating event processors that consume events from

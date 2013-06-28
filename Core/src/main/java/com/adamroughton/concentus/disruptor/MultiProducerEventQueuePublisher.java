@@ -22,13 +22,19 @@ import com.lmax.disruptor.RingBuffer;
 
 public final class MultiProducerEventQueuePublisher<T> implements EventQueuePublisher<T> {
 
+	private final String _name;
 	private final RingBuffer<T> _ringBuffer;
 	private final EventEntryHandler<T> _entryHandler;
 	private final boolean _isBlocking;
 	private final T _tmpBuffer;
 	private boolean _isPending;
+	private long _lastPubSeq = -1;
+
+	private PrePublishDelegate _prePublishDelegate = new NullPrePublishDelegate();
 	
-	public MultiProducerEventQueuePublisher(RingBuffer<T> ringBuffer, EventEntryHandler<T> entryHandler, boolean isBlocking) {
+	public MultiProducerEventQueuePublisher(String publisherName, RingBuffer<T> ringBuffer, EventEntryHandler<T> entryHandler, 
+			boolean isBlocking) {
+		_name = Objects.requireNonNull(publisherName);
 		_ringBuffer = Objects.requireNonNull(ringBuffer);
 		_entryHandler = Objects.requireNonNull(entryHandler);
 		_tmpBuffer = entryHandler.newInstance();
@@ -61,6 +67,7 @@ public final class MultiProducerEventQueuePublisher<T> implements EventQueuePubl
 		try {
 			T queueBuffer = _ringBuffer.get(seq);
 			_entryHandler.copy(_tmpBuffer, queueBuffer);
+			_prePublishDelegate.beforePublish(seq);
 		} finally {
 			_ringBuffer.publish(seq);
 		}
@@ -79,6 +86,21 @@ public final class MultiProducerEventQueuePublisher<T> implements EventQueuePubl
 	@Override
 	public T getUnpublished() {
 		return _tmpBuffer;
+	}
+
+	@Override
+	public long getLastPublishedSequence() {
+		return _lastPubSeq;
+	}
+
+	@Override
+	public void setPrePublishDelegate(PrePublishDelegate delegate) {
+		_prePublishDelegate = Objects.requireNonNull(delegate);
+	}
+	
+	@Override
+	public String getName() {
+		return _name;
 	}
 	
 }

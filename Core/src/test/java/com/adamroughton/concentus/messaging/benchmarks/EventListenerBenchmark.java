@@ -24,7 +24,8 @@ import org.zeromq.ZMQ.Context;
 import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.disruptor.EventQueue;
-import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
+import com.adamroughton.concentus.disruptor.EventQueueImpl;
+import com.adamroughton.concentus.disruptor.SingleProducerQueueStrategy;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessengerMutex;
@@ -56,10 +57,10 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 		
 		_header = new IncomingEventHeader(0, 1);
 		
-		_recvQueue = new SingleProducerEventQueue<>(
+		_recvQueue = new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", 
 				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _header.getEventOffset())), 
 				1, 
-				new YieldingWaitStrategy());
+				new YieldingWaitStrategy()));
 		_recvQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		_sendSocket = context.socket(ZMQ.DEALER);
@@ -85,7 +86,7 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 		final ZMQ.Socket recvSocket = context.socket(ZMQ.DEALER);
 		recvSocket.setReceiveTimeOut(1000);
 		recvSocket.bind("tcp://127.0.0.1:" + _port);
-		ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, recvSocket, new DefaultClock());
+		ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, "", recvSocket, new DefaultClock());
 		
 		MessengerMutex<ZmqSocketMessenger> mutex = new MessengerMutex<ZmqSocketMessenger>(messenger);
 		FatalExceptionCallback exCallback = new FatalExceptionCallback() {
@@ -97,7 +98,7 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 			}
 		};
 		
-		final EventListener listener = new EventListener(_header, mutex, _recvQueue, exCallback);
+		final EventListener listener = new EventListener("", _header, mutex, _recvQueue, exCallback);
 		
 		return new Runnable() {
 

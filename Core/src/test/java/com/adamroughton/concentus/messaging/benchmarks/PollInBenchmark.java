@@ -61,7 +61,7 @@ public class PollInBenchmark extends MessagingBenchmarkBase {
 			socket.setReceiveTimeOut(1000);
 			socket.bind("tcp://127.0.0.1:" + (_startPort + i));
 			_recvSockets[i] = socket;
-			messengers[i] = new ZmqSocketMessenger(i, socket, clock);
+			messengers[i] = new ZmqSocketMessenger(i, "", socket, clock);
 		}
 		if (useAlternativePollIn) {
 			_socketPollSet = new HackSocketPollInSet(messengers);

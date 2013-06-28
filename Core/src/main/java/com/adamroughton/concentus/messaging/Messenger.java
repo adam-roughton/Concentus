@@ -54,5 +54,7 @@ public interface Messenger {
 	  * @return an array of all end points associated with this messenger
 	  */
 	 int[] getEndpointIds();
+	 
+	 String name();
 	
 }

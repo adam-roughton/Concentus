@@ -22,16 +22,21 @@ import com.lmax.disruptor.RingBuffer;
 
 public class SingleProducerEventQueuePublisher<T> implements EventQueuePublisher<T> {
 
+	private final String _name;
 	private final RingBuffer<T> _ringBuffer;
 	private final boolean _isBlocking;
+	
+	private PrePublishDelegate _prePublishDelegate = new NullPrePublishDelegate();
 	
 	/**
 	 * Track the sequence of the unpublished entry sequence, or {@code -1}
 	 * if no entry has been claimed.
 	 */
 	private long _unpubClaimedSeq = -1;
+	private long _lastPubSeq = -1;
 	
-	public SingleProducerEventQueuePublisher(final RingBuffer<T> ringBuffer, boolean isBlocking) {
+	public SingleProducerEventQueuePublisher(String publisherName, RingBuffer<T> ringBuffer, boolean isBlocking) {
+		_name = Objects.requireNonNull(publisherName);
 		_ringBuffer = Objects.requireNonNull(ringBuffer);
 		_isBlocking = isBlocking;
 	}
@@ -68,8 +73,13 @@ public class SingleProducerEventQueuePublisher<T> implements EventQueuePublisher
 	 */
 	public boolean publish() {
 		if (hasUnpublished()) {
-			_ringBuffer.publish(_unpubClaimedSeq);
-			_unpubClaimedSeq = -1;
+			try {
+				_prePublishDelegate.beforePublish(_unpubClaimedSeq);
+			} finally {
+				_ringBuffer.publish(_unpubClaimedSeq);
+				_lastPubSeq = _unpubClaimedSeq;
+				_unpubClaimedSeq = -1;
+			}
 		}
 		return true;
 	}
@@ -85,6 +95,21 @@ public class SingleProducerEventQueuePublisher<T> implements EventQueuePublisher
 		} else {
 			return null;
 		}
+	}
+
+	@Override
+	public long getLastPublishedSequence() {
+		return _lastPubSeq;
+	}
+
+	@Override
+	public void setPrePublishDelegate(PrePublishDelegate delegate) {
+		_prePublishDelegate = Objects.requireNonNull(delegate);
+	}
+	
+	@Override
+	public String getName() {
+		return _name;
 	}
 	
 }

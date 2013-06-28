@@ -28,9 +28,10 @@ public interface SocketManager extends Closeable {
 	 * with a {@link SocketSettings} object that includes a port to bind to; or 
 	 * a call to {@link SocketManager#connectSocket(int, String)} is made.
 	 * @param socketType the ZMQ socket type
+	 * @param name a name for the socket
 	 * @return the socketID which refers to the created socket
 	 */
-	int create(final int socketType);
+	int create(final int socketType, String name);
 	
 	/**
 	 * Creates a new managed socket. The socket is opened immediately if
@@ -39,9 +40,11 @@ public interface SocketManager extends Closeable {
 	 * {@link SocketManager#connectSocket(int, String)} is made, or the settings
 	 * are updated with a bound port through {@link SocketManager#updateSettings(int, SocketSettings)}.
 	 * @param socketType the ZMQ socket type
+	 * @param name a name for the socket
+	 * 
 	 * @return the socketID which refers to the created socket
 	 */
-	int create(final int socketType, SocketSettings socketSettings);
+	int create(final int socketType, SocketSettings socketSettings, String name);
 	
 	/**
 	 * Get the settings associated with the given socket ID.
@@ -62,7 +65,7 @@ public interface SocketManager extends Closeable {
 	 */
 	void updateSettings(final int socketId, final SocketSettings socketSettings);
 	
-	Mutex<Messenger> getSocketMutex(final int socketId);
+	Mutex<Messenger> getSocketMutex(int socketId);
 	
 	Mutex<Messenger> createPollInSet(int... socketIds);
 	

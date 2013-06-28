@@ -21,15 +21,11 @@ import uk.co.real_logic.intrinsics.ComponentFactory;
 import uk.co.real_logic.intrinsics.StructuredArray;
 
 import com.adamroughton.concentus.Clock;
-import com.adamroughton.concentus.InitialiseDelegate;
-import com.adamroughton.concentus.MetricContainer;
-import com.adamroughton.concentus.MetricContainer.MetricLamda;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.events.ClientConnectEvent;
-import com.adamroughton.concentus.messaging.events.ClientHandlerMetricEvent;
 import com.adamroughton.concentus.messaging.events.ClientInputEvent;
 import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
 import com.adamroughton.concentus.messaging.events.StateInputEvent;
@@ -41,6 +37,9 @@ import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.PubSubPattern;
 import com.adamroughton.concentus.messaging.patterns.RouterPattern;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.metric.CountMetric;
+import com.adamroughton.concentus.metric.MetricContext;
+import com.adamroughton.concentus.metric.MetricGroup;
 import com.adamroughton.concentus.model.ClientId;
 import com.esotericsoftware.minlog.Log;
 
@@ -56,14 +55,12 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	
 	private final SendQueue<OutgoingEventHeader> _pubSendQueue;
 	private final SendQueue<OutgoingEventHeader> _routerSendQueue;
-	private final SendQueue<OutgoingEventHeader> _metricSendQueue;
 	
 	private final UpdateHandler _updateHandler = new UpdateHandler(32);
 	private final IncomingEventHeader _incomingQueueHeader;
 	
 	private long _inputId = 0;
 	private long _nextClientId = 0;
-	private long _connectedClientCount = 0;
 	
 	private final StructuredArray<ClientProxy> _clientLookup = StructuredArray.newInstance(128 * 1024, ClientProxy.class, new ComponentFactory<ClientProxy>() {
 
@@ -82,31 +79,29 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	private final ConnectResponseEvent _connectResEvent = new ConnectResponseEvent();
 	private final ClientConnectEvent _clientConnectEvent = new ClientConnectEvent();
 	private final ClientInputEvent _clientInputEvent = new ClientInputEvent();
-	private final ClientHandlerMetricEvent _metricEvent = new ClientHandlerMetricEvent();
 	
-	private final MetricContainer<MetricEntry> _metricContainer;
-	private long _lastSentMetricBucketId = -1;
+	private final MetricContext _metricContext;
+	private final MetricGroup _metrics;
+	private final CountMetric _incomingThroughputMetric;
+	private final CountMetric _inputActionThroughputMetric;
+	private final CountMetric _connectionRequestThroughputMetric;
+	private final CountMetric _incomingUpdateThroughputMetric;
+	private final CountMetric _incomingUpdateInfoThroughputMetric;
+	private final CountMetric _updateSendThroughputMetric;
+	private final CountMetric _pendingEventCountMetric;
+	private final CountMetric _activeClientCountMetric;
+	
 	private long _nextMetricTime = -1;
-	
-	private static class MetricEntry {
-		public int eventsRecvd = 0;
-		public int inputActionProcessed = 0;
-		public int connectionRequestsProcessed = 0;
-		public int updatesProcessed = 0;
-		public int updateInfoEventsProcessed = 0;
-		public int sentUpdateCount = 0;
-		public long pendingEventCount = 0;
-	}
-	
+
 	public ClientHandlerProcessor(
-			final Clock clock,
-			final int clientHandlerId,
-			final int routerSocketId,
-			final int subSocketId,
-			final SendQueue<OutgoingEventHeader> routerSendQueue,
-			final SendQueue<OutgoingEventHeader> pubSendQueue,
-			final SendQueue<OutgoingEventHeader> metricSendQueue,
-			final IncomingEventHeader incomingQueueHeader) {
+			Clock clock,
+			int clientHandlerId,
+			int routerSocketId,
+			int subSocketId,
+			SendQueue<OutgoingEventHeader> routerSendQueue,
+			SendQueue<OutgoingEventHeader> pubSendQueue,
+			IncomingEventHeader incomingQueueHeader,
+			MetricContext metricContext) {
 		_clock = Objects.requireNonNull(clock);
 		_clientHandlerId = clientHandlerId;
 		_routerSocketId = routerSocketId;
@@ -114,32 +109,20 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 		
 		_routerSendQueue = Objects.requireNonNull(routerSendQueue);
 		_pubSendQueue = Objects.requireNonNull(pubSendQueue);
-		_metricSendQueue = Objects.requireNonNull(metricSendQueue);
 		
 		_incomingQueueHeader = incomingQueueHeader;
 		
-		_metricContainer = new MetricContainer<>(clock, 8,
-				MetricEntry.class,
-				new ComponentFactory<MetricEntry>() {
-		
-					@Override
-					public MetricEntry newInstance(Object[] initArgs) {
-						return new MetricEntry();
-					}
-					
-				}, new InitialiseDelegate<MetricEntry>() {
-		
-					@Override
-					public void initialise(MetricEntry content) {
-						content.eventsRecvd = 0;
-						content.inputActionProcessed = 0;
-						content.connectionRequestsProcessed = 0;
-						content.updatesProcessed = 0;
-						content.updateInfoEventsProcessed = 0;
-						content.sentUpdateCount = 0;
-						content.pendingEventCount = 0;
-					}
-				});
+		_metricContext = Objects.requireNonNull(metricContext);
+		_metrics = new MetricGroup();
+		String reference = "clientHandlerProcessor";
+		_incomingThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "incomingThroughput", false));
+		_inputActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "inputActionThroughput", false));
+		_connectionRequestThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "connectionRequestThroughput", false));
+		_incomingUpdateThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "incomingUpdateThroughput", false));
+		_incomingUpdateInfoThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "incomingUpdateInfoThroughput", false));
+		_updateSendThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "updateSendThroughput", false));
+		_pendingEventCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "pendingEventCount", false));
+		_activeClientCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "activeClientCount", true));
 	}
 	
 	/**
@@ -159,7 +142,7 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 			throws Exception {
 		if (!_incomingQueueHeader.isValid(eventBytes)) return;
 		
-		_metricContainer.getMetricEntry().eventsRecvd++;
+		_incomingThroughputMetric.push(1);
 		
 		int recvSocketId = _incomingQueueHeader.getSocketId(eventBytes);
 		int eventTypeId = EventPattern.getEventType(eventBytes, _incomingQueueHeader);
@@ -201,7 +184,7 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 						if (_updateHandler.hasFullUpdateData(updateId)) {
 							_updateHandler.sendUpdates(updateId, _clientLookup, _routerSendQueue);
 						}
-						_metricContainer.getMetricEntry().updatesProcessed++;
+						_incomingUpdateThroughputMetric.push(1);
 					}
 					
 				});				
@@ -224,54 +207,19 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	
 	@Override
 	public void onDeadline() {
-		sendMetricEvents();
+		_metrics.publishPending();
 	}
 	
 	@Override
 	public long moveToNextDeadline(long pendingEventCount) {
-		_metricContainer.getMetricEntry().pendingEventCount = pendingEventCount;
-		_nextMetricTime = _metricContainer.getMetricBucketEndTime(_lastSentMetricBucketId + 1);
+		_pendingEventCountMetric.push(pendingEventCount);
+		_nextMetricTime = _metrics.nextBucketReadyTime();
 		return _nextMetricTime;
 	}
 	
 	@Override
 	public long getDeadline() {
 		return _nextMetricTime;
-	}
-	
-	private void sendMetricEvents() {
-		/*
-		 * Update the last processed metric with the actual bucket IDs if
-		 * they are present. Otherwise we just use the bucket ID that was
-		 * current when this method was called. 
-		 */
-		_lastSentMetricBucketId = _metricContainer.getCurrentMetricBucketId();
-		_metricContainer.forEachPending(new MetricLamda<MetricEntry>() {
-
-			@Override
-			public void call(final long bucketId, final MetricEntry metricEntry) {
-				_metricSendQueue.send(PubSubPattern.asTask(_metricEvent, new EventWriter<OutgoingEventHeader, ClientHandlerMetricEvent>() {
-
-					@Override
-					public void write(OutgoingEventHeader header, ClientHandlerMetricEvent event) {
-						event.setMetricBucketId(bucketId);
-						event.setSourceId(_clientHandlerId);
-						event.setActiveClientCount(_connectedClientCount);
-						event.setBucketDuration(_metricContainer.getBucketDuration());
-						event.setInputActionsProcessed(metricEntry.inputActionProcessed);
-						event.setPendingEventCount(metricEntry.pendingEventCount);
-						event.setTotalEventsProcessed(metricEntry.eventsRecvd);
-						event.setUpdateEventsProcessed(metricEntry.updatesProcessed);
-						event.setUpdateInfoEventsProcessed(metricEntry.updateInfoEventsProcessed);
-						event.setSentUpdateCount(metricEntry.sentUpdateCount);
-						event.setConnectionRequestsProcessed(metricEntry.connectionRequestsProcessed);
-					}
-					
-				}));
-				_lastSentMetricBucketId = bucketId;
-			}
-			
-		});
 	}
 	
 	private void onClientConnected(final byte[] clientSocketId, final ClientConnectEvent connectEvent) {
@@ -305,9 +253,9 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 				}
 				
 			}));
-			_connectedClientCount++;
+			_activeClientCountMetric.push(1);
 		}
-		_metricContainer.getMetricEntry().connectionRequestsProcessed++;
+		_connectionRequestThroughputMetric.push(1);
 	}
 	
 	private void onClientInput(final byte[] clientSocketId, final ClientInputEvent inputEvent) {
@@ -329,7 +277,7 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 				}
 				
 			}));
-			_metricContainer.getMetricEntry().inputActionProcessed++;
+			_inputActionThroughputMetric.push(1);
 		}
 	}
 	
@@ -347,10 +295,10 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 			_updateHandler.addUpdateMetaData(updateId, highestSeq);
 			if (_updateHandler.hasFullUpdateData(updateId)) {
 				_updateHandler.sendUpdates(updateId, _clientLookup, _routerSendQueue);
-				_metricContainer.getMetricEntry().sentUpdateCount++;
+				_updateSendThroughputMetric.push(1);
 			}
 		}
-		_metricContainer.getMetricEntry().updateInfoEventsProcessed++;
+		_incomingUpdateInfoThroughputMetric.push(1);
 	}
 
 }

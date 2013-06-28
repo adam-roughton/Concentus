@@ -64,30 +64,31 @@ public final class SocketManagerImpl implements SocketManager {
 	 * with a {@link SocketSettings} object that includes a port to bind to; or 
 	 * a call to {@link SocketManager#connectSocket(int, String)} is made.
 	 * @param socketType the ZMQ socket type
+	 * @param name a name for the socket
 	 * @return the socketID which refers to the created socket
 	 */
-	public synchronized int create(int socketType) {
-		return create(socketType, SocketSettings.create());
+	public synchronized int create(int socketType, String name) {
+		return create(socketType, SocketSettings.create(), name);
 	}
 	
-	public synchronized int create(int socketType, SocketSettings socketSettings) {
+	public synchronized int create(int socketType, SocketSettings socketSettings, String name) {
 		assertManagerActive();
 		int socketId = _nextSocketId++;
 		_socketTypeLookup.put(socketId, socketType);
 		_settingsLookup.put(socketId, Objects.requireNonNull(socketSettings));
 		_socketConnLookup.put(socketId, new ConnectionsRecord());
-		newSocket(socketId);
+		newSocket(socketId, name);
 		return socketId;
 	}
 	
-	private void newSocket(int socketId) {
+	private void newSocket(int socketId, String name) {
 		int socketType = _socketTypeLookup.get(socketId);
 		SocketSettings socketSettings = _settingsLookup.get(socketId);
 		ZMQ.Socket socket = _zmqContext.socket(socketType);
 		socket.setReceiveTimeOut(SOCKET_TIMEOUT);
 		socket.setSendTimeOut(SOCKET_TIMEOUT);
 		socket.setLinger(0);
-		ZmqSocketMessenger messenger = new ZmqSocketMessenger(socketId, socket, _clock);
+		ZmqSocketMessenger messenger = new ZmqSocketMessenger(socketId, name, socket, _clock);
 		_socketMutexLookup.put(socketId, new MessengerMutex<>(messenger));
 		configureSocket(socket, socketSettings);
 		for (String connectionString : _socketConnLookup.get(socketId).getAllConnectionStrings()) {
@@ -115,18 +116,20 @@ public final class SocketManagerImpl implements SocketManager {
 		assertManagerActive();
 		assertSocketExists(socketId);
 		MessengerMutex<ZmqSocketMessenger> mutex = _socketMutexLookup.get(socketId);
+		final String[] nameContainer = new String[1];
 		mutex.runAsOwner(new OwnerDelegate<Messenger>() {
 			
 			@Override
 			public void asOwner(Messenger messenger) {
 				ZmqSocketMessenger socketMessenger = (ZmqSocketMessenger) messenger;
+				nameContainer[0] = messenger.name();
 				if (_settingsLookup.get(socketId).isBound()) {
 					socketMessenger.getSocket().close();
 				}
 			}
 		});
 		_settingsLookup.put(socketId, socketSettings);
-		newSocket(socketId);
+		newSocket(socketId, nameContainer[0]);
 	}
 	
 	public synchronized SocketSettings getSettings(int socketId) {

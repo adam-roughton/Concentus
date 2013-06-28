@@ -16,9 +16,12 @@
 package com.adamroughton.concentus.messaging;
 
 import java.lang.reflect.Field;
+import java.nio.charset.Charset;
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 
 import com.adamroughton.concentus.model.ClientId;
+import com.adamroughton.concentus.util.RunningStats;
 
 import sun.misc.Unsafe;
 
@@ -174,6 +177,37 @@ public final class MessageBytesUtil {
 		_unsafe.putLong(array, BYTE_ARRAY_OFFSET + offset, lVal);
 	}
 	
+	public static String read8BitCharString(byte[] array, long offset) {
+		return readString(array, offset, StandardCharsets.ISO_8859_1);
+	}
+	
+	public static int write8BitCharString(byte[] array, long offset, String value) {
+		return writeString(array, offset, value, StandardCharsets.ISO_8859_1);
+	}
+	
+	public static String readString(byte[] array, long offset, String charsetName) {
+		return readString(array, offset, Charset.forName(charsetName));
+	}
+	
+	public static String readString(byte[] array, long offset, Charset charset) {
+		int len = readInt(array, offset);
+		byte[] stringBytes = new byte[len];
+		_unsafe.copyMemory(array, BYTE_ARRAY_OFFSET + offset + 4, stringBytes, BYTE_ARRAY_OFFSET, len);
+		return new String(stringBytes, charset);
+	}
+	
+	public static int writeString(byte[] array, long offset, String value, String charsetName) {
+		return writeString(array, offset, value, Charset.forName(charsetName));
+	}
+	
+	public static int writeString(byte[] array, long offset, String value, Charset charset) {
+		byte[] stringBytes = value.getBytes(charset);
+		int len = stringBytes.length;
+		writeInt(array, offset, len);
+		_unsafe.copyMemory(stringBytes, BYTE_ARRAY_OFFSET, array, BYTE_ARRAY_OFFSET + offset + 4, len);
+		return len;
+	}
+	
 	public static UUID readUUID(byte[] array, long offset) {
 		long msb = readLong(array, offset);
 		long lsb = readLong(array, offset + 8);
@@ -202,6 +236,33 @@ public final class MessageBytesUtil {
 		clientIdBits &= CLIENT_ID_NAMESPACE_MASK;
 		clientIdBits |= (clientId.getClientId() & (~CLIENT_ID_NAMESPACE_MASK));
 		writeLong(array, offset, clientIdBits);
+	}
+	
+	public static RunningStats readRunningStats(byte[] array, long offset) {
+		int count = readInt(array, offset);
+		offset += 4;
+		double mean = readDouble(array, offset);
+		offset += 8;
+		double sumSqrs = readDouble(array, offset);
+		offset += 8;
+		double min = readDouble(array, offset);
+		offset += 8;
+		double max = readDouble(array, offset);
+		
+		return new RunningStats(count, mean, sumSqrs, min, max);
+	}
+	
+	public static int writeRunningStats(byte[] array, long offset, RunningStats value) {
+		writeInt(array, offset, value.getCount());
+		offset += 4;
+		writeDouble(array, offset, value.getMean());
+		offset += 8;
+		writeDouble(array, offset, value.getSumOfSquares());
+		offset += 8;
+		writeDouble(array, offset, value.getMin());
+		offset += 8;
+		writeDouble(array, offset, value.getMax());
+		return 28;
 	}
 	
 	/*public static int[] readIntArray(byte[] array, long offset) {

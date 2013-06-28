@@ -23,9 +23,11 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 
+import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.DrivableClock;
 import com.adamroughton.concentus.disruptor.EventQueue;
-import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
+import com.adamroughton.concentus.disruptor.EventQueueImpl;
+import com.adamroughton.concentus.disruptor.SingleProducerQueueStrategy;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
@@ -42,6 +44,7 @@ import com.adamroughton.concentus.messaging.events.StateUpdateInfoEvent;
 import com.adamroughton.concentus.messaging.patterns.EventReader;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.metric.LogMetricContext;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.EventProcessor;
@@ -57,7 +60,7 @@ public class PerfTestClientHandlerProcessor {
 	}
 	
 	private static EventQueue<byte[]> createQueue() {
-		return new SingleProducerEventQueue<>(new EventFactory<byte[]>() {
+		return new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", new EventFactory<byte[]>() {
 
 			@Override
 			public byte[] newInstance() {
@@ -65,7 +68,7 @@ public class PerfTestClientHandlerProcessor {
 			}
 			
 		}, 1024 * 1024,
-			new YieldingWaitStrategy());
+			new YieldingWaitStrategy()));
 	}
 	
 	private static <TEvent extends ByteArrayBackedEvent> void fakeRecv(
@@ -135,7 +138,7 @@ public class PerfTestClientHandlerProcessor {
 		final AtomicLong unknownEventCount = new AtomicLong();
 		final AtomicLong metricsRecv = new AtomicLong();
 		final AtomicLong stateInputsProc = new AtomicLong();
-		final EventProcessor genericConsumer = genericOutQueue.createEventProcessor(new EventHandler<byte[]>() {
+		final EventProcessor genericConsumer = genericOutQueue.createEventProcessor("", new EventHandler<byte[]>() {
 
 			final ClientUpdateEvent updateEvent = new ClientUpdateEvent();
 			final ConnectResponseEvent connectResEvent = new ConnectResponseEvent();
@@ -169,8 +172,6 @@ public class PerfTestClientHandlerProcessor {
 					});
 				} else if (eventType == EventType.STATE_INPUT.getId()) {
 					stateInputsProc.incrementAndGet();
-				} else if (eventType == EventType.CLIENT_HANDLER_METRIC.getId()) {
-					metricsRecv.incrementAndGet();
 				} else {
 					unknownEventCount.incrementAndGet();
 					//System.out.println(String.format("Unknown event type %d", eventType));
@@ -178,14 +179,14 @@ public class PerfTestClientHandlerProcessor {
 			}
 		});
 		
-		SendQueue<OutgoingEventHeader> routerSendQueue = new SendQueue<>(sendHeader, genericOutQueue);
-		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(sendHeader, genericOutQueue);
-		SendQueue<OutgoingEventHeader> metricSendQueue = new SendQueue<>(sendHeader, genericOutQueue);
+		SendQueue<OutgoingEventHeader> routerSendQueue = new SendQueue<>("", sendHeader, genericOutQueue);
+		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>("", sendHeader, genericOutQueue);
 		
 		final int routerSocketId = 0;
 		final int subSocketId = 1;
 		
-		final ClientHandlerProcessor clientHandler = new ClientHandlerProcessor(testClock, 0, routerSocketId, subSocketId, routerSendQueue, pubSendQueue, metricSendQueue, recvHeader);
+		final ClientHandlerProcessor clientHandler = new ClientHandlerProcessor(testClock, 0, routerSocketId, subSocketId, routerSendQueue, pubSendQueue, recvHeader,
+				new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), testClock));
 		final byte[] buffer = new byte[512];
 		
 		// consumes events to prevent test being optimised away

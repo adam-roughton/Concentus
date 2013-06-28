@@ -64,12 +64,12 @@ public class StubSocketManager implements SocketManager {
 	}
 	
 	@Override
-	public int create(int socketType) {
-		return create(socketType, SocketSettings.create());
+	public int create(int socketType, String name) {
+		return create(socketType, SocketSettings.create(), name);
 	}
 
 	@Override
-	public int create(int socketType, SocketSettings socketSettings) {
+	public int create(int socketType, SocketSettings socketSettings, String name) {
 		int socketId = _socketId++;
 		_socketSettingsLookup.put(socketId, socketSettings);
 		StubMessenger stubMessenger = new StubMessenger(new int[] { socketId } );

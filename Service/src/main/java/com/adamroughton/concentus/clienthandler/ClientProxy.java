@@ -103,7 +103,7 @@ public class ClientProxy {
 	public long lookupActionId(long clientHandlerInputId) {
 		long headActionId = _actionIdMap.getHeadIndex();
 		if (headActionId >= 0) {
-			long tailActionId = headActionId - _actionIdMap.windowSize() + 1;
+			long tailActionId = headActionId - _actionIdMap.getLength() + 1;
 			tailActionId = (tailActionId < 0)? 0: tailActionId;	
 			return binarySearchHighestActionId(_actionIdMap, clientHandlerInputId, tailActionId, headActionId);
 		}
@@ -115,7 +115,7 @@ public class ClientProxy {
 			return -1;
 		} 
 		long midId = startId + (endId - startId) / 2;
-		long midClientHandlerId = window.get(midId);
+		long midClientHandlerId = window.getDirect(midId);
 		if (midClientHandlerId == clientHandlerId) {
 			return midId;
 		} else if (midClientHandlerId < clientHandlerId) {

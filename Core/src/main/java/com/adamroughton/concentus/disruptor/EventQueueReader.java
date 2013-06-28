@@ -29,4 +29,6 @@ public interface EventQueueReader<T> {
 	
 	SequenceBarrier getBarrier();
 	
+	String getName();
+	
 }

@@ -13,10 +13,12 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.adamroughton.concentus;
+package com.adamroughton.concentus.metric;
 
 import java.util.Objects;
 
+import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.InitialiseDelegate;
 import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
 import com.adamroughton.concentus.util.Util;
 
@@ -30,6 +32,7 @@ import static com.adamroughton.concentus.Constants.METRIC_TICK;
  *
  * @param <T>
  */
+@Deprecated
 public class MetricContainer<T> {
 
 	private final Clock _clock;
@@ -55,7 +58,7 @@ public class MetricContainer<T> {
 	}
 	
 	public void forEachPending(MetricLamda<T> lamda) {		
-		long windowStartIndex = _windowMap.getHeadIndex() - _windowMap.windowSize() + 1;
+		long windowStartIndex = _windowMap.getHeadIndex() - _windowMap.getLength() + 1;
 		long currentBucketId = getCurrentMetricBucketId();
 		for (long bucketId = windowStartIndex; bucketId <= _windowMap.getHeadIndex() && bucketId < currentBucketId; bucketId++) {
 			if (_windowMap.containsIndex(bucketId)) {

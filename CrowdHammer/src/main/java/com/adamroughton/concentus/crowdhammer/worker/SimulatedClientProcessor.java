@@ -21,10 +21,6 @@ import it.unimi.dsi.fastutil.longs.Long2LongMap;
 import java.util.Objects;
 
 import com.adamroughton.concentus.Clock;
-import com.adamroughton.concentus.InitialiseDelegate;
-import com.adamroughton.concentus.MetricContainer;
-import com.adamroughton.concentus.MetricContainer.MetricLamda;
-import com.adamroughton.concentus.crowdhammer.messaging.events.WorkerMetricEvent;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
@@ -33,19 +29,17 @@ import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
 import com.adamroughton.concentus.messaging.events.EventType;
 import com.adamroughton.concentus.messaging.patterns.EventPattern;
 import com.adamroughton.concentus.messaging.patterns.EventReader;
-import com.adamroughton.concentus.messaging.patterns.EventWriter;
-import com.adamroughton.concentus.messaging.patterns.PubSubPattern;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
-import com.adamroughton.concentus.util.RunningStats;
+import com.adamroughton.concentus.metric.CountMetric;
+import com.adamroughton.concentus.metric.MetricGroup;
+import com.adamroughton.concentus.metric.StatsMetric;
+import com.adamroughton.concentus.metric.MetricContext;
 import com.lmax.disruptor.LifecycleAware;
 
-import uk.co.real_logic.intrinsics.ComponentFactory;
 import uk.co.real_logic.intrinsics.StructuredArray;
 
 public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[]>, LifecycleAware {
 
-	private final long _workerId;
-	
 	private final Long2LongMap _clientsIndex;
 	private final StructuredArray<Client> _clients;
 	private final long _activeClientCount;
@@ -53,59 +47,32 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	private volatile boolean _isSendingInput = false;
 	
 	private final SendQueue<OutgoingEventHeader> _clientSendQueue;
-	private final SendQueue<OutgoingEventHeader> _metricSendQueue;	
 	private final IncomingEventHeader _recvHeader;
 	
 	private final ConnectResponseEvent _connectRes = new ConnectResponseEvent();
 	private final ClientUpdateEvent _updateEvent = new ClientUpdateEvent();
-	private final WorkerMetricEvent _metricEvent = new WorkerMetricEvent();
 	
-	private final MetricContainer<WorkerMetrics> _metricContainer;
-	private int _cummulativeConnectedClientCount = 0;
-	
-	private static class WorkerMetrics implements MetricEntry {
-		public int connectedClientCount;
-		public long sentActions;
-		public long pendingEventCount;
-		public RunningStats inputToUpdateLatencyStats = new RunningStats();
-		public long lateInputToUpdateCount;
-		
-		@Override
-		public void incrementConnectedClientCount(int amount) {
-			connectedClientCount += amount;
-		}
-		
-		@Override
-		public void addInputToUpdateLatency(long latency) {
-			inputToUpdateLatencyStats.push((double) latency);
-		}
-		
-		@Override
-		public void incrementInputToUpdateLateCount(int amount) {
-			lateInputToUpdateCount += amount;
-		}
-		
-		@Override
-		public void incrementSentInputCount(int amount) {
-			sentActions += amount;
-		}
-	}
+	// Metrics
+	private final MetricContext _metricContext;
+	private final MetricGroup _metrics;
+	private final CountMetric _connectedClientCountMetric;
+	private final CountMetric _sentActionThroughputMetric;
+	private final CountMetric _pendingEventCountMetric;
+	private final StatsMetric _actionEffectLatencyMetric;
+	private final CountMetric _lateActionEffectCountMetric;	
 	
 	private long _nextClientIndex = -1;
-	private long _lastProcessedMetricBucketId;
 	private boolean _sendMetric = false;
 	private boolean _delayedClientDeadline = false;
 	private long _nextDeadline = -1;
 		
 	public SimulatedClientProcessor(
-			long workerId,
 			Clock clock,
 			StructuredArray<Client> clients,
 			long activeClientCount,
 			SendQueue<OutgoingEventHeader> clientSendQueue,
-			SendQueue<OutgoingEventHeader> metricSendQueue,
-			IncomingEventHeader recvHeader) {
-		_workerId = workerId;
+			IncomingEventHeader recvHeader,
+			MetricContext metricContext) {
 		_clients = Objects.requireNonNull(clients);
 		_activeClientCount = activeClientCount;
 		
@@ -113,37 +80,21 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 		_clientsIndex = new Long2LongArrayMap((int)_clients.getLength());
 		
 		_clientSendQueue = Objects.requireNonNull(clientSendQueue);
-		_metricSendQueue = Objects.requireNonNull(metricSendQueue);
 		_recvHeader = Objects.requireNonNull(recvHeader);
 		
-		_metricContainer = new MetricContainer<>(clock, 8,
-			WorkerMetrics.class,
-			new ComponentFactory<WorkerMetrics>() {
-		
-				@Override
-				public WorkerMetrics newInstance(Object[] initArgs) {
-					return new WorkerMetrics();
-				}
-			}, 
-			new InitialiseDelegate<WorkerMetrics>(){
-		
-				@Override
-				public void initialise(WorkerMetrics content) {
-					content.connectedClientCount = 0;
-					content.sentActions = 0;
-					content.pendingEventCount = 0;
-					content.inputToUpdateLatencyStats.reset();
-					content.lateInputToUpdateCount = 0;
-				}
-				
-			});
+		_metricContext = Objects.requireNonNull(metricContext);
+		_metrics = new MetricGroup();
+		String reference = "clientProcessor";
+		_connectedClientCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "connectedClientCount", true));
+		_sentActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "sentActionThroughput", false));
+		_pendingEventCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "pendingEventCount", false));
+		_actionEffectLatencyMetric = _metrics.add(_metricContext.newStatsMetric(reference, "actionEffectLatency", false));
+		_lateActionEffectCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "lateActionEffectCount", false));
 	}
 	
 	@Override
 	public void onStart() {
 		_isSendingInput = true;
-		_cummulativeConnectedClientCount = 0;
-		_lastProcessedMetricBucketId = -1;
 	}
 
 	@Override
@@ -163,7 +114,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 					long clientId = event.getClientId();
 					long clientIndex = _clientsIndex.get(clientId);
 					Client updatedClient = _clients.get(clientIndex);
-					updatedClient.onClientUpdate(event, _metricContainer.getMetricEntry());
+					updatedClient.onClientUpdate(event, _actionEffectLatencyMetric, _lateActionEffectCountMetric);
 				}
 			});
 		} else if (EventPattern.getEventType(event, _recvHeader) == EventType.CONNECT_RES.getId()) {
@@ -174,7 +125,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 					// we use the index of the connecting client as the request ID
 					long clientIndex = event.getCallbackBits();
 					Client connectedClient = _clients.get(clientIndex);
-					connectedClient.onConnectResponse(event, _metricContainer.getMetricEntry());
+					connectedClient.onConnectResponse(event, _connectedClientCountMetric);
 					_clientsIndex.put(event.getClientIdBits(), clientIndex);
 				}
 			});
@@ -184,28 +135,28 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	@Override
 	public void onDeadline() {
 		if (_sendMetric) {
-			sendMetricEvents();
+			_metrics.publishPending();
 		} else if (_isSendingInput) {
 			// only process the client if it will not block
 			if (_clientSendQueue.isFull()) {
 				_delayedClientDeadline = true;
 			} else {
-				Client client = _clients.get(_nextClientIndex);	
-				client.onActionDeadline(_clientSendQueue, _metricContainer.getMetricEntry());
+				Client client = _clients.get(_nextClientIndex);
+				client.onActionDeadline(_clientSendQueue, _sentActionThroughputMetric);
 			}
 		}
 	}
 
 	@Override
 	public long moveToNextDeadline(long pendingEventCount) {
-		_metricContainer.getMetricEntry().pendingEventCount = pendingEventCount;
+		_pendingEventCountMetric.push(pendingEventCount);
 		if (!_sendMetric && !_delayedClientDeadline) {
 			// if we didn't send a metric on the last deadline, advance for the next client
 			_nextClientIndex++;
 			if (_nextClientIndex >= _activeClientCount) _nextClientIndex = 0;
 		}
-
-		long nextMetricDeadline = _metricContainer.getMetricBucketEndTime(_lastProcessedMetricBucketId + 1);
+		
+		long nextMetricDeadline = _metrics.nextBucketReadyTime();
 		// FIX: stop the same client deadline being returned when we are no longer sending input
 		long nextClientDeadline;
 		if (_isSendingInput) {
@@ -233,41 +184,6 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	
 	public void stopSendingInput() {
 		_isSendingInput = false;
-	}
-	
-	private void sendMetricEvents() {
-		/*
-		 * Update the last processed metric with the actual bucket IDs if
-		 * they are present. Otherwise we just use the bucket ID that was
-		 * current when this method was called. 
-		 */
-		_lastProcessedMetricBucketId = _metricContainer.getCurrentMetricBucketId();
-		
-		_metricContainer.forEachPending(new MetricLamda<WorkerMetrics>() {
-
-			@Override
-			public void call(final long bucketId, final WorkerMetrics metricEntry) {
-				_cummulativeConnectedClientCount += metricEntry.connectedClientCount;
-				_metricSendQueue.send(PubSubPattern.asTask(_metricEvent, new EventWriter<OutgoingEventHeader, WorkerMetricEvent>() {
-
-					@Override
-					public void write(OutgoingEventHeader header,
-							WorkerMetricEvent event) throws Exception {
-						event.setMetricBucketId(bucketId);
-						event.setSourceId(_workerId);
-						event.setBucketDuration(_metricContainer.getBucketDuration());
-						event.setConnectedClientCount(_cummulativeConnectedClientCount);
-						event.setSentInputActionsCount(metricEntry.sentActions);
-						event.setPendingEventCount(metricEntry.pendingEventCount);
-						// stats
-						event.setInputToUpdateLatency(metricEntry.inputToUpdateLatencyStats);
-						event.setInputToUpdateLatencyLateCount(metricEntry.lateInputToUpdateCount);
-					}
-					
-				}));
-				_lastProcessedMetricBucketId = bucketId;
-			}
-		});
 	}
 	
 }

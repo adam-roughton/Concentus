@@ -33,8 +33,20 @@ public interface EventQueuePublisher<T> {
 	 */
 	boolean publish();
 	
+	long getLastPublishedSequence();
+	
 	boolean hasUnpublished();
 	
 	T getUnpublished();
+	
+	/**
+	 * Sets a delegate that will be invoked immediately before
+	 * the queue publishes any event (i.e. makes it available
+	 * to consumers).
+	 * @param delegate the delegate to invoke immediately before publishing
+	 */
+	void setPrePublishDelegate(PrePublishDelegate delegate);
+	
+	String getName();
 	
 }

@@ -22,14 +22,17 @@ import java.util.concurrent.TimeUnit;
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.TrackingMessengerDecorator;
+import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.util.Mutex;
 
 public class TrackingSocketManagerDecorator implements SocketManager {
 
+	private final MetricContext _metricContext;
 	private final SocketManager _decoratedManager;
 	private final Clock _clock;
 	
-	public TrackingSocketManagerDecorator(SocketManager decoratedManager, Clock clock) {
+	public TrackingSocketManagerDecorator(MetricContext metricContext, SocketManager decoratedManager, Clock clock) {
+		_metricContext = Objects.requireNonNull(metricContext);
 		_decoratedManager = Objects.requireNonNull(decoratedManager);
 		_clock = Objects.requireNonNull(clock);
 	}
@@ -40,13 +43,13 @@ public class TrackingSocketManagerDecorator implements SocketManager {
 	}
 
 	@Override
-	public int create(int socketType) {
-		return _decoratedManager.create(socketType);
+	public int create(int socketType, String name) {
+		return _decoratedManager.create(socketType, name);
 	}
 
 	@Override
-	public int create(int socketType, SocketSettings socketSettings) {
-		return _decoratedManager.create(socketType, socketSettings);
+	public int create(int socketType, SocketSettings socketSettings, String name) {
+		return _decoratedManager.create(socketType, socketSettings, name);
 	}
 
 	@Override
@@ -78,7 +81,7 @@ public class TrackingSocketManagerDecorator implements SocketManager {
 
 					@Override
 					public void asOwner(Messenger messenger) {
-						TrackingMessengerDecorator trackingMessenger = new TrackingMessengerDecorator(messenger, _clock);
+						TrackingMessengerDecorator trackingMessenger = new TrackingMessengerDecorator(_metricContext, messenger, _clock);
 						delegate.asOwner(trackingMessenger);
 					}
 					

@@ -28,13 +28,13 @@ import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService;
+import com.adamroughton.concentus.cluster.data.WorkerAllocationInfo;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
-import com.adamroughton.concentus.crowdhammer.messaging.events.TestEventType;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
@@ -80,9 +80,7 @@ public class MetricListenerService implements CrowdHammerService {
 		_header = new IncomingEventHeader(0, 2);
 		
 		_subSocketSettings = SocketSettings.create()
-				.subscribeTo(EventType.STATE_METRIC)
-				.subscribeTo(TestEventType.WORKER_METRIC.getId())
-				.subscribeTo(EventType.CLIENT_HANDLER_METRIC.getId());
+				.subscribeTo(EventType.METRIC);
 	}
 
 	@Override
@@ -117,10 +115,7 @@ public class MetricListenerService implements CrowdHammerService {
 	
 	private void onInitTest(ClusterWorkerHandle cluster) {
 		_socketManager = _concentusHandle.newSocketManager();
-		_subSocketId = _socketManager.create(ZMQ.SUB, _subSocketSettings);
-		
-		// request sim client count
-		cluster.requestAssignment(SERVICE_TYPE, new byte[0]);
+		_subSocketId = _socketManager.create(ZMQ.SUB, _subSocketSettings, "sub");
 	}
 	
 	private void onSetUpTest(ClusterWorkerHandle cluster) {		
@@ -128,34 +123,16 @@ public class MetricListenerService implements CrowdHammerService {
 		EventQueueFactory eventQueueFactory = _concentusHandle.getEventQueueFactory();
 		
 		int recvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "recv");
-		_inputQueue = eventQueueFactory.createSingleProducerQueue(Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
+		_inputQueue = eventQueueFactory.createSingleProducerQueue("input", Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
 				recvBufferLength, new YieldingWaitStrategy());
 		
 		Mutex<Messenger> subMessengerMutex = _socketManager.getSocketMutex(_subSocketId);
-		_eventListener = new EventListener(_header, subMessengerMutex, _inputQueue, _concentusHandle);
+		_eventListener = new EventListener("inputListener", _header, subMessengerMutex, _inputQueue, _concentusHandle);
 		
 		_pipeline = ProcessingPipeline.<byte[]>build(_eventListener, _concentusHandle.getClock())
 				.thenConnector(_inputQueue)
-				.then(_inputQueue.createEventProcessor(_metricProcessor))
+				.then(_inputQueue.createEventProcessor("metricProcessor", _metricProcessor))
 				.createPipeline(_executor);
-						
-		// get client count
-		int cursor = 0;
-		byte[] assignment = cluster.getAssignment(SERVICE_TYPE);
-		if (assignment.length < 4) 
-			throw new RuntimeException(String.format("Expected the assignment to be at least one integer (4 bytes) long, " +
-					"instead had length %d", assignment.length));
-		int workerCount = MessageBytesUtil.readInt(assignment, 0);
-		WorkerInfo[] workers = new WorkerInfo[workerCount];
-		cursor += 4;
-		for (int i = 0; i < workerCount; i++) {
-			long workerId = MessageBytesUtil.readLong(assignment, cursor);
-			cursor += 8;
-			int clientCount = MessageBytesUtil.readInt(assignment, cursor);
-			cursor += 4;
-			workers[i] = new WorkerInfo(workerId, clientCount);
-		}
-		_metricProcessor.setActiveWorkers(workers);
 	}
 	
 	private void onConnectSUT(ClusterWorkerHandle cluster) {

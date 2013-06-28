@@ -15,11 +15,15 @@
  */
 package com.adamroughton.concentus;
 
+import static com.adamroughton.concentus.Constants.METRIC_BUFFER_SECONDS;
+
+import java.net.InetAddress;
 import java.util.HashMap;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -34,24 +38,39 @@ import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.cluster.worker.ClusterStateValue;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerContainer;
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.metric.LogMetricContext;
+import com.adamroughton.concentus.metric.MetricContext;
+import com.adamroughton.concentus.metric.NullMetricContext;
 import com.esotericsoftware.minlog.Log;
 
 public class ConcentusExecutableOperations {
 	
-	public static <TConfig extends Configuration, TClusterState extends Enum<TClusterState> & ClusterStateValue> void executeClusterWorker(
-			String[] args, ConcentusNode<? extends ClusterListener<TClusterState>, TConfig> workerNode) {
-		ConcentusProcessFactory<? extends ClusterListener<TClusterState>, TConfig> processFactory = workerNode.getProcessFactory();
+	public static <TConfig extends Configuration, TClusterState extends Enum<TClusterState> & ClusterStateValue> 
+			void executeClusterWorker(String[] args, ConcentusWorkerNode<TConfig, TClusterState> workerNode) {
 		
-		Map<String, String> commandLineArgs = parseCommandLineForProcess(args, processFactory);		
-		ConcentusHandle<TConfig> concentusHandle = ConcentusHandleFactory.createHandle(processFactory.getConfigType(), commandLineArgs);
+		Clock clock = new DefaultClock();
 		
-		ClusterListener<TClusterState> workerProcess = processFactory.create(concentusHandle, commandLineArgs);
+		Map<String, String> commandLineArgs = parseCommandLineForNode(args, workerNode);	
+		TConfig config = SharedCommandLineOptions.readConfig(workerNode.getConfigType(), commandLineArgs);
+		String zooKeeperAddress = SharedCommandLineOptions.readZooKeeperAddress(commandLineArgs);
+		InetAddress nodeAddress = SharedCommandLineOptions.readNodeAddress(commandLineArgs);
+		boolean useTracingComponents = SharedCommandLineOptions.readTraceOption(commandLineArgs);
+		
+		long metricBufferMillis = TimeUnit.SECONDS.toMillis(METRIC_BUFFER_SECONDS) * 5;
+		MetricContext metricContext = new LogMetricContext(Constants.METRIC_TICK, metricBufferMillis, clock);
+		metricContext.start();
+		
+		ConcentusHandle<TConfig> concentusHandle = ConcentusHandleFactory.createHandle(clock, 
+				config, zooKeeperAddress, nodeAddress, metricContext, useTracingComponents);
+		
+		ClusterListener<TClusterState> concentusWorkerService = workerNode.createService(commandLineArgs, concentusHandle, metricContext);
+		
 		ExecutorService executor = Executors.newCachedThreadPool();
 		
 		try (ClusterWorkerContainer cluster = new ClusterWorkerContainer(
 				concentusHandle.getZooKeeperAddress(), 
 				concentusHandle.getConfig().getZooKeeper().getAppRoot(), 
-				workerProcess, 
+				concentusWorkerService, 
 				executor, 
 				concentusHandle)) {
 			cluster.start();
@@ -68,24 +87,31 @@ public class ConcentusExecutableOperations {
 	}
 	
 	public static <TConfig extends Configuration> void executeClusterCoordinator(
-			String[] args, ConcentusNode<? extends ConcentusCoordinatorProcess, TConfig> coordinatorNode) {
-		ConcentusProcessFactory<? extends ConcentusCoordinatorProcess, TConfig> processFactory = coordinatorNode.getProcessFactory();
+			String[] args, ConcentusCoordinatorNode<TConfig> coordinatorNode) {
+		Clock clock = new DefaultClock();
 		
-		Map<String, String> commandLineArgs = parseCommandLineForProcess(args, processFactory);
-		ConcentusHandle<TConfig> concentusHandle = ConcentusHandleFactory.createHandle(processFactory.getConfigType(), commandLineArgs);
+		Map<String, String> commandLineArgs = parseCommandLineForNode(args, coordinatorNode);
+		TConfig config = SharedCommandLineOptions.readConfig(coordinatorNode.getConfigType(), commandLineArgs);
+		String zooKeeperAddress = SharedCommandLineOptions.readZooKeeperAddress(commandLineArgs);
+		InetAddress nodeAddress = SharedCommandLineOptions.readNodeAddress(commandLineArgs);
+		boolean useTracingComponents = SharedCommandLineOptions.readTraceOption(commandLineArgs);
+		
+		MetricContext metricContext = new NullMetricContext();
+		
+		ConcentusHandle<TConfig> concentusHandle = ConcentusHandleFactory.createHandle(clock, 
+				config, zooKeeperAddress, nodeAddress, metricContext, useTracingComponents);
 		ClusterCoordinatorHandle coordinatorClusterHandle = new ClusterCoordinatorHandle(
 				concentusHandle.getZooKeeperAddress(), 
 				concentusHandle.getConfig().getZooKeeper().getAppRoot(), 
 				concentusHandle);
-		ConcentusCoordinatorProcess coordinatorProcess = processFactory.create(concentusHandle, commandLineArgs);
-		coordinatorProcess.run(coordinatorClusterHandle);
+		coordinatorNode.run(commandLineArgs, concentusHandle, coordinatorClusterHandle);
 	}
 	
-	private static Map<String, String> parseCommandLineForProcess(String[] args, ConcentusProcessFactory<?, ?> processFactory) {
+	private static Map<String, String> parseCommandLineForNode(String[] args, ConcentusNode<?> node) {
 		Options cliOptions = new Options();
-		addTo(cliOptions, ConcentusHandleFactory.getCommandLineOptions());
-		addTo(cliOptions, processFactory.getCommandLineOptions());
-		return parseCommandLine(processFactory.getProcessName(), cliOptions, args, false);
+		addTo(cliOptions, SharedCommandLineOptions.getCommandLineOptions());
+		addTo(cliOptions, node.getCommandLineOptions());
+		return parseCommandLine(node.getProcessName(), cliOptions, args, false);
 	}
 	
 	public static void addTo(Options options, Iterable<Option> optionSet) {

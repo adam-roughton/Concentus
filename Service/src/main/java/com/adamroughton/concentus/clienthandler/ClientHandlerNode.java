@@ -15,34 +15,51 @@
  */
 package com.adamroughton.concentus.clienthandler;
 
+import java.util.Collections;
+import java.util.Map;
+
+import org.apache.commons.cli.Option;
+
 import com.adamroughton.concentus.ConcentusExecutableOperations;
-import com.adamroughton.concentus.ConcentusExecutableOperations.FactoryDelegate;
 import com.adamroughton.concentus.ConcentusHandle;
-import com.adamroughton.concentus.ConcentusNode;
-import com.adamroughton.concentus.ConcentusProcessFactory;
-import com.adamroughton.concentus.NoArgsConcentusProcessFactory;
+import com.adamroughton.concentus.ConcentusServiceState;
+import com.adamroughton.concentus.ConcentusWorkerNode;
+import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.metric.MetricContext;
 
-public class ClientHandlerNode implements ConcentusNode<ClientHandlerService, Configuration> {
-
-	@Override
-	public ConcentusProcessFactory<ClientHandlerService, Configuration> getProcessFactory() {
-		return new NoArgsConcentusProcessFactory<>(
-			"ClientHandlerNode", 
-			new FactoryDelegate<ClientHandlerService, Configuration>() {
-	
-				@Override
-				public ClientHandlerService create(
-						ConcentusHandle<? extends Configuration> concentusHandle) {
-					return new ClientHandlerService(concentusHandle);
-				}
-			}, 
-			ClientHandlerService.class,
-			Configuration.class);
-	}
+public class ClientHandlerNode implements ConcentusWorkerNode<Configuration, ConcentusServiceState> {
 	
 	public static void main(String[] args) {
 		ConcentusExecutableOperations.executeClusterWorker(args, new ClientHandlerNode());
+	}
+
+	@Override
+	public Iterable<Option> getCommandLineOptions() {
+		return Collections.emptyList();
+	}
+
+	@Override
+	public String getProcessName() {
+		return "ClientHandlerNode";
+	}
+
+	@Override
+	public Class<Configuration> getConfigType() {
+		return Configuration.class;
+	}
+
+	@Override
+	public ClusterListener<ConcentusServiceState> createService(
+			Map<String, String> commandLineOptions,
+			ConcentusHandle<? extends Configuration> handle, 
+			MetricContext metricContext) {
+		return new ClientHandlerService(handle, metricContext);
+	}
+
+	@Override
+	public Class<ConcentusServiceState> getClusterStateClass() {
+		return ConcentusServiceState.class;
 	}
 	
 }

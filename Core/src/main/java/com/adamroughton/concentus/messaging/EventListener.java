@@ -31,13 +31,14 @@ public final class EventListener implements Runnable {
 	private final Mutex<Messenger> _messengerMutex;
 	
 	public EventListener(
+			String name,
 			IncomingEventHeader header,
 			Mutex<Messenger> messengerMutex,
 			EventQueue<byte[]> recvQueue, 
 			FatalExceptionCallback exCallback) {		
 		_header = Objects.requireNonNull(header);
 		_messengerMutex = Objects.requireNonNull(messengerMutex);
-		_recvQueuePublisher = recvQueue.createPublisher(true);
+		_recvQueuePublisher = recvQueue.createPublisher(name, true);
 		_exCallback = Objects.requireNonNull(exCallback);
 	}
 

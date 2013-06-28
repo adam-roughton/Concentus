@@ -21,14 +21,18 @@ import uk.co.real_logic.intrinsics.ComponentFactory;
 import uk.co.real_logic.intrinsics.StructuredArray;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.disruptor.EventQueue;
-import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
+import com.adamroughton.concentus.disruptor.EventQueueImpl;
+import com.adamroughton.concentus.disruptor.SingleProducerQueueStrategy;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.events.ClientUpdateEvent;
 import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.metric.LogMetricContext;
+import com.adamroughton.concentus.metric.NullMetricContext;
 import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.YieldingWaitStrategy;
@@ -61,36 +65,19 @@ public class SimulatedClientProcessorBenchmark {
 		});
 		_recvBuffer = new byte[bufferSize];
 		
-		_sendQueue = new SingleProducerEventQueue<>(Util.msgBufferFactory(bufferSize), 
+		_sendQueue = new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", Util.msgBufferFactory(bufferSize), 
 				1,
-				new YieldingWaitStrategy());
+				new YieldingWaitStrategy()));
 		_sendQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		_header = new IncomingEventHeader(0, 2);
 		
-		SendQueue<OutgoingEventHeader> clientSendQueue = new SendQueue<>(new OutgoingEventHeader(0, 1), _sendQueue);
-		SendQueue<OutgoingEventHeader> metricSendQueue = new SendQueue<>(new OutgoingEventHeader(0, 2), _sendQueue);
+		SendQueue<OutgoingEventHeader> clientSendQueue = new SendQueue<>("", new OutgoingEventHeader(0, 1), _sendQueue);
 		
-		_worker = new SimulatedClientProcessor(0, _clock, _clients, clientCount, clientSendQueue, metricSendQueue, _header);
+		_worker = new SimulatedClientProcessor(_clock, _clients, clientCount, clientSendQueue, _header, 
+				new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), _clock));
 		
-		MetricEntry nullMetricEntry = new MetricEntry() {
-			
-			@Override
-			public void incrementSentInputCount(int amount) {
-			}
-			
-			@Override
-			public void incrementInputToUpdateLateCount(int amount) {
-			}
-			
-			@Override
-			public void incrementConnectedClientCount(int amount) {
-			}
-			
-			@Override
-			public void addInputToUpdateLatency(long latency) {
-			}
-		};
+		NullMetricContext nullMetricContext = new NullMetricContext();
 		
 		ConnectResponseEvent connRes = new ConnectResponseEvent();
 		connRes.setBackingArray(_recvBuffer, 0);
@@ -100,13 +87,13 @@ public class SimulatedClientProcessorBenchmark {
 			client.setIsActive(true);
 			
 			// generate connect request
-			client.onActionDeadline(clientSendQueue, nullMetricEntry);
+			client.onActionDeadline(clientSendQueue, nullMetricContext.newCountMetric("", "", false));
 			
 			connRes.setClientId(i);
 			connRes.setCallbackBits(i);
 			connRes.setResponseCode(ConnectResponseEvent.RES_OK);
 			
-			client.onConnectResponse(connRes, nullMetricEntry);
+			client.onConnectResponse(connRes, nullMetricContext.newCountMetric("", "", false));
 		}
 		connRes.releaseBackingArray();
 		

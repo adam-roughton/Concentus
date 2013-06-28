@@ -26,6 +26,7 @@ import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 public class ZmqSocketSetMessenger implements Messenger {
 
 	private final SocketPollSet _pollSet;
+	private final String _name;
 	private final int[] _socketIds;
 	
 	public ZmqSocketSetMessenger(SocketPollSet pollSet) {
@@ -33,9 +34,21 @@ public class ZmqSocketSetMessenger implements Messenger {
 		Set<ZmqSocketMessenger> messengers = pollSet.getMessengers();
 		_socketIds = new int[messengers.size()];
 		int index = 0;
+		
+		StringBuilder nameBuilder = new StringBuilder();
+		boolean isFirst = true;
+		nameBuilder.append("set[");
 		for (ZmqSocketMessenger messenger : messengers) {
+			if (isFirst) {
+				isFirst = false;
+			} else {
+				nameBuilder.append(", ");
+			}
+			nameBuilder.append(messenger.name());
 			_socketIds[index++] = messenger.getSocketId();
 		}
+		nameBuilder.append("]");
+		_name = nameBuilder.toString();
 	}
 	
 	@Override
@@ -75,6 +88,11 @@ public class ZmqSocketSetMessenger implements Messenger {
 	@Override
 	public int[] getEndpointIds() {
 		return Arrays.copyOf(_socketIds, _socketIds.length);
+	}
+
+	@Override
+	public String name() {
+		return _name;
 	}
 
 }

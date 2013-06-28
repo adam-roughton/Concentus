@@ -73,7 +73,7 @@ public class TestZmqSocketMessenger {
 		_buffer = new byte[EVENT_BUFFER_LENGTH];
 		_clock = new DrivableClock();
 		_clock.setTime(5500000, TimeUnit.MILLISECONDS);
-		_messenger = new ZmqSocketMessenger(0, _zmqSocket, _clock);
+		_messenger = new ZmqSocketMessenger(0, "", _zmqSocket, _clock);
 	}
 	
 	private byte[] genContent(int length) {

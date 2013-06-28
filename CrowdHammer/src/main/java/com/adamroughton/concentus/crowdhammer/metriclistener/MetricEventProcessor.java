@@ -16,63 +16,72 @@
 package com.adamroughton.concentus.crowdhammer.metriclistener;
 
 import java.io.BufferedWriter;
+import java.io.Closeable;
 import java.io.IOException;
 import java.nio.charset.Charset;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
 import java.util.Objects;
 
 import uk.co.real_logic.intrinsics.ComponentFactory;
 
-import com.adamroughton.concentus.crowdhammer.messaging.events.TestEventType;
-import com.adamroughton.concentus.crowdhammer.messaging.events.WorkerMetricEvent;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.events.ClientHandlerMetricEvent;
+import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.events.EventType;
-import com.adamroughton.concentus.messaging.events.StateMetricEvent;
+import com.adamroughton.concentus.messaging.events.MetricMetaDataEvent;
+import com.adamroughton.concentus.messaging.events.MetricMetaDataRequestEvent;
+import com.adamroughton.concentus.messaging.events.MetricEvent;
 import com.adamroughton.concentus.messaging.patterns.EventPattern;
 import com.adamroughton.concentus.messaging.patterns.EventReader;
+import com.adamroughton.concentus.metric.MetricType;
 import com.adamroughton.concentus.util.RunningStats;
 import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
+import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
 import com.lmax.disruptor.collections.Histogram;
 import com.adamroughton.concentus.InitialiseDelegate;
 
-public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAware {
+public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAware, Closeable {
 
-	private final IncomingEventHeader _subHeader;
-	
-	private final StateMetricEvent _stateMetricEvent = new StateMetricEvent();
-	private final WorkerMetricEvent _workerMetricEvent = new WorkerMetricEvent();
-	private final ClientHandlerMetricEvent _clientHandlerMetricEvent = new ClientHandlerMetricEvent();
-	
-	private Histogram _histogram;
-	private WorkerInfo[] _activeWorkers = new WorkerInfo[0];
-	
-	private long _clientCount;
-	
-	private boolean _isCollectingData = false;
-	
-	private BufferedWriter _latencyFileWriter;
-	
-	private static class WorkerMetricEntry {
-		public long clientCount;
-		public long workersXor;
-		public RunningStats inputToUpdateLatency = null;
-		public int lateInputResCount;
+	static {
+		try {
+			Class.forName("org.sqlite.JDBC");
+		} catch (ClassNotFoundException e) {
+			throw new RuntimeException(String.format("The driver for handling the sqlite database " +
+					"for metric results was not found: '%s'", e.getMessage()), e);
+		}
 	}
 	
-	private StructuredSlidingWindowMap<WorkerMetricEntry> _workerMetrics;
+	private final IncomingEventHeader _subHeader;
 	
-	private RunningStats _canonicalStateThroughput = null;
-	private RunningStats _inputToUpdateLatency = null;
-	private int _lateInputUpdateCount = 0;
+	private final MetricEvent _metricEvent = new MetricEvent();
+	private final MetricMetaDataEvent _metricMetaDataEvent = new MetricMetaDataEvent();
+	private final MetricMetaDataRequestEvent _metricMetaDataReqEvent = new MetricMetaDataRequestEvent();
 	
-	public MetricEventProcessor(final IncomingEventHeader subHeader) {
+	private boolean _isCollectingData = false;
+	private Connection _connection;
+	private BufferedWriter _latencyFileWriter;
+	
+	public MetricEventProcessor(IncomingEventHeader subHeader) {
+		/*
+		 * Establish a file that can be used for the database for these runs
+		 */
+		
+		try {
+			_connection = DriverManager.getConnection("jdbc:sqlite:(databasefile)");
+		} catch (SQLException e1) {
+			// TODO Auto-generated catch block
+			e1.printStackTrace();
+		}
+		
+		
 		_subHeader = Objects.requireNonNull(subHeader);
 		
 		String baseName = "inputToUpdateLatency";
@@ -96,30 +105,13 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 		if (!_subHeader.isValid(eventBytes)) return;
 		
 		int eventType = EventPattern.getEventType(eventBytes, _subHeader);
-		if (eventType == EventType.STATE_METRIC.getId()) {
-			EventPattern.readContent(eventBytes, _subHeader, _stateMetricEvent, new EventReader<IncomingEventHeader, StateMetricEvent>() {
+		if (eventType == EventType.METRIC.getId()) {
+			EventPattern.readContent(eventBytes, _subHeader, _metricEvent, new EventReader<IncomingEventHeader, MetricEvent>() {
 
 				@Override
-				public void read(IncomingEventHeader header, StateMetricEvent event) {
-					processStateMetric(event);
-				}
-				
-			});
-		} else if (eventType == TestEventType.WORKER_METRIC.getId()) {
-			EventPattern.readContent(eventBytes, _subHeader, _workerMetricEvent, new EventReader<IncomingEventHeader, WorkerMetricEvent>() {
-
-				@Override
-				public void read(IncomingEventHeader header, WorkerMetricEvent event) {
-					processWorkerMetric(event);
-				}
-				
-			});
-		} else if (eventType == EventType.CLIENT_HANDLER_METRIC.getId()) {
-			EventPattern.readContent(eventBytes, _subHeader, _clientHandlerMetricEvent, new EventReader<IncomingEventHeader, ClientHandlerMetricEvent>() {
-
-				@Override
-				public void read(IncomingEventHeader header, ClientHandlerMetricEvent event) {
-					processClientHandlerMetric(event);
+				public void read(IncomingEventHeader header, MetricEvent event) {
+					// TODO Auto-generated method stub
+					
 				}
 				
 			});
@@ -134,173 +126,53 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 		for (int i = 0; i < 10000; i++) {
 			upperBounds[i] = (i + 1) * 10;
 		}
-		_histogram = new Histogram(upperBounds);
 		_isCollectingData = false;
-		_canonicalStateThroughput = null;
-		_inputToUpdateLatency = null;
 	}
 
 	@Override
 	public void onShutdown() {
 	}
 	
-	public void setActiveWorkers(WorkerInfo[] workers) {
-		_activeWorkers = workers;
-		long xor = 0;
-		long clientCount = 0;
-		for (WorkerInfo worker : workers) {
-			xor ^= worker.getWorkerId();
-			clientCount += worker.getSimClientCount();
-		}
-		final long workersXor = xor;
-		_clientCount = clientCount;
+	private void processMetric(MetricEvent event) {
+		int eventTypeId = event.getEventTypeId();
+		StringBuilder logBuilder = new StringBuilder();
+		logBuilder.append(String.format("StatsMetric (%d:%d): bucketId: %d, ",
+				event.getSourceId(),
+				event.getMetricId(),
+				event.getMetricBucketId()));
 		
-		_workerMetrics = new StructuredSlidingWindowMap<WorkerMetricEntry>(128, 
-				WorkerMetricEntry.class,
-				new ComponentFactory<WorkerMetricEntry>() {
-
-					@Override
-					public WorkerMetricEntry newInstance(Object[] initArgs) {
-						return new WorkerMetricEntry();
-					}
-				}, new InitialiseDelegate<WorkerMetricEntry>() {
-		
-					@Override
-					public void initialise(WorkerMetricEntry content) {
-						content.clientCount = 0;
-						content.workersXor = workersXor;
-						content.lateInputResCount = 0;
-						content.inputToUpdateLatency = null;
-					}
-					
-				});
-	}
-	
-	private void processStateMetric(final StateMetricEvent event) {
-		long actionsProcessed = event.getInputActionsProcessed();
-		long duration = event.getBucketDuration();
-		
-		double throughput = 0;
-		if (duration > 0) {
-			throughput = ((double) actionsProcessed / (double) duration) * 1000;
-			_histogram.addObservation((long)throughput);
-		}
-		
-		Log.info(String.format("StateMetric (B%d): %f actionsProc/s, %d pending events", event.getMetricBucketId(), throughput, event.getPendingEventCount()));
-	}
-	
-	private void processWorkerMetric(final WorkerMetricEvent event) {
-		long bucketId = event.getMetricBucketId();
-		
-		RunningStats inputToActionLatencyStats = event.getInputToUpdateLatency();
-		
-		WorkerMetricEntry metricEntry = _workerMetrics.get(bucketId);
-		metricEntry.clientCount += event.getConnectedClientCount();
-		metricEntry.lateInputResCount += event.getInputToUpdateLatencyLateCount();
-		if (metricEntry.inputToUpdateLatency == null) {
-			metricEntry.inputToUpdateLatency = inputToActionLatencyStats;
+		if (eventTypeId == MetricType.STATS.getId()) {
+			RunningStats stats = MessageBytesUtil.readRunningStats(event.getBackingArray(), event.getMetricValueOffset());
+			logBuilder.append(Util.statsToString("value", stats));
+		} else if (eventTypeId == MetricType.COUNT.getId() || eventTypeId == MetricType.THROUGHPUT.getId()) {
+			logBuilder.append(MessageBytesUtil.readInt(event.getBackingArray(), event.getMetricValueOffset()));
 		} else {
-			metricEntry.inputToUpdateLatency.merge(inputToActionLatencyStats);
+			Log.warn(String.format("Unknown metric type %d", eventTypeId));
 		}
-		metricEntry.workersXor ^= event.getSourceId();
-		if (metricEntry.workersXor == 0) {
-			if (metricEntry.clientCount >= _clientCount) {
-				_isCollectingData = true;
-			}
-			if (_isCollectingData) {
-				if (_inputToUpdateLatency == null) {
-					_inputToUpdateLatency = metricEntry.inputToUpdateLatency;
-				} else {
-					_inputToUpdateLatency.merge(metricEntry.inputToUpdateLatency);
-				}
-				_lateInputUpdateCount += metricEntry.lateInputResCount;
-			}
-		}
+		Log.info(logBuilder.toString());
 		
-		long actionsSent = event.getSentInputActionsCount();
-		long duration = event.getBucketDuration();
-		double throughput = 0;
-		if (duration > 0) {
-			throughput = ((double) actionsSent / (double) duration) * 1000;
-		}
-		
-		Log.info(String.format("WorkerMetric (B%d,%d): %f input/s, %d clients, %d errors, %d pending events, [%f mean, %f stddev, %f max, %f min] input to update latency", 
-				event.getMetricBucketId(), 
-				event.getSourceId(), 
-				throughput, 
-				event.getConnectedClientCount(), 
-				event.getEventErrorCount(),
-				event.getPendingEventCount(),
-				inputToActionLatencyStats.getMean(),
-				inputToActionLatencyStats.getStandardDeviation(),
-				inputToActionLatencyStats.getMax(),
-				inputToActionLatencyStats.getMin()));
-	}
-	
-	private void processClientHandlerMetric(final ClientHandlerMetricEvent event) {
-		long inputActionsProcessed = event.getInputActionsProcessed();
-		long connectionRequestsProcesed = event.getConnectRequestsProcessed();
-		long totalActionsProcessed = event.getTotalEventsProcessed();
-		long updatesProcessed = event.getUpdateEventsProcessed();
-		long updateInfoEventsProcessed = event.getUpdateInfoEventsProcessed();
-		long updatesSent = event.getSentUpdateCount();
-		
-		long duration = event.getBucketDuration();
-		
-		double inputActionthroughput = 0;
-		double totalActionthroughput = 0;
-		double connectionRequestThroughput = 0;
-		double updateRecvThroughput = 0;
-		double updateInfoThroughput = 0;
-		double updatesSentThroughput = 0;
-		if (duration > 0) {
-			inputActionthroughput = ((double) inputActionsProcessed / (double) duration) * 1000;
-			_histogram.addObservation((long)inputActionthroughput);
-			totalActionthroughput = ((double) totalActionsProcessed / (double) duration) * 1000;
-			connectionRequestThroughput = ((double) connectionRequestsProcesed / (double) duration) * 1000;
-			updateRecvThroughput = ((double) updatesProcessed / (double) duration) * 1000;
-			updateInfoThroughput = ((double) updateInfoEventsProcessed / (double) duration) * 1000;
-			updatesSentThroughput = ((double) updatesSent / (double) duration) * 1000;
-		}
-		
-		Log.info(String.format("ClientHandlerMetric (B%d,%d): " +
-				"%d clients, " +
-				"%f action/s, " +
-				"%f conn/s, " +
-				"%f updatesProc/s, " +
-				"%f updateInfo/s, " +
-				"%f updateSent/s, " +
-				"%f t.event/s, " +
-				"%d pending", 
-				event.getMetricBucketId(), 
-				event.getSourceId(), 
-				event.getActiveClientCount(),
-				inputActionthroughput, 
-				connectionRequestThroughput,
-				updateRecvThroughput,
-				updateInfoThroughput,
-				updatesSentThroughput,
-				totalActionthroughput, 
-				event.getPendingEventCount()));
+		// find metric using metric ID
+		// if metric not known, use source ID to request info
+		// put into right table
 	}
 	
 	//TODO hack just to get the file for now
 	public void endOfTest() {
-		try {
-			if (_inputToUpdateLatency != null) {
-				_latencyFileWriter.append(String.format("%d,%f,%f,%f,%f,%d\n", 
-						_clientCount,
-						_inputToUpdateLatency.getMean(), 
-						_inputToUpdateLatency.getStandardDeviation(),
-						_inputToUpdateLatency.getMin(),
-						_inputToUpdateLatency.getMax(),
-						_lateInputUpdateCount
-						));
-			}
-			_latencyFileWriter.flush();
-		} catch (IOException e) {
-			throw new RuntimeException(e);
-		}
+//		try {
+//			if (_inputToUpdateLatency != null) {
+//				_latencyFileWriter.append(String.format("%d,%f,%f,%f,%f,%d\n", 
+//						_clientCount,
+//						_inputToUpdateLatency.getMean(), 
+//						_inputToUpdateLatency.getStandardDeviation(),
+//						_inputToUpdateLatency.getMin(),
+//						_inputToUpdateLatency.getMax(),
+//						_lateInputUpdateCount
+//						));
+//			}
+//			_latencyFileWriter.flush();
+//		} catch (IOException e) {
+//			throw new RuntimeException(e);
+//		}
 	}
 	
 	// hack
@@ -310,6 +182,12 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 		} catch (IOException e) {
 			throw new RuntimeException(e);
 		}
+	}
+
+	@Override
+	public void close() throws IOException {
+		// TODO Auto-generated method stub
+		
 	}
 
 }

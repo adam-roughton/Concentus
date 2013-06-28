@@ -29,6 +29,8 @@ public final class Constants {
 	 */
 	public static final long METRIC_TICK = 1000L;
 	
+	public static final long METRIC_BUFFER_SECONDS = 60;
+	
 	/**
 	 * The number of bytes used to uniquely identify
 	 * a client.

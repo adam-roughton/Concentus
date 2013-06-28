@@ -104,4 +104,9 @@ public final class StubMessenger implements Messenger {
 		return _endPointIds;
 	}
 
+	@Override
+	public String name() {
+		return "";
+	}
+
 }

@@ -15,7 +15,7 @@
  */
 package com.adamroughton.concentus.util;
 
-public class SlidingWindowLongMap {
+public class SlidingWindowLongMap implements SlidingWindowMap<Long> {
 	
 	/**
 	 * We reserve one value (-Long.MAX_VALUE) to represent entries
@@ -70,6 +70,11 @@ public class SlidingWindowLongMap {
 		return data;
 	}
 	
+	@Override
+	public Long get(long index) {
+		return getDirect(index);
+	}
+	
 	/**
 	 * Gets the data associated with the given index if the index is
 	 * within the window. Otherwise returns unspecified data. This call
@@ -78,7 +83,7 @@ public class SlidingWindowLongMap {
 	 * @param index the key
 	 * @return the data associated with the given index
 	 */
-	public final long get(long index) {
+	public final long getDirect(long index) {
 		return _window[(int)index & _mask];
 	}
 	
@@ -100,7 +105,7 @@ public class SlidingWindowLongMap {
 	 * in the map. This is an O(n) operation
 	 * @return
 	 */
-	public final int size() {
+	public final int count() {
 		int count = 0;
 		for (final long val : _window) {
 			if (val != NULL) count++;
@@ -122,13 +127,18 @@ public class SlidingWindowLongMap {
 	 * Gets the size of the sliding window.
 	 * @return
 	 */
-	public final int windowSize() {
+	public final int getLength() {
 		return _window.length;
 	}
 	
 	public final boolean containsIndex(long index) {
-		int relIndex = (int) (_currentIndex - index);
-		return relIndex >= 0 && relIndex < _window.length && _window[(int)(index & _mask)] != NULL;
+		return 
+			// is less than the current index?
+			Math.min(index, _currentIndex) == index &&
+			// is within the window?
+			Math.max(_currentIndex - _window.length + 1, index) == index
+			// entry is not null
+			&& _window[(int)(index & _mask)] != NULL;
 	}
 	
 	public final void clear() {

@@ -34,7 +34,7 @@ public class TestEventQueueReaderImpl {
 				return new byte[512];
 			}
 		}, 4);
-		_reader = new EventQueueReaderImpl<>(_ringBuffer, _ringBuffer.newBarrier(), false);
+		_reader = new EventQueueReaderImpl<>("", _ringBuffer, _ringBuffer.newBarrier(), false);
 		_ringBuffer.addGatingSequences(_reader.getSequence());	
 	}
 	

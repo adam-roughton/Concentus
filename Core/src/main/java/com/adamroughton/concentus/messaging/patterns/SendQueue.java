@@ -26,10 +26,12 @@ public class SendQueue<TSendHeader extends OutgoingEventHeader> {
 	private final TSendHeader _header;
 	private final EventQueuePublisher<byte[]> _sendQueuePublisher;
 	
-	public SendQueue(final TSendHeader header, 
-			final EventQueue<byte[]> sendQueue) {
+	public SendQueue(
+			String name,
+			TSendHeader header, 
+			EventQueue<byte[]> sendQueue) {
 		_header = Objects.requireNonNull(header);
-		_sendQueuePublisher = sendQueue.createPublisher(true);
+		_sendQueuePublisher = sendQueue.createPublisher(name, true);
 	}
 	
 	/**

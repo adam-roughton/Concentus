@@ -45,7 +45,7 @@ public class TestSingleProducerEventQueuePublisher {
 		}
 		// gating seq set such that no buffer space is available
 		_gatingSeq.set(-1);
-		_publisher = new SingleProducerEventQueuePublisher<>(_ringBuffer, false);
+		_publisher = new SingleProducerEventQueuePublisher<>("", _ringBuffer, false);
 	}
 	
 	@Test

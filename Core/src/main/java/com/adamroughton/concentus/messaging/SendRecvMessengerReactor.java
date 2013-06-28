@@ -60,6 +60,7 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 	private final FatalExceptionCallback _exCallback;
 	
 	public SendRecvMessengerReactor(
+			String name,
 			Mutex<Messenger> messengerMutex,
 			OutgoingEventHeader sendHeader,
 			IncomingEventHeader recvHeader,
@@ -69,8 +70,8 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 		_messengerMutex = Objects.requireNonNull(messengerMutex);
 		_sendHeader = Objects.requireNonNull(sendHeader);
 		_recvHeader = Objects.requireNonNull(recvHeader);
-		_recvQueuePublisher = recvQueue.createPublisher(false);
-		_sendQueueReader = sendQueue.createReader(false);
+		_recvQueuePublisher = recvQueue.createPublisher(name + "_recv", false);
+		_sendQueueReader = sendQueue.createReader(name + "_send", false);
 		_exCallback = Objects.requireNonNull(exCallback);
 	}
 	

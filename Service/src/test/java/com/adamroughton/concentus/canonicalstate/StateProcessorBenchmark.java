@@ -19,14 +19,17 @@ import java.nio.ByteBuffer;
 import java.util.concurrent.TimeUnit;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.disruptor.EventQueue;
-import com.adamroughton.concentus.disruptor.SingleProducerEventQueue;
+import com.adamroughton.concentus.disruptor.EventQueueImpl;
+import com.adamroughton.concentus.disruptor.SingleProducerQueueStrategy;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.events.StateInputEvent;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.metric.LogMetricContext;
 import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.YieldingWaitStrategy;
@@ -48,9 +51,9 @@ public class StateProcessorBenchmark {
 
 		_recvBuffer = new byte[bufferSize];
 		
-		_sendBuffer = new SingleProducerEventQueue<byte[]>(Util.msgBufferFactory(bufferSize), 
+		_sendBuffer = new EventQueueImpl<>(new SingleProducerQueueStrategy<byte[]>("", Util.msgBufferFactory(bufferSize), 
 				1,
-				new YieldingWaitStrategy());
+				new YieldingWaitStrategy()));
 		_sendBuffer.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		_header = new IncomingEventHeader(0, 2);
@@ -67,7 +70,7 @@ public class StateProcessorBenchmark {
 		_header.setSegmentMetaData(_recvBuffer, 1, cursor, _inputEvent.getEventSize());
 		
 		
-		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>(new OutgoingEventHeader(0, 2), _sendBuffer);
+		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>("", new OutgoingEventHeader(0, 2), _sendBuffer);
 		
 		_stateProcessor = new StateProcessor(_clock, new StateLogic() {
 
@@ -83,7 +86,7 @@ public class StateProcessorBenchmark {
 			public void createUpdate(ByteBuffer updateBuffer) {
 			}
 			
-		}, _header, pubSendQueue);
+		}, _header, pubSendQueue, new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), _clock));
 	}	
 	
 	public void timeStateProcessor(long inputCount) throws Exception {

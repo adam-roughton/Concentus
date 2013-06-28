@@ -22,7 +22,8 @@ import java.util.concurrent.TimeUnit;
 import org.junit.Before;
 import org.junit.Test;
 
-import com.adamroughton.concentus.MetricContainer.MetricLamda;
+import com.adamroughton.concentus.metric.MetricContainer;
+import com.adamroughton.concentus.metric.MetricContainer.MetricLamda;
 import com.adamroughton.concentus.InitialiseDelegate;
 
 import uk.co.real_logic.intrinsics.ComponentFactory;

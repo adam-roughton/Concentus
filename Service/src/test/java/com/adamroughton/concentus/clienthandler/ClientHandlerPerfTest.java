@@ -18,6 +18,7 @@ package com.adamroughton.concentus.clienthandler;
 import java.io.PrintStream;
 import java.net.InetAddress;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -30,14 +31,16 @@ import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.ConcentusServiceState;
+import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.InstanceFactory;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
+import com.adamroughton.concentus.cluster.data.MetricPublisherInfo;
+import com.adamroughton.concentus.cluster.data.TestRunInfo;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.configuration.StubConfiguration;
 import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
-import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
@@ -47,7 +50,6 @@ import com.adamroughton.concentus.messaging.StubMessenger.FakeSendDelegate;
 import com.adamroughton.concentus.messaging.events.ByteArrayBackedEvent;
 import com.adamroughton.concentus.messaging.events.ClientConnectEvent;
 import com.adamroughton.concentus.messaging.events.ClientHandlerEntry;
-import com.adamroughton.concentus.messaging.events.ClientHandlerMetricEvent;
 import com.adamroughton.concentus.messaging.events.ClientInputEvent;
 import com.adamroughton.concentus.messaging.events.StateUpdateEvent;
 import com.adamroughton.concentus.messaging.events.StateUpdateInfoEvent;
@@ -55,6 +57,8 @@ import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager.StubMessengerConfigurator;
+import com.adamroughton.concentus.metric.LogMetricContext;
+import com.netflix.curator.framework.api.CuratorWatcher;
 
 import static com.adamroughton.concentus.ConcentusServiceState.*;
 
@@ -191,74 +195,18 @@ public class ClientHandlerPerfTest {
 			}
 		};
 		
-		final FakeSendDelegate metricSendDelegate = new FakeSendDelegate() {
-			
-			ClientHandlerMetricEvent metricEvent = new ClientHandlerMetricEvent();
+		final FakeSendDelegate sendDelegate = new FakeSendDelegate() {
 			
 			@Override
 			public boolean fakeSend(long sendSeq, byte[] eventBuffer,
 					OutgoingEventHeader header, boolean isBlocking) {
 				if (!header.isValid(eventBuffer)) return true;
-				int contentIndex = header.getSegmentCount() - 1;
-				int segmentMetaData = header.getSegmentMetaData(eventBuffer, contentIndex);
-				int contentOffset = EventHeader.getSegmentOffset(segmentMetaData);
 				
-				if (MessageBytesUtil.readInt(eventBuffer, contentOffset) == metricEvent.getEventTypeId()) {
-					metricEvent.setBackingArray(eventBuffer, contentOffset);
-					processClientHandlerMetric(metricEvent);
-					metricEvent.releaseBackingArray();
-				} else {
-					long startTime = System.nanoTime();
-					long deadline = startTime + msgSendDelayNanos;
-					while (System.nanoTime() < deadline);
-				}
+				long startTime = System.nanoTime();
+				long deadline = startTime + msgSendDelayNanos;
+				while (System.nanoTime() < deadline);
+				
 				return true;
-			}
-			
-			private void processClientHandlerMetric(final ClientHandlerMetricEvent event) {
-				long inputActionsProcessed = event.getInputActionsProcessed();
-				long connectionRequestsProcesed = event.getConnectRequestsProcessed();
-				long totalActionsProcessed = event.getTotalEventsProcessed();
-				long updatesProcessed = event.getUpdateEventsProcessed();
-				long updateInfoEventsProcessed = event.getUpdateInfoEventsProcessed();
-				long updatesSent = event.getSentUpdateCount();
-				
-				long duration = event.getBucketDuration();
-				
-				double inputActionthroughput = 0;
-				double totalActionthroughput = 0;
-				double connectionRequestThroughput = 0;
-				double updateRecvThroughput = 0;
-				double updateInfoThroughput = 0;
-				double updatesSentThroughput = 0;
-				if (duration > 0) {
-					inputActionthroughput = ((double) inputActionsProcessed / (double) duration) * 1000;
-					totalActionthroughput = ((double) totalActionsProcessed / (double) duration) * 1000;
-					connectionRequestThroughput = ((double) connectionRequestsProcesed / (double) duration) * 1000;
-					updateRecvThroughput = ((double) updatesProcessed / (double) duration) * 1000;
-					updateInfoThroughput = ((double) updateInfoEventsProcessed / (double) duration) * 1000;
-					updatesSentThroughput = ((double) updatesSent / (double) duration) * 1000;
-				}
-				
-				_consolePrintStream.println(String.format("ClientHandlerMetric (B%d,%d): " +
-						"%d clients, " +
-						"%f action/s, " +
-						"%f conn/s, " +
-						"%f updatesProc/s, " +
-						"%f updateInfo/s, " +
-						"%f updateSent/s, " +
-						"%f t.event/s, " +
-						"%d pending", 
-						event.getMetricBucketId(), 
-						event.getSourceId(), 
-						event.getActiveClientCount(),
-						inputActionthroughput, 
-						connectionRequestThroughput,
-						updateRecvThroughput,
-						updateInfoThroughput,
-						updatesSentThroughput,
-						totalActionthroughput, 
-						event.getPendingEventCount()));
 			}
 		};
 		
@@ -274,9 +222,7 @@ public class ClientHandlerPerfTest {
 						if (socketType == ZMQ.ROUTER) {
 							messenger.setFakeRecvDelegate(routerRecvDelegate);
 						} else if (socketType == ZMQ.PUB) {
-							// both pub and metric will have this set, but the
-							// delegate will only process metric events
-							messenger.setFakeSendDelegate(metricSendDelegate);
+							messenger.setFakeSendDelegate(sendDelegate);
 						} else if (socketType == ZMQ.SUB) {
 							if (fakeStateUpdates) {
 								messenger.setFakeRecvDelegate(updateRecvDelegate);
@@ -297,7 +243,9 @@ public class ClientHandlerPerfTest {
 			}
 			
 		}, new StandardEventQueueFactory(), new DefaultClock(), new StubConfiguration(), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
-		_clientHandler = new ClientHandlerService(concentusHandle);
+		_clientHandler = new ClientHandlerService(concentusHandle, 
+				new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), 
+				new DefaultClock()));
 		
 		_clusterHandle = new ClusterWorkerHandle() {
 			
@@ -356,6 +304,27 @@ public class ClientHandlerPerfTest {
 			
 			@Override
 			public void deleteAssignmentRequest(String serviceType) {
+			}
+
+			@Override
+			public TestRunInfo getCurrentRunInfo() {
+				return null;
+			}
+
+			@Override
+			public void registerAsMetricPublisher(String type,
+					String pubAddress, String metaDataReqAddress) {
+			}
+
+			@Override
+			public List<MetricPublisherInfo> getMetricPublishers() {
+				return null;
+			}
+
+			@Override
+			public List<MetricPublisherInfo> getMetricPublishers(
+					CuratorWatcher watcher) {
+				return null;
 			}
 		};
 		_testThreadBarrier = new CyclicBarrier(2);
