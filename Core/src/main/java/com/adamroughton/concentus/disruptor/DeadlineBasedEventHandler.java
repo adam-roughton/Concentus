@@ -50,4 +50,6 @@ public interface DeadlineBasedEventHandler<T> {
 	 */
 	long getDeadline();
 	
+	String name();
+	
 }

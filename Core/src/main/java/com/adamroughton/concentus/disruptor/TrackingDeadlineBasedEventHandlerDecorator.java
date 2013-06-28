@@ -102,4 +102,9 @@ public class TrackingDeadlineBasedEventHandlerDecorator<T> implements DeadlineBa
 		}
 	}
 
+	@Override
+	public String name() {
+		return _decoratedHandler.name();
+	}
+
 }

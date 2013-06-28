@@ -57,6 +57,7 @@ import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager.StubMessengerConfigurator;
 import com.adamroughton.concentus.metric.LogMetricContext;
+import com.adamroughton.concentus.metric.NullMetricContext;
 import com.netflix.curator.framework.api.CuratorWatcher;
 
 import static com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState.*;
@@ -179,7 +180,7 @@ public class WorkerPerfTest {
 				});
 			}
 			
-		}, new StandardEventQueueFactory(), new DefaultClock(), new StubCrowdHammerConfiguration(30), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
+		}, new StandardEventQueueFactory(new NullMetricContext()), new DefaultClock(), new StubCrowdHammerConfiguration(30), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
 		_worker = new WorkerService(concentusHandle, 100000, new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), new DefaultClock()));
 		
 		_clusterHandle = new ClusterWorkerHandle() {

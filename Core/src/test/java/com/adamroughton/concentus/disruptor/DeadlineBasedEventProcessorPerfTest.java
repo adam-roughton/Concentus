@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.metric.NullMetricContext;
 import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
@@ -58,7 +59,7 @@ public class DeadlineBasedEventProcessorPerfTest {
 		};
 		
 		_testEventHandler = new TestDeadlineEventHandler(clock, deadlinePeriod, onEventProcNanos, deadlineProcNanos);
-		_deadlineProcessor = new DeadlineBasedEventProcessor<>(clock, _testEventHandler, _ringBuffer, barrier, exceptionCallback);
+		_deadlineProcessor = new DeadlineBasedEventProcessor<>(new NullMetricContext(), clock, _testEventHandler, _ringBuffer, barrier, exceptionCallback);
 		_testThread = new Thread(_deadlineProcessor);
 		
 		_eventsPerTick = recvEventsPerSec * EVENT_RECV_TICK_PERIOD_MILLIS / 1000;
@@ -186,6 +187,11 @@ public class DeadlineBasedEventProcessorPerfTest {
 		
 		public long getTestVal() {
 			return _val;
+		}
+
+		@Override
+		public String name() {
+			return "test";
 		}
 	}
 	

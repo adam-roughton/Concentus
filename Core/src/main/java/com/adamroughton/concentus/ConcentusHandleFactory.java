@@ -46,7 +46,7 @@ public class ConcentusHandleFactory {
 					return new TrackingSocketManagerDecorator(metricContext, new SocketManagerImpl(clock), clock);
 				}
 			};
-			eventQueueFactory = new StandardEventQueueFactory();
+			eventQueueFactory = new StandardEventQueueFactory(metricContext);
 		} else {
 			socketManagerFactory = new InstanceFactory<SocketManager>() {
 				
@@ -55,7 +55,7 @@ public class ConcentusHandleFactory {
 					return new SocketManagerImpl(clock);
 				}
 			};
-			eventQueueFactory = new StandardEventQueueFactory();
+			eventQueueFactory = new StandardEventQueueFactory(metricContext);
 		}
 		eventQueueFactory = new MetricTrackingEventQueueFactory(metricContext, clock);
 		

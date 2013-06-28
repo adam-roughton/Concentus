@@ -58,7 +58,6 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 	private final MetricGroup _metrics;
 	private final CountMetric _eventThroughputMetric;
 	private final CountMetric _errorCountMetric;
-	private final CountMetric _pendingEventCountMetric;
 	
 	private long _lastTickTime = -1;
 	private long _nextTickTime = -1;
@@ -84,10 +83,9 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 		_clientHandlerEventTracker = new Int2LongOpenHashMap(50);
 		
 		_metrics = new MetricGroup();
-		String reference = "stateProcessor";
+		String reference = name();
 		_eventThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "eventThroughput", false));
 		_errorCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "errorCount", false));
-		_pendingEventCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "pendingEventCount", false));
 	}
 	
 	@Override
@@ -135,8 +133,6 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 
 	@Override
 	public long moveToNextDeadline(long pendingEventCount) {
-		_pendingEventCountMetric.push(pendingEventCount);
-		
 		if (_lastTickTime == -1) {
 			_lastTickTime = _clock.currentMillis();
 			_nextTickTime = _clock.currentMillis();
@@ -212,6 +208,11 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 				
 			}));
 		}
+	}
+
+	@Override
+	public String name() {
+		return "stateProcessor";
 	}
 
 

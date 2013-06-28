@@ -45,6 +45,7 @@ import com.adamroughton.concentus.messaging.patterns.EventReader;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.metric.LogMetricContext;
+import com.adamroughton.concentus.metric.NullMetricContext;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.EventProcessor;
@@ -68,7 +69,7 @@ public class PerfTestClientHandlerProcessor {
 			}
 			
 		}, 1024 * 1024,
-			new YieldingWaitStrategy()));
+			new YieldingWaitStrategy()), new NullMetricContext());
 	}
 	
 	private static <TEvent extends ByteArrayBackedEvent> void fakeRecv(

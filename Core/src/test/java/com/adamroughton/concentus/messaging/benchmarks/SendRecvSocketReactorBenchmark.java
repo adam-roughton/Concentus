@@ -35,6 +35,7 @@ import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.SendRecvMessengerReactor;
 import com.adamroughton.concentus.messaging.MessengerMutex;
 import com.adamroughton.concentus.messaging.zmq.ZmqSocketMessenger;
+import com.adamroughton.concentus.metric.NullMetricContext;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Util;
 import com.google.caliper.Param;
@@ -70,7 +71,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 		_recvQueue = new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", 
 				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _recvHeader.getEventOffset())), 
 				1, 
-				new YieldingWaitStrategy()));
+				new YieldingWaitStrategy()), new NullMetricContext());
 		_recvQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		final RingBuffer<byte[]> sendBuffer = RingBuffer.createSingleProducer(
@@ -86,7 +87,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 				return new SingleProducerEventQueuePublisher<>(name, sendBuffer, isBlocking);
 			}
 			
-		});
+		}, new NullMetricContext());
 		_sendQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		if (sendAndRecv) {
 			sendBuffer.publish(Long.MAX_VALUE);

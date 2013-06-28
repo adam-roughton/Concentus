@@ -57,7 +57,6 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	private final MetricGroup _metrics;
 	private final CountMetric _connectedClientCountMetric;
 	private final CountMetric _sentActionThroughputMetric;
-	private final CountMetric _pendingEventCountMetric;
 	private final StatsMetric _actionEffectLatencyMetric;
 	private final CountMetric _lateActionEffectCountMetric;	
 	
@@ -84,10 +83,9 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 		
 		_metricContext = Objects.requireNonNull(metricContext);
 		_metrics = new MetricGroup();
-		String reference = "clientProcessor";
+		String reference = name();
 		_connectedClientCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "connectedClientCount", true));
 		_sentActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "sentActionThroughput", false));
-		_pendingEventCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "pendingEventCount", false));
 		_actionEffectLatencyMetric = _metrics.add(_metricContext.newStatsMetric(reference, "actionEffectLatency", false));
 		_lateActionEffectCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "lateActionEffectCount", false));
 	}
@@ -149,7 +147,6 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 
 	@Override
 	public long moveToNextDeadline(long pendingEventCount) {
-		_pendingEventCountMetric.push(pendingEventCount);
 		if (!_sendMetric && !_delayedClientDeadline) {
 			// if we didn't send a metric on the last deadline, advance for the next client
 			_nextClientIndex++;
@@ -184,6 +181,11 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	
 	public void stopSendingInput() {
 		_isSendingInput = false;
+	}
+
+	@Override
+	public String name() {
+		return "clientProcessor";
 	}
 	
 }

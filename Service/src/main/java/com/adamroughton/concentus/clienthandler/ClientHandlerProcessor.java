@@ -88,7 +88,6 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	private final CountMetric _incomingUpdateThroughputMetric;
 	private final CountMetric _incomingUpdateInfoThroughputMetric;
 	private final CountMetric _updateSendThroughputMetric;
-	private final CountMetric _pendingEventCountMetric;
 	private final CountMetric _activeClientCountMetric;
 	
 	private long _nextMetricTime = -1;
@@ -114,14 +113,13 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 		
 		_metricContext = Objects.requireNonNull(metricContext);
 		_metrics = new MetricGroup();
-		String reference = "clientHandlerProcessor";
+		String reference = name();
 		_incomingThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "incomingThroughput", false));
 		_inputActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "inputActionThroughput", false));
 		_connectionRequestThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "connectionRequestThroughput", false));
 		_incomingUpdateThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "incomingUpdateThroughput", false));
 		_incomingUpdateInfoThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "incomingUpdateInfoThroughput", false));
 		_updateSendThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "updateSendThroughput", false));
-		_pendingEventCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "pendingEventCount", false));
 		_activeClientCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "activeClientCount", true));
 	}
 	
@@ -212,7 +210,6 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	
 	@Override
 	public long moveToNextDeadline(long pendingEventCount) {
-		_pendingEventCountMetric.push(pendingEventCount);
 		_nextMetricTime = _metrics.nextBucketReadyTime();
 		return _nextMetricTime;
 	}
@@ -299,6 +296,11 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 			}
 		}
 		_incomingUpdateInfoThroughputMetric.push(1);
+	}
+
+	@Override
+	public String name() {
+		return "clientHandlerProcessor";
 	}
 
 }

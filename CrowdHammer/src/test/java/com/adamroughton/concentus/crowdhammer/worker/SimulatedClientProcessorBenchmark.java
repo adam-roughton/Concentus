@@ -67,7 +67,7 @@ public class SimulatedClientProcessorBenchmark {
 		
 		_sendQueue = new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", Util.msgBufferFactory(bufferSize), 
 				1,
-				new YieldingWaitStrategy()));
+				new YieldingWaitStrategy()), new NullMetricContext());
 		_sendQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		_header = new IncomingEventHeader(0, 2);

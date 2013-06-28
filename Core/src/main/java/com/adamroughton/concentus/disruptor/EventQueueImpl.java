@@ -21,6 +21,7 @@ import java.util.Set;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.metric.MetricContext;
 import com.lmax.disruptor.BatchEventProcessor;
 import com.lmax.disruptor.DataProvider;
 import com.lmax.disruptor.EventHandler;
@@ -31,10 +32,12 @@ import com.lmax.disruptor.SequenceBarrier;
 public class EventQueueImpl<T> implements EventQueue<T> {
 
 	protected final EventQueueStrategy<T> _queueStrategy;
+	private final MetricContext _metricContext;
 	private final Set<Sequence> _gatingSequences = new HashSet<Sequence>();
 
-	public EventQueueImpl(EventQueueStrategy<T> queueStrategy) {
+	public EventQueueImpl(EventQueueStrategy<T> queueStrategy, MetricContext metricContext) {
 		_queueStrategy = Objects.requireNonNull(queueStrategy);
+		_metricContext = Objects.requireNonNull(metricContext);
 	}
 
 	@Override
@@ -87,7 +90,7 @@ public class EventQueueImpl<T> implements EventQueue<T> {
 			@Override
 			public DeadlineBasedEventProcessor<T> createProcessor(DataProvider<T> eventProvider,
 					SequenceBarrier barrier) {
-				return new DeadlineBasedEventProcessor<>(clock, eventHandler, eventProvider, barrier, exceptionCallback);
+				return new DeadlineBasedEventProcessor<>(_metricContext, clock, eventHandler, eventProvider, barrier, exceptionCallback);
 			}
 		}, sequencesToTrack);
 	}

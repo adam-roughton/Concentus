@@ -30,6 +30,7 @@ import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessengerMutex;
 import com.adamroughton.concentus.messaging.zmq.ZmqSocketMessenger;
+import com.adamroughton.concentus.metric.NullMetricContext;
 import com.adamroughton.concentus.util.Util;
 import com.google.caliper.Param;
 import com.lmax.disruptor.Sequence;
@@ -60,7 +61,7 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 		_recvQueue = new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", 
 				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _header.getEventOffset())), 
 				1, 
-				new YieldingWaitStrategy()));
+				new YieldingWaitStrategy()), new NullMetricContext());
 		_recvQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		_sendSocket = context.socket(ZMQ.DEALER);

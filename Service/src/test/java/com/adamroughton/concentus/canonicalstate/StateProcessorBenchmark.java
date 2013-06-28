@@ -30,6 +30,7 @@ import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.events.StateInputEvent;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.metric.LogMetricContext;
+import com.adamroughton.concentus.metric.NullMetricContext;
 import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.Sequence;
 import com.lmax.disruptor.YieldingWaitStrategy;
@@ -53,7 +54,7 @@ public class StateProcessorBenchmark {
 		
 		_sendBuffer = new EventQueueImpl<>(new SingleProducerQueueStrategy<byte[]>("", Util.msgBufferFactory(bufferSize), 
 				1,
-				new YieldingWaitStrategy()));
+				new YieldingWaitStrategy()), new NullMetricContext());
 		_sendBuffer.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		_header = new IncomingEventHeader(0, 2);

@@ -20,6 +20,10 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.metric.CountMetric;
+import com.adamroughton.concentus.metric.MetricContext;
+import com.adamroughton.concentus.metric.MetricGroup;
+import com.adamroughton.concentus.metric.StatsMetric;
 import com.lmax.disruptor.AlertException;
 import com.lmax.disruptor.DataProvider;
 import com.lmax.disruptor.EventProcessor;
@@ -40,20 +44,34 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 	private final SequenceBarrier _barrier;
 	private final FatalExceptionCallback _exceptionCallback;
 	
+	private final MetricContext _metricContext;
+	private final MetricGroup _metrics;
+	private final StatsMetric _pendingEventCountStatsMetric;
+	private final CountMetric _onDeadlineInvocationThroughputMetric;
+	private final CountMetric _moveToDeadlineInvocationThroughputMetric;
+	
 	public DeadlineBasedEventProcessor(
+			MetricContext metricContext,
 			Clock clock,
 			DeadlineBasedEventHandler<T> eventHandler,
 			DataProvider<T> eventProvider,
 			SequenceBarrier barrier,
 			FatalExceptionCallback exceptionCallback) {
 		_clock = Objects.requireNonNull(clock);
-		//_eventHandler = new TrackingDeadlineBasedEventHandlerDecorator<>(eventHandler, clock);// Objects.requireNonNull(eventHandler);
+
 		_eventHandler = Objects.requireNonNull(eventHandler);
 		_eventProvider = Objects.requireNonNull(eventProvider);
 		_barrier = Objects.requireNonNull(barrier);
 		_exceptionCallback = Objects.requireNonNull(exceptionCallback);
 		
 		_sequence = new Sequence(-1);
+		
+		_metricContext = Objects.requireNonNull(metricContext);
+		_metrics = new MetricGroup();
+		String reference = String.format("DeadlineBasedProcessor[%s]", _eventHandler.name());
+		_pendingEventCountStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "pendingEventCountStats", false));
+		_onDeadlineInvocationThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "onDeadlineInvocationThroughout", false));
+		_moveToDeadlineInvocationThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "moveToDeadlineInvocationThroughput", false));
 	}
 	
 	@Override
@@ -68,12 +86,15 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 			((LifecycleAware)_eventHandler).onStart();
 		}
 		
+		long nextMetricTime = -1;
 		long nextSequence = _sequence.get() + 1;
 		long availableSeq = -1;
 		while(true) {
 			try {
 				long pendingCount = _barrier.getCursor() - (nextSequence - 1);
+				_pendingEventCountStatsMetric.push(pendingCount);
 				long nextDeadline = _eventHandler.moveToNextDeadline(pendingCount);
+				_moveToDeadlineInvocationThroughputMetric.push(1);
 				
 				// wait until the next sequence
 				long remainingTime = millisUntil(nextDeadline, _clock);
@@ -94,6 +115,12 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 				} while (remainingTime > 0);
 				
 				_eventHandler.onDeadline();
+				_onDeadlineInvocationThroughputMetric.push(1);
+				
+				if (_clock.currentMillis() >= nextMetricTime) {
+					_metrics.publishPending();
+					nextMetricTime = _metrics.nextBucketReadyTime();
+				}
 				
 			} catch (final AlertException eAlert) {
 				if (!_running.get()) {

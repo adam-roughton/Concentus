@@ -58,6 +58,7 @@ import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager.StubMessengerConfigurator;
 import com.adamroughton.concentus.metric.LogMetricContext;
+import com.adamroughton.concentus.metric.NullMetricContext;
 import com.netflix.curator.framework.api.CuratorWatcher;
 
 import static com.adamroughton.concentus.ConcentusServiceState.*;
@@ -242,7 +243,7 @@ public class ClientHandlerPerfTest {
 				});
 			}
 			
-		}, new StandardEventQueueFactory(), new DefaultClock(), new StubConfiguration(), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
+		}, new StandardEventQueueFactory(new NullMetricContext()), new DefaultClock(), new StubConfiguration(), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
 		_clientHandler = new ClientHandlerService(concentusHandle, 
 				new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), 
 				new DefaultClock()));
