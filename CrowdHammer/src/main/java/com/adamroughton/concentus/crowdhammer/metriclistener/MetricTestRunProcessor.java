@@ -28,8 +28,6 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Objects;
 
-import uk.co.real_logic.intrinsics.ComponentFactory;
-
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.events.EventType;
@@ -40,24 +38,14 @@ import com.adamroughton.concentus.messaging.patterns.EventPattern;
 import com.adamroughton.concentus.messaging.patterns.EventReader;
 import com.adamroughton.concentus.metric.MetricType;
 import com.adamroughton.concentus.util.RunningStats;
-import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
-import com.lmax.disruptor.collections.Histogram;
-import com.adamroughton.concentus.InitialiseDelegate;
 
-public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAware, Closeable {
+public class MetricTestRunProcessor implements EventHandler<byte[]>, LifecycleAware, Closeable {
 
-	static {
-		try {
-			Class.forName("org.sqlite.JDBC");
-		} catch (ClassNotFoundException e) {
-			throw new RuntimeException(String.format("The driver for handling the sqlite database " +
-					"for metric results was not found: '%s'", e.getMessage()), e);
-		}
-	}
+
 	
 	private final IncomingEventHeader _subHeader;
 	
@@ -69,17 +57,12 @@ public class MetricEventProcessor implements EventHandler<byte[]>, LifecycleAwar
 	private Connection _connection;
 	private BufferedWriter _latencyFileWriter;
 	
-	public MetricEventProcessor(IncomingEventHeader subHeader) {
+	public MetricTestRunProcessor(IncomingEventHeader subHeader) {
 		/*
 		 * Establish a file that can be used for the database for these runs
 		 */
 		
-		try {
-			_connection = DriverManager.getConnection("jdbc:sqlite:(databasefile)");
-		} catch (SQLException e1) {
-			// TODO Auto-generated catch block
-			e1.printStackTrace();
-		}
+		
 		
 		
 		_subHeader = Objects.requireNonNull(subHeader);

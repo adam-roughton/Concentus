@@ -7,6 +7,7 @@ import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.MetricGroup;
 import com.adamroughton.concentus.metric.StatsMetric;
+import com.adamroughton.concentus.util.Util;
 
 final class MetricCollectingEventPublisher<T> implements EventQueuePublisher<T>, PrePublishDelegate {
 
@@ -99,14 +100,14 @@ final class MetricCollectingEventPublisher<T> implements EventQueuePublisher<T>,
 	}
 
 	private void emitMetricIfNeeded(String publisherName) {
+		_capacityPercentageStatsMetric.push(getCapacityPercentage());
 		if (_clock.currentMillis() >= _metrics.nextBucketReadyTime()) {
-			_capacityPercentageStatsMetric.push(getCapacityPercentage());
 			_metrics.publishPending();
 		}
 	}
 	
 	private double getCapacityPercentage() {
-		return (1 - ((double) _decoratedStrategy.remainingCapacity() / (double) _decoratedStrategy.getLength())) * 100;
+		return 100 - Util.getPercentage(_decoratedStrategy.remainingCapacity(), _decoratedStrategy.getLength());
 	}
 
 }

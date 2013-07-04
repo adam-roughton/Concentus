@@ -75,5 +75,12 @@ public abstract class MetricContextBase implements MetricContext {
 	public final MetricBucketInfo getMetricBucketInfo() {
 		return _bucketInfo;
 	}
+
+	@Override
+	public final Clock getClock() {
+		return _clock;
+	}
+	
+	
 	
 }

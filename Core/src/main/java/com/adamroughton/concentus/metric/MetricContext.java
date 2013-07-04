@@ -1,5 +1,7 @@
 package com.adamroughton.concentus.metric;
 
+import com.adamroughton.concentus.Clock;
+
 public interface MetricContext {
 	
 	StatsMetric newStatsMetric(String reference, String metricName, boolean isCumulative);
@@ -9,6 +11,8 @@ public interface MetricContext {
 	CountMetric newThroughputMetric(String reference, String metricName, boolean isCumulative);
 	
 	MetricBucketInfo getMetricBucketInfo();
+	
+	Clock getClock();
 
 	void start();
 	

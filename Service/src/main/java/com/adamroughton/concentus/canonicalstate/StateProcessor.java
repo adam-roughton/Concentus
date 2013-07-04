@@ -56,7 +56,6 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 	
 	private final MetricContext _metricContext;
 	private final MetricGroup _metrics;
-	private final CountMetric _eventThroughputMetric;
 	private final CountMetric _errorCountMetric;
 	
 	private long _lastTickTime = -1;
@@ -84,7 +83,6 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 		
 		_metrics = new MetricGroup();
 		String reference = name();
-		_eventThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "eventThroughput", false));
 		_errorCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "errorCount", false));
 	}
 	
@@ -102,7 +100,6 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 				
 			});
 		}
-		_eventThroughputMetric.push(1);
 		if (!wasValid) _errorCountMetric.push(1);
 	}
 
@@ -126,8 +123,6 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 			_updateId++;
 			sendUpdateEvent(_updateId, _simTime);
 			sendClientHandlerEvents(_updateId);
-			
-			_clientHandlerEventTracker.clear();
 		}
 	}
 
@@ -165,8 +160,10 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 		long inputId = event.getInputId();
 		_clientHandlerEventTracker.put(clientHandlerId, inputId);
 		
-		// get input bytes
-		_stateLogic.collectInput(event.getInputBuffer());
+		if (!event.isHeartbeat()) {
+			// get input bytes
+			_stateLogic.collectInput(event.getInputBuffer());
+		}
 	}
 	
 	private void sendUpdateEvent(final long updateId, final long simTime) {

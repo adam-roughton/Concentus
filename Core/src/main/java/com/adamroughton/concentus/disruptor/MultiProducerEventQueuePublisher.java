@@ -45,7 +45,6 @@ public final class MultiProducerEventQueuePublisher<T> implements EventQueuePubl
 	@Override
 	public T next() {
 		if (!_isPending || publish()) {
-			_isPending = true;
 			return _tmpBuffer;
 		} else {
 			return null;
@@ -54,6 +53,8 @@ public final class MultiProducerEventQueuePublisher<T> implements EventQueuePubl
 
 	@Override
 	public boolean publish() {
+		_isPending = true;
+		
 		long seq;
 		if (_isBlocking) {
 			seq = _ringBuffer.next();

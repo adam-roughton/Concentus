@@ -28,7 +28,6 @@ import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService;
-import com.adamroughton.concentus.cluster.data.WorkerAllocationInfo;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.config.ConfigurationUtil;
@@ -40,7 +39,6 @@ import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.events.EventType;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
@@ -66,14 +64,12 @@ public class MetricListenerService implements CrowdHammerService {
 	
 	private ProcessingPipeline<byte[]> _pipeline;
 	
-	private MetricEventProcessor _metricProcessor;
+	private MetricTestRunProcessor _metricProcessor;
 	private EventListener _eventListener;
 	
 	private final SocketSettings _subSocketSettings;
 	private int _subSocketId;
 	private final IntSet _sutMetricConnIdSet = new IntArraySet();
-	
-	private int _clientCount = 0;
 	
 	public MetricListenerService(ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
@@ -110,7 +106,7 @@ public class MetricListenerService implements CrowdHammerService {
 	}
 	
 	private void onInit(ClusterWorkerHandle cluster) {
-		_metricProcessor = new MetricEventProcessor(_header);
+		_metricProcessor = new MetricTestRunProcessor(_header);
 	}
 	
 	private void onInitTest(ClusterWorkerHandle cluster) {

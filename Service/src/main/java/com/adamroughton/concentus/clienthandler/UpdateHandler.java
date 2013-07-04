@@ -15,8 +15,12 @@
  */
 package com.adamroughton.concentus.clienthandler;
 
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+
 import uk.co.real_logic.intrinsics.ComponentFactory;
 
+import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.InitialiseDelegate;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
@@ -26,8 +30,12 @@ import com.adamroughton.concentus.messaging.events.StateUpdateEvent;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.RouterPattern;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.metric.MetricContext;
+import com.adamroughton.concentus.metric.MetricGroup;
+import com.adamroughton.concentus.metric.StatsMetric;
 import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
 import com.adamroughton.concentus.util.SlidingWindowLongMap;
+import com.adamroughton.concentus.util.Util;
 
 class UpdateHandler {
 
@@ -37,9 +45,24 @@ class UpdateHandler {
 	private final StateUpdateEvent _updateEvent = new StateUpdateEvent();
 	private final ClientUpdateEvent _clientUpdateEvent = new ClientUpdateEvent();
 	
-	public UpdateHandler(int bufferSize) {
+	private final MetricContext _metricContext;
+	private final StatsMetric _updateBroadcastMillisStatsMetric;
+	private final StatsMetric _updateBroadcastMillisWaitingForSendStatsMetric;
+	private final StatsMetric _updateBroadcastPercentWaitingForSendStatsMetric;
+	private final StatsMetric _updateBroadcastMillisLookingUpHighestActionIdStatsMetric;
+	private final StatsMetric _updateBroadcastPercentLookingUpHighestActionIdStatsMetric;
+	
+	public UpdateHandler(int bufferSize, String metricReference, MetricGroup metrics, MetricContext metricContext) {
 		if (bufferSize < 0) 
 			throw new IllegalArgumentException("The buffer size must be greater than 0.");
+		_metricContext = Objects.requireNonNull(metricContext);		
+		_updateBroadcastMillisStatsMetric = metrics.add(_metricContext.newStatsMetric(metricReference, "updateBroadcastMillisStats", false));
+		_updateBroadcastMillisWaitingForSendStatsMetric = metrics.add(_metricContext.newStatsMetric(metricReference, "updateBroadcastMillisWaitingForSendStats", false));
+		_updateBroadcastPercentWaitingForSendStatsMetric = metrics.add(_metricContext.newStatsMetric(metricReference, "updateBroadcastPercentWaitingForSendStats", false));
+		_updateBroadcastMillisLookingUpHighestActionIdStatsMetric = metrics.add(
+				_metricContext.newStatsMetric(metricReference, "updateBroadcastMillisLookingUpHighestActionIdStats", false));
+		_updateBroadcastPercentLookingUpHighestActionIdStatsMetric = metrics.add(
+				_metricContext.newStatsMetric(metricReference, "updateBroadcastPercentLookingUpHighestActionIdStats", false));
 		
 		_updateBuffer = new StructuredSlidingWindowMap<>(bufferSize, 
 				byte[].class,
@@ -82,6 +105,11 @@ class UpdateHandler {
 	}
 	
 	public void sendUpdates(final long updateId, final Iterable<ClientProxy> clients, final SendQueue<OutgoingEventHeader> updateQueue) {
+		Clock clock = _metricContext.getClock();
+		long broadcastStartTime = clock.nanoTime();
+		long nanosWaitingForSend = 0;
+		long nanosGettingHighestActionId = 0;
+		
 		final long highestHandlerSeq = _updateToInputSeqMap.getDirect(updateId);
 		final byte[] updateBufferEntry = _updateBuffer.get(updateId);
 		try {
@@ -89,8 +117,11 @@ class UpdateHandler {
 			for (final ClientProxy client : clients) {
 				if (client.isActive()) {
 					final long nextUpdateId = client.getLastUpdateId() + 1;
+					long lookupStart = clock.nanoTime();
 					final long highestInputAction = client.lookupActionId(highestHandlerSeq);
+					nanosGettingHighestActionId += clock.nanoTime() - lookupStart;
 					
+					long sendStartTime = clock.nanoTime();
 					updateQueue.send(RouterPattern.asTask(client.getSocketId(), _clientUpdateEvent, new EventWriter<OutgoingEventHeader, ClientUpdateEvent>() {
 		
 						@Override
@@ -107,11 +138,18 @@ class UpdateHandler {
 						}
 						
 					}));
+					nanosWaitingForSend += clock.nanoTime() - sendStartTime;
 				}
 			}
 		} finally {
 			_updateEvent.releaseBackingArray();
 		}
+		long broadcastNanos = clock.nanoTime() - broadcastStartTime;
+		_updateBroadcastMillisStatsMetric.push(TimeUnit.NANOSECONDS.toMillis(broadcastNanos));
+		_updateBroadcastMillisWaitingForSendStatsMetric.push(TimeUnit.NANOSECONDS.toMillis(nanosWaitingForSend));
+		_updateBroadcastPercentWaitingForSendStatsMetric.push(Util.getPercentage(nanosWaitingForSend, broadcastNanos));
+		_updateBroadcastMillisLookingUpHighestActionIdStatsMetric.push(TimeUnit.NANOSECONDS.toMillis(nanosGettingHighestActionId));
+		_updateBroadcastPercentLookingUpHighestActionIdStatsMetric.push(Util.getPercentage(nanosGettingHighestActionId, broadcastNanos));
 	}
 	
 }

@@ -35,8 +35,8 @@ public final class TrackingMessengerDecorator implements Messenger {
 	private final CountMetric _sentThroughputMetric;
 	private final CountMetric _failedSendThroughputMetric;
 	private final CountMetric _recvThroughputMetric;
-	private final StatsMetric _nanosBlockingForSendStatsMetric;
-	private final StatsMetric _nanosBlockingForRecvStatsMetric;
+	private final StatsMetric _sendCallNanosStatsMetric;
+	private final StatsMetric _recvCallNanosStatsMetric;
 	
 	public TrackingMessengerDecorator(MetricContext metricContext, Messenger messenger, Clock clock) {
 		_messenger = Objects.requireNonNull(messenger);
@@ -50,11 +50,13 @@ public final class TrackingMessengerDecorator implements Messenger {
 		_sentThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "sentThroughput", false));
 		_failedSendThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "failedSendThroughput", false));
 		_recvThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "recvThroughput", false));
-		_nanosBlockingForSendStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "nanosBlockingForSendStats", false));
-		_nanosBlockingForRecvStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "nanosBlockingForRecvStats", false));
+		_sendCallNanosStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "sendCallNanosStatsMetric", false));
+		_recvCallNanosStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "recvCallNanosStatsMetric", false));
 	}
 	
-	private boolean onSend(boolean wasSent) {
+	private boolean onSend(long startTime, boolean wasSent) {
+		long sendNanos = _clock.nanoTime() - startTime;
+		_sendCallNanosStatsMetric.push(sendNanos);
 		_sendInvocationThroughputMetric.push(1);
 		if (wasSent) {
 			_sentThroughputMetric.push(1);
@@ -65,25 +67,15 @@ public final class TrackingMessengerDecorator implements Messenger {
 		return wasSent;
 	}
 	
-	private boolean onBlockingSend(long startTime, boolean wasSent) {
-		long blockingDuration = _clock.nanoTime() - startTime;
-		_nanosBlockingForSendStatsMetric.push(blockingDuration);
-		return onSend(wasSent);
-	}
-	
-	private boolean onRecv(boolean didRecv) {
+	private boolean onRecv(long startTime, boolean didRecv) {
+		long recvNanos = _clock.nanoTime() - startTime;
+		_recvCallNanosStatsMetric.push(recvNanos);
 		_recvInvocationThroughputMetric.push(1);
 		if (didRecv) {
 			_recvThroughputMetric.push(1);
 			emitMetricIfReady();
 		}
 		return didRecv;
-	}
-	
-	private boolean onBlockingRecv(long startTime, boolean didRecv) {
-		long blockingDuration = _clock.nanoTime() - startTime;
-		_nanosBlockingForRecvStatsMetric.push(blockingDuration);
-		return onRecv(didRecv);
 	}
 	
 	private void emitMetricIfReady() {
@@ -95,23 +87,15 @@ public final class TrackingMessengerDecorator implements Messenger {
 	@Override
 	public boolean send(byte[] outgoingBuffer, OutgoingEventHeader header,
 			boolean isBlocking) throws MessengerClosedException {
-		if (isBlocking) {
-			long startTime = _clock.nanoTime();
-			return onBlockingSend(startTime, _messenger.send(outgoingBuffer, header, isBlocking));
-		} else {
-			return onSend(_messenger.send(outgoingBuffer, header, isBlocking));
-		}
+		long startTime = _clock.nanoTime();
+		return onSend(startTime, _messenger.send(outgoingBuffer, header, isBlocking));
 	}
 
 	@Override
 	public boolean recv(byte[] eventBuffer, IncomingEventHeader header,
 			boolean isBlocking) throws MessengerClosedException {
-		if (isBlocking) {
-			long startTime = _clock.nanoTime();
-			return onBlockingRecv(startTime, _messenger.recv(eventBuffer, header, isBlocking));
-		} else {
-			return onRecv(_messenger.recv(eventBuffer, header, isBlocking));
-		}
+		long startTime = _clock.nanoTime();
+		return onRecv(startTime, _messenger.recv(eventBuffer, header, isBlocking));
 	}
 
 	@Override

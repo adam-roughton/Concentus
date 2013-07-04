@@ -21,6 +21,7 @@ import uk.co.real_logic.intrinsics.ComponentFactory;
 import uk.co.real_logic.intrinsics.StructuredArray;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
@@ -56,11 +57,12 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	private final SendQueue<OutgoingEventHeader> _pubSendQueue;
 	private final SendQueue<OutgoingEventHeader> _routerSendQueue;
 	
-	private final UpdateHandler _updateHandler = new UpdateHandler(32);
+	private final UpdateHandler _updateHandler;
 	private final IncomingEventHeader _incomingQueueHeader;
 	
 	private long _inputId = 0;
 	private long _nextClientId = 0;
+	private long _nextHeartbeat = -1;
 	
 	private final StructuredArray<ClientProxy> _clientLookup = StructuredArray.newInstance(128 * 1024, ClientProxy.class, new ComponentFactory<ClientProxy>() {
 
@@ -90,7 +92,8 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	private final CountMetric _updateSendThroughputMetric;
 	private final CountMetric _activeClientCountMetric;
 	
-	private long _nextMetricTime = -1;
+	private long _nextDeadline = 0;
+	private boolean _sendHeartbeatFlag = false;
 
 	public ClientHandlerProcessor(
 			Clock clock,
@@ -121,6 +124,8 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 		_incomingUpdateInfoThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "incomingUpdateInfoThroughput", false));
 		_updateSendThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "updateSendThroughput", false));
 		_activeClientCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "activeClientCount", true));
+		
+		_updateHandler = new UpdateHandler(32, reference, _metrics, _metricContext);
 	}
 	
 	/**
@@ -138,7 +143,9 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	@Override
 	public void onEvent(byte[] eventBytes, long sequence, boolean isEndOfBatch)
 			throws Exception {
-		if (!_incomingQueueHeader.isValid(eventBytes)) return;
+		if (!_incomingQueueHeader.isValid(eventBytes)) {
+			return;
+		}
 		
 		_incomingThroughputMetric.push(1);
 		
@@ -179,10 +186,10 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 						int contentOffset = EventHeader.getSegmentOffset(contentMetaData);
 						int contentLength = EventHeader.getSegmentLength(contentMetaData);
 						_updateHandler.addUpdate(updateId, event.getBackingArray(), contentOffset, contentLength);
+						_incomingUpdateThroughputMetric.push(1);
 						if (_updateHandler.hasFullUpdateData(updateId)) {
 							_updateHandler.sendUpdates(updateId, _clientLookup, _routerSendQueue);
 						}
-						_incomingUpdateThroughputMetric.push(1);
 					}
 					
 				});				
@@ -205,18 +212,30 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	
 	@Override
 	public void onDeadline() {
-		_metrics.publishPending();
+		if (_sendHeartbeatFlag) {
+			sendHeartbeat();
+			_sendHeartbeatFlag = false;
+		} else {
+			_metrics.publishPending();
+		}
 	}
 	
 	@Override
 	public long moveToNextDeadline(long pendingEventCount) {
-		_nextMetricTime = _metrics.nextBucketReadyTime();
-		return _nextMetricTime;
+		long nextMetricDeadline = _metrics.nextBucketReadyTime();
+		if (_nextHeartbeat < nextMetricDeadline) {
+			_sendHeartbeatFlag = true;
+			_nextDeadline = _nextHeartbeat;
+		} else {
+			_sendHeartbeatFlag = false;
+			_nextDeadline = nextMetricDeadline;
+		}
+		return _nextDeadline;
 	}
 	
 	@Override
 	public long getDeadline() {
-		return _nextMetricTime;
+		return _nextDeadline;
 	}
 	
 	private void onClientConnected(final byte[] clientSocketId, final ClientConnectEvent connectEvent) {
@@ -268,17 +287,36 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 					long handlerInputId = _inputId++;
 					event.setClientHandlerId(_clientHandlerId);
 					event.setInputId(handlerInputId);
+					event.setIsHeartbeat(false);
 					int inputBytes = inputEvent.copyFromInputBytes(event.getBackingArray(), event.getInputOffset(), event.getAvailableInputBufferLength());
 					event.setUsedLength(inputBytes);
 					client.storeAssociation(inputEvent.getClientActionId(), handlerInputId);
 				}
 				
 			}));
+			_nextHeartbeat = _clock.currentMillis() + Constants.METRIC_TICK;
 			_inputActionThroughputMetric.push(1);
 		}
 	}
 	
+	private void sendHeartbeat() {
+		_pubSendQueue.send(PubSubPattern.asTask(_stateInputEvent, new EventWriter<OutgoingEventHeader, StateInputEvent>() {
+			
+			@Override
+			public void write(OutgoingEventHeader header, StateInputEvent event) {
+				long handlerInputId = _inputId++;
+				event.setClientHandlerId(_clientHandlerId);
+				event.setInputId(handlerInputId);
+				event.setUsedLength(0);
+				event.setIsHeartbeat(true);
+			}
+			
+		}));
+		_nextHeartbeat = _clock.currentMillis() + Constants.METRIC_TICK;
+	}
+	
 	private void onUpdateInfoEvent(final StateUpdateInfoEvent updateInfoEvent) {
+		_incomingUpdateInfoThroughputMetric.push(1);
 		long highestSeq = -1;
 		boolean handlerFound = false;
 		for (int i = 0; i < updateInfoEvent.getEntryCount() && !handlerFound; i++) {
@@ -295,7 +333,6 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 				_updateSendThroughputMetric.push(1);
 			}
 		}
-		_incomingUpdateInfoThroughputMetric.push(1);
 	}
 
 	@Override

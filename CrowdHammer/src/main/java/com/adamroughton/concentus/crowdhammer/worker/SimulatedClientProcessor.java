@@ -56,9 +56,13 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	private final MetricContext _metricContext;
 	private final MetricGroup _metrics;
 	private final CountMetric _connectedClientCountMetric;
+	private final CountMetric _connectResRecvCountMetric;
 	private final CountMetric _sentActionThroughputMetric;
 	private final StatsMetric _actionEffectLatencyMetric;
 	private final CountMetric _lateActionEffectCountMetric;	
+	private final StatsMetric _nanosFetchingClientStats;
+	private final StatsMetric _nanosUpdatingClientStats;
+	private final CountMetric _delayedClientActionThroughputMetric;
 	
 	private long _nextClientIndex = -1;
 	private boolean _sendMetric = false;
@@ -88,6 +92,12 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 		_sentActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "sentActionThroughput", false));
 		_actionEffectLatencyMetric = _metrics.add(_metricContext.newStatsMetric(reference, "actionEffectLatency", false));
 		_lateActionEffectCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "lateActionEffectCount", false));
+		_delayedClientActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "delayedClientActionThroughput", false));
+		
+		_nanosFetchingClientStats = _metrics.add(_metricContext.newStatsMetric(reference, "nanosFetchingClient", false));
+		_nanosUpdatingClientStats = _metrics.add(_metricContext.newStatsMetric(reference, "nanosUpdatingClient", false));
+		
+		_connectResRecvCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "connectResCount", true));
 	}
 	
 	@Override
@@ -111,11 +121,16 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 				public void read(IncomingEventHeader header, ClientUpdateEvent event) {
 					long clientId = event.getClientId();
 					long clientIndex = _clientsIndex.get(clientId);
+					long startTime = System.nanoTime();
 					Client updatedClient = _clients.get(clientIndex);
+					_nanosFetchingClientStats.push(System.nanoTime() - startTime);
+					startTime = System.nanoTime();
 					updatedClient.onClientUpdate(event, _actionEffectLatencyMetric, _lateActionEffectCountMetric);
+					_nanosUpdatingClientStats.push(System.nanoTime() - startTime);
 				}
 			});
 		} else if (EventPattern.getEventType(event, _recvHeader) == EventType.CONNECT_RES.getId()) {
+			_connectResRecvCountMetric.push(1);
 			EventPattern.readContent(event, _recvHeader, _connectRes, new EventReader<IncomingEventHeader, ConnectResponseEvent>() {
 
 				@Override
@@ -137,6 +152,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 		} else if (_isSendingInput) {
 			// only process the client if it will not block
 			if (_clientSendQueue.isFull()) {
+				_delayedClientActionThroughputMetric.push(1);
 				_delayedClientDeadline = true;
 			} else {
 				Client client = _clients.get(_nextClientIndex);

@@ -282,4 +282,8 @@ public class Util {
 				stats.getMin());
 	}
 	
+	public static double getPercentage(long numerator, long denominator) {
+		return ((double) numerator / (double) denominator) * 100;
+	}
+	
 }

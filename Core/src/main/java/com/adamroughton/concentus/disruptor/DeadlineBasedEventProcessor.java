@@ -16,6 +16,7 @@
 package com.adamroughton.concentus.disruptor;
 
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.concentus.Clock;
@@ -49,6 +50,10 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 	private final StatsMetric _pendingEventCountStatsMetric;
 	private final CountMetric _onDeadlineInvocationThroughputMetric;
 	private final CountMetric _moveToDeadlineInvocationThroughputMetric;
+	private final CountMetric _eventThroughputMetric;
+	private final StatsMetric _lateDeadlineMillisStatsMetric;
+	private final StatsMetric _eventBatchSizeStatsMetric;
+	private final StatsMetric _eventBatchProcMillisStatsMetric;
 	
 	public DeadlineBasedEventProcessor(
 			MetricContext metricContext,
@@ -72,6 +77,10 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 		_pendingEventCountStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "pendingEventCountStats", false));
 		_onDeadlineInvocationThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "onDeadlineInvocationThroughout", false));
 		_moveToDeadlineInvocationThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "moveToDeadlineInvocationThroughput", false));
+		_eventThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "eventThroughput", false));
+		_lateDeadlineMillisStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "lateMetricMillisStats", false));
+		_eventBatchSizeStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "eventBatchSizeStats", false));
+		_eventBatchProcMillisStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "eventBatchProcMillisStats", false));
 	}
 	
 	@Override
@@ -100,20 +109,26 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 				long remainingTime = millisUntil(nextDeadline, _clock);
 				
 				// process at least one event per deadline
+				long batchStartTime = _clock.nanoTime();
 				do {
 					if (nextSequence <= availableSeq) {
 						_eventHandler.onEvent(_eventProvider.get(nextSequence), nextSequence, nextSequence == availableSeq);
+						_eventThroughputMetric.push(1);
 						 nextSequence++;
 					} else {
 						_sequence.set(nextSequence - 1);
 						_barrier.checkAlert();
+						_eventBatchProcMillisStatsMetric.push(TimeUnit.NANOSECONDS.toMillis(_clock.nanoTime() - batchStartTime));
+						batchStartTime = _clock.nanoTime();
 						remainingTime = millisUntil(nextDeadline, _clock);
 						availableSeq = _barrier.getCursor(); //TODO: busy spin for now; perf with waitFor seems atrocious
+						_eventBatchSizeStatsMetric.push(availableSeq - nextSequence + 1);
 						/* availableSeq = _barrier.waitFor(nextSequence, 
 							remainingTime, TimeUnit.MILLISECONDS);*/
 					}
 				} while (remainingTime > 0);
 				
+				_lateDeadlineMillisStatsMetric.push(_clock.currentMillis() - nextDeadline);
 				_eventHandler.onDeadline();
 				_onDeadlineInvocationThroughputMetric.push(1);
 				

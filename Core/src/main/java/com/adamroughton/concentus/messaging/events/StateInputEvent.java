@@ -23,7 +23,8 @@ public class StateInputEvent extends ByteArrayBackedEvent {
 	
 	private static final int CLIENT_HANDLER_ID_OFFSET = 0;
 	private static final int INPUT_ID_OFFSET = 4;
-	private static final int INPUT_BUFFER_LENGTH_OFFSET = 12;
+	private static final int IS_HEARTBEAT_FLAG = 12;
+	private static final int INPUT_BUFFER_LENGTH_OFFSET = 13;
 	private static final int INPUT_BUFFER_OFFSET = 16;
 	private static final int BASE_SIZE = INPUT_BUFFER_OFFSET;
 
@@ -45,6 +46,14 @@ public class StateInputEvent extends ByteArrayBackedEvent {
 
 	public final void setInputId(long inputId) {
 		MessageBytesUtil.writeLong(getBackingArray(), getOffset(INPUT_ID_OFFSET), inputId);
+	}
+	
+	public final boolean isHeartbeat() {
+		return MessageBytesUtil.readBoolean(getBackingArray(), getOffset(IS_HEARTBEAT_FLAG));
+	}
+	
+	public final void setIsHeartbeat(boolean isHeartbeat) {
+		MessageBytesUtil.writeBoolean(getBackingArray(), IS_HEARTBEAT_FLAG, isHeartbeat);
 	}
 	
 	public final int getInputBufferLength() {

@@ -6,22 +6,22 @@ import com.adamroughton.concentus.util.RunningStats;
 public class NullMetricContext implements MetricContext {
 
 	private final MetricBucketInfo _bucketInfo;
+	private final Clock _clock = new Clock() {
+
+		@Override
+		public long currentMillis() {
+			return 0;
+		}
+
+		@Override
+		public long nanoTime() {
+			return 0;
+		}
+		
+	};
 	
 	public NullMetricContext() {
-		Clock clock = new Clock() {
-
-			@Override
-			public long currentMillis() {
-				return 0;
-			}
-
-			@Override
-			public long nanoTime() {
-				return 0;
-			}
-			
-		};
-		_bucketInfo = new MetricBucketInfo(clock, 1);
+		_bucketInfo = new MetricBucketInfo(_clock, 1);
 	}
 	
 	@Override
@@ -76,6 +76,11 @@ public class NullMetricContext implements MetricContext {
 
 	@Override
 	public void halt() {
+	}
+
+	@Override
+	public Clock getClock() {
+		return _clock;
 	}
 
 }

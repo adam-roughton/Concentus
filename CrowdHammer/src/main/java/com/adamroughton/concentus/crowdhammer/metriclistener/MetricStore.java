@@ -1,17 +1,25 @@
 package com.adamroughton.concentus.crowdhammer.metriclistener;
 
+import java.io.Closeable;
+import java.util.UUID;
+
 import com.adamroughton.concentus.util.RunningStats;
 
-public interface MetricStore {
+public interface MetricStore extends Closeable {
 
-	void pushRunMetaData(int runId, int clientCount);
+	void pushRunMetaData(int runId, int clientCount, long durationMillis);
 	
-	void pushMetricMetaData(int sourceId, int metricId, String reference, String metricName);
+	void pushSourceMetaData(UUID sourceId, String name);
 	
-	void pushStatsMetric(int runId, int sourceId, int metricId, long bucketId, long duration, RunningStats runningStats);
+	void pushMetricMetaData(int runId, UUID sourceId, int metricId, String reference, String metricName, boolean isCumulative);
 	
-	void pushCountMetric(int runId, int sourceId, int metricId, long bucketId, long duration, long count);
+	void pushStatsMetric(int runId, UUID sourceId, int metricId, long bucketId, long duration, RunningStats runningStats);
 	
-	void pushThroughputMetric(int runId, int sourceId, int metricId, long bucketId, long duration, long count);
+	void pushCountMetric(int runId, UUID sourceId, int metricId, long bucketId, long duration, long count);
 	
+	void pushThroughputMetric(int runId, UUID sourceId, int metricId, long bucketId, long duration, long count);
+	
+	void onEndOfBatch();
+	
+	boolean isClosed();
 }

@@ -21,12 +21,16 @@ import com.adamroughton.concentus.messaging.MessageBytesUtil;
 
 public final class MetricMetaDataEvent extends ByteArrayBackedEvent {
 
+	private static final int MAX_STRING_LENGTH = 100;
+	private static final int STRING_FIELD_LENGTH = MAX_STRING_LENGTH + 4;
+	
 	private static final int SOURCE_ID_OFFSET = 0;
-	private static final int METRIC_ID_OFFSET = 16;
-	private static final int METRIC_TYPE_OFFSET = 20;
-	private static final int REFERENCE_NAME_OFFSET = 24;
-	private static final int METRIC_NAME_OFFSET = 125;
-	private static final int LENGTH = METRIC_NAME_OFFSET + 101;
+	private static final int METRIC_ID_OFFSET = SOURCE_ID_OFFSET + 16;
+	private static final int METRIC_TYPE_OFFSET = METRIC_ID_OFFSET + 4;
+	private static final int IS_CUMULATIVE_OFFSET = METRIC_TYPE_OFFSET + 4;
+	private static final int REFERENCE_NAME_OFFSET = IS_CUMULATIVE_OFFSET + 1;
+	private static final int METRIC_NAME_OFFSET = REFERENCE_NAME_OFFSET + STRING_FIELD_LENGTH;
+	private static final int LENGTH = METRIC_NAME_OFFSET + STRING_FIELD_LENGTH;
 	
 	public MetricMetaDataEvent() {
 		super(EventType.METRIC_META_DATA.getId(), LENGTH);
@@ -56,25 +60,33 @@ public final class MetricMetaDataEvent extends ByteArrayBackedEvent {
 		MessageBytesUtil.writeInt(getBackingArray(), getOffset(METRIC_TYPE_OFFSET), metricType);
 	}
 	
+	public final boolean getIsCumulative() {
+		return MessageBytesUtil.readBoolean(getBackingArray(), getOffset(IS_CUMULATIVE_OFFSET));
+	}
+	
+	public final void setIsCumulative(boolean isCumulative) {
+		MessageBytesUtil.writeBoolean(getBackingArray(), getOffset(IS_CUMULATIVE_OFFSET), isCumulative);
+	}
+	
 	public final String getReferenceName() {
-		return MessageBytesUtil.read8BitCharString(getBackingArray(), REFERENCE_NAME_OFFSET);
+		return MessageBytesUtil.read8BitCharString(getBackingArray(), getOffset(REFERENCE_NAME_OFFSET));
 	}
 	
 	public final void setReference(String referenceName) {
-		if (referenceName.length() > 100) 
+		if (referenceName.length() > MAX_STRING_LENGTH) 
 			throw new IllegalArgumentException(String.format("The referenceName can have up to a maximum " +
-					"of 100 characters (was %d).", referenceName.length()));
+					"of %d characters (was %d).", MAX_STRING_LENGTH, referenceName.length()));
 		MessageBytesUtil.write8BitCharString(getBackingArray(), getOffset(REFERENCE_NAME_OFFSET), referenceName);
 	}
 	
 	public final String getMetricName() {
-		return MessageBytesUtil.read8BitCharString(getBackingArray(), METRIC_NAME_OFFSET);
+		return MessageBytesUtil.read8BitCharString(getBackingArray(), getOffset(METRIC_NAME_OFFSET));
 	}
 	
 	public final void setMetricName(String metricName) {
-		if (metricName.length() > 100) 
+		if (metricName.length() > MAX_STRING_LENGTH) 
 			throw new IllegalArgumentException(String.format("The metricName can have up to a maximum " +
-					"of 100 characters (was %d).", metricName.length()));
+					"of %d characters (was %d).", MAX_STRING_LENGTH, metricName.length()));
 		MessageBytesUtil.write8BitCharString(getBackingArray(), getOffset(METRIC_NAME_OFFSET), metricName);
 	}
 	
