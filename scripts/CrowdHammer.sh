@@ -66,13 +66,13 @@ cd `dirname $0`
 
 if [[ $1 = "Coordinator" ]]; then
    # start ZooKeeper
-   java -cp concentus-core-1.0-SNAPSHOT.jar:lib/* com.adamroughton.concentus.cluster.TestZooKeeperProcess 50000 &
+   java -XX:+UseCompressedOops -server -d64 -cp concentus-core-1.0-SNAPSHOT.jar:lib/* com.adamroughton.concentus.cluster.TestZooKeeperProcess 50000 &
    ZPID=$!
 fi
    
 # start the node
 CLASSPATH="concentus-core-1.0-SNAPSHOT.jar:concentus-crowdhammer-1.0-SNAPSHOT.jar:concentus-service-1.0-SNAPSHOT.jar:lib/*"
-java -cp $CLASSPATH -Djava.library.path=/usr/local/lib -Xmx4g $MAIN -z $ZOO_KEEPER_ADDRESS:50000 -p config.yaml -a $ADDRESS $ADDITIONAL
+java -cp $CLASSPATH -Djava.library.path=/usr/local/lib -Xmx4g -XX:+UseCompressedOops -server -d64 $MAIN -z $ZOO_KEEPER_ADDRESS:50000 -p config.yaml -a $ADDRESS $ADDITIONAL
 
 if [[ $1 = "Coordinator" ]]; then
    # kill ZooKeeper
