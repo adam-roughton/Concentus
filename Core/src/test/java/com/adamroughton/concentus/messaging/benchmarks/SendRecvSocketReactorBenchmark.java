@@ -30,11 +30,14 @@ import com.adamroughton.concentus.disruptor.EventQueueStrategyBase;
 import com.adamroughton.concentus.disruptor.SingleProducerEventQueuePublisher;
 import com.adamroughton.concentus.disruptor.SingleProducerQueueStrategy;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
+import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.SendRecvMessengerReactor;
 import com.adamroughton.concentus.messaging.MessengerMutex;
+import com.adamroughton.concentus.messaging.TrackingMessengerDecorator;
 import com.adamroughton.concentus.messaging.zmq.ZmqSocketMessenger;
+import com.adamroughton.concentus.metric.LogMetricContext;
 import com.adamroughton.concentus.metric.NullMetricContext;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Util;
@@ -46,12 +49,17 @@ import com.lmax.disruptor.YieldingWaitStrategy;
 public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 
 	private final int _port;
-	private ZMQ.Socket _sendSocket;
-	private IncomingEventHeader _recvHeader;
-	private OutgoingEventHeader _sendHeader;
+	private ZMQ.Socket _dealerSocket;
+	private IncomingEventHeader _routerRecvHeader;
+	private OutgoingEventHeader _routerSendHeader;
 	private EventQueue<byte[]> _recvQueue;
 	private EventQueue<byte[]> _sendQueue;
 	private byte[] _msg;
+	private static final byte[] DEALER_SOCKET_ID = Util.intToBytes(15);
+	static {
+		// ensure first bit is raised for Identity (ZMQ reserves IDs starting with binary 0)
+		MessageBytesUtil.writeFlagToByte(DEALER_SOCKET_ID, 0, 0, true);
+	}
 	
 	@Param int messageCount;
 	@Param int messageSize;
@@ -65,17 +73,20 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 	protected void setUp(Context context) throws Exception {
 		super.setUp(context);
 		
-		_recvHeader = new IncomingEventHeader(0, 1);
-		_sendHeader = new OutgoingEventHeader(0, 1);
+		_routerRecvHeader = new IncomingEventHeader(0, 2);
+		_routerSendHeader = new OutgoingEventHeader(0, 2);
 		
+		Sequence infiniteGate = new Sequence();
+		LogMetricContext metricContext = new LogMetricContext(1000, 10000, new DefaultClock());
+		metricContext.start();
 		_recvQueue = new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", 
-				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _recvHeader.getEventOffset())), 
+				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _routerRecvHeader.getEventOffset())), 
 				1, 
-				new YieldingWaitStrategy()), new NullMetricContext());
-		_recvQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
+				new YieldingWaitStrategy()), metricContext);
+		_recvQueue.addGatingSequences(infiniteGate);
 		
 		final RingBuffer<byte[]> sendBuffer = RingBuffer.createSingleProducer(
-				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _recvHeader.getEventOffset())), 
+				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _routerSendHeader.getEventOffset() + DEALER_SOCKET_ID.length)), 
 				1, 
 				new YieldingWaitStrategy());
 		_sendQueue = new EventQueueImpl<>(new EventQueueStrategyBase<byte[]>("", sendBuffer) {
@@ -88,28 +99,35 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 			}
 			
 		}, new NullMetricContext());
-		_sendQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
+		
+		_sendQueue.addGatingSequences(infiniteGate);
+		infiniteGate.set(Long.MAX_VALUE);
 		if (sendAndRecv) {
 			sendBuffer.publish(Long.MAX_VALUE);
 		}
 		
 		byte[] entryContent = sendBuffer.get(0);
-		_sendHeader.setSegmentMetaData(entryContent, 0, 0, messageSize);
-		_sendHeader.setIsValid(entryContent, true);
+		int cursor = _routerSendHeader.getEventOffset();
+		System.arraycopy(DEALER_SOCKET_ID, 0, entryContent, cursor, DEALER_SOCKET_ID.length);
+		_routerSendHeader.setSegmentMetaData(entryContent, 0, cursor, DEALER_SOCKET_ID.length);
+		cursor += DEALER_SOCKET_ID.length;
+		_routerSendHeader.setSegmentMetaData(entryContent, 1, cursor, messageSize);
+		_routerSendHeader.setIsValid(entryContent, true);
 		
-		
-		_sendSocket = context.socket(ZMQ.DEALER);
-		_sendSocket.setLinger(0);
-		_sendSocket.setSendTimeOut(1000);
-		_sendSocket.connect("tcp://127.0.0.1:" + _port);
+		_dealerSocket = context.socket(ZMQ.DEALER);
+		_dealerSocket.setLinger(0);
+		_dealerSocket.setSendTimeOut(1000);
+		_dealerSocket.setIdentity(DEALER_SOCKET_ID);
+		_dealerSocket.setHWM(1000);
+		_dealerSocket.connect("tcp://127.0.0.1:" + _port);
 		
 		_msg = new byte[messageSize];
 	}
 
 	@Override
 	protected void tearDown() throws Exception {
-		if (_sendSocket != null) {
-			_sendSocket.close();
+		if (_dealerSocket != null) {
+			_dealerSocket.close();
 		}
 		super.tearDown();
 	}
@@ -118,15 +136,19 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 	protected Runnable createInteractingParty(Context context,
 			final AtomicBoolean runFlag) {
 		
-		final ZMQ.Socket dealerSocket = context.socket(ZMQ.DEALER);
+		final ZMQ.Socket dealerSocket = context.socket(ZMQ.ROUTER);
 		dealerSocket.setReceiveTimeOut(1000);
 		dealerSocket.setSendTimeOut(1000);
 		dealerSocket.setLinger(0);
-		dealerSocket.setHWM(1); // drop out-bound messages (DEALER behaviour)
+		dealerSocket.setHWM(1000); // drop out-bound messages (DEALER behaviour)
 		dealerSocket.bind("tcp://127.0.0.1:" + _port);
-		ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, "", dealerSocket, new DefaultClock());
 		
-		Mutex<Messenger> mutex = new MessengerMutex<ZmqSocketMessenger>(messenger);
+		LogMetricContext metricContext = new LogMetricContext(1000, 10000, new DefaultClock());
+		metricContext.start();
+		ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, "", dealerSocket, new DefaultClock());
+		TrackingMessengerDecorator trackingMessenger = new TrackingMessengerDecorator(metricContext, messenger, new DefaultClock());
+		
+		Mutex<Messenger> mutex = new MessengerMutex<Messenger>(trackingMessenger);
 		FatalExceptionCallback exCallback = new FatalExceptionCallback() {
 			
 			@Override
@@ -138,7 +160,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 		
 		OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, 1);
 		
-		final SendRecvMessengerReactor reactor = new SendRecvMessengerReactor("", mutex, sendHeader, _recvHeader, _recvQueue, _sendQueue, exCallback);
+		final SendRecvMessengerReactor reactor = new SendRecvMessengerReactor("", mutex, sendHeader, _routerRecvHeader, _recvQueue, _sendQueue, exCallback);
 		
 		return new Runnable() {
 
@@ -156,7 +178,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 	
 	public void timeListener() {
 		while (_recvQueue.getCursor() < messageCount) {
-			_sendSocket.send(_msg, 0, 0);
+			_dealerSocket.send(_msg, 0, 0);
 		}
 	}
 
@@ -165,7 +187,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 			SendRecvSocketReactorBenchmark benchmark = new SendRecvSocketReactorBenchmark(9000);
 			benchmark.messageCount = 1000000;
 			benchmark.messageSize = 512;
-			benchmark.sendAndRecv = true;
+			benchmark.sendAndRecv = false;
 			benchmark.setUp();
 			
 			long startTime = System.nanoTime();

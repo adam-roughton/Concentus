@@ -1,20 +1,22 @@
 package com.adamroughton.concentus.metric;
 
+import it.unimi.dsi.fastutil.objects.ObjectArraySet;
+import it.unimi.dsi.fastutil.objects.ObjectSet;
+
 import java.util.Arrays;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.Set;
 
 public final class MetricGroup {
 
-	private final Set<Metric<?>> _children;
+	private final ObjectSet<Metric<?>> _children;
 	
 	public MetricGroup(Metric<?>... metrics) {
 		this(Arrays.asList(metrics));
 	}
 	
 	public MetricGroup(Collection<Metric<?>> metrics) {
-		_children = new HashSet<>(metrics);
+		_children = new ObjectArraySet<>();
 	}
 	
 	public long nextBucketReadyTime() {

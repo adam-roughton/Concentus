@@ -30,6 +30,7 @@ import com.adamroughton.concentus.messaging.events.StateUpdateEvent;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.RouterPattern;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.MetricGroup;
 import com.adamroughton.concentus.metric.StatsMetric;
@@ -51,6 +52,7 @@ class UpdateHandler {
 	private final StatsMetric _updateBroadcastPercentWaitingForSendStatsMetric;
 	private final StatsMetric _updateBroadcastMillisLookingUpHighestActionIdStatsMetric;
 	private final StatsMetric _updateBroadcastPercentLookingUpHighestActionIdStatsMetric;
+	private final CountMetric _droppedClientUpdateThroughputMetric;
 	
 	public UpdateHandler(int bufferSize, String metricReference, MetricGroup metrics, MetricContext metricContext) {
 		if (bufferSize < 0) 
@@ -63,6 +65,7 @@ class UpdateHandler {
 				_metricContext.newStatsMetric(metricReference, "updateBroadcastMillisLookingUpHighestActionIdStats", false));
 		_updateBroadcastPercentLookingUpHighestActionIdStatsMetric = metrics.add(
 				_metricContext.newStatsMetric(metricReference, "updateBroadcastPercentLookingUpHighestActionIdStats", false));
+		_droppedClientUpdateThroughputMetric = metrics.add(_metricContext.newThroughputMetric(metricReference, "droppedClientUpdateThroughput", false));
 		
 		_updateBuffer = new StructuredSlidingWindowMap<>(bufferSize, 
 				byte[].class,
@@ -122,7 +125,7 @@ class UpdateHandler {
 					nanosGettingHighestActionId += clock.nanoTime() - lookupStart;
 					
 					long sendStartTime = clock.nanoTime();
-					updateQueue.send(RouterPattern.asTask(client.getSocketId(), _clientUpdateEvent, new EventWriter<OutgoingEventHeader, ClientUpdateEvent>() {
+					if (!updateQueue.trySend(RouterPattern.asTask(client.getSocketId(), _clientUpdateEvent, new EventWriter<OutgoingEventHeader, ClientUpdateEvent>() {
 		
 						@Override
 						public void write(OutgoingEventHeader header,
@@ -137,7 +140,9 @@ class UpdateHandler {
 							event.setUsedLength(copyLength);
 						}
 						
-					}));
+					}))) {
+						_droppedClientUpdateThroughputMetric.push(1);
+					}
 					nanosWaitingForSend += clock.nanoTime() - sendStartTime;
 				}
 			}

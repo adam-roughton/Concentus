@@ -15,6 +15,8 @@
  */
 package com.adamroughton.concentus.messaging;
 
+import java.util.Objects;
+
 public final class StubMessenger implements Messenger {
 
 	public static interface FakeRecvDelegate {
@@ -47,13 +49,15 @@ public final class StubMessenger implements Messenger {
 		boolean fakeSend(long sendSeq, byte[] eventBuffer, OutgoingEventHeader header, boolean isBlocking);
 	}
 	
+	private final String _name;
 	private final int[] _endPointIds;
 	private long _recvSeq = 0;
 	private long _sendSeq = 0;
 	private FakeRecvDelegate _fakeRecvDelegate;
 	private FakeSendDelegate _fakeSendDelegate;
 	
-	public StubMessenger(int[] endPointIds) {
+	public StubMessenger(String name, int[] endPointIds) {
+		_name = Objects.requireNonNull(name);
 		_endPointIds = endPointIds;
 		setFakeRecvDelegate(null);
 		setFakeSendDelegate(null);
@@ -106,7 +110,7 @@ public final class StubMessenger implements Messenger {
 
 	@Override
 	public String name() {
-		return "";
+		return _name;
 	}
 
 }

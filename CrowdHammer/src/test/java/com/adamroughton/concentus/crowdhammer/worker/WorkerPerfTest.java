@@ -42,6 +42,7 @@ import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.concentus.crowdhammer.config.StubCrowdHammerConfiguration;
+import com.adamroughton.concentus.disruptor.MetricTrackingEventQueueFactory;
 import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
@@ -55,9 +56,9 @@ import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager;
+import com.adamroughton.concentus.messaging.zmq.TrackingSocketManagerDecorator;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager.StubMessengerConfigurator;
 import com.adamroughton.concentus.metric.LogMetricContext;
-import com.adamroughton.concentus.metric.NullMetricContext;
 import com.netflix.curator.framework.api.CuratorWatcher;
 
 import static com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState.*;
@@ -92,12 +93,19 @@ public class WorkerPerfTest {
 			
 			boolean hasStopped = false;
 			long lastUpdateTime = 0;
+			long remainingClientsToUpdate = 0;
 			
 			long initSeq = 0;
 			
 			@Override
 			public boolean fakeRecv(int[] endPointIds, long recvSeq, byte[] eventBuffer,
 					IncomingEventHeader header, boolean isBlocking) {
+				long now = System.currentTimeMillis();
+				if (_testStartFlag.get() && now - lastUpdateTime > updateTickMillis) {
+					lastUpdateTime = now;
+					remainingClientsToUpdate = clientCount;
+				}
+				
 				if (recvSeq >= updateCount * clientCount + clientCount + initSeq) {
 					if (!hasStopped) {
 						_endLatch.countDown();
@@ -110,7 +118,6 @@ public class WorkerPerfTest {
 				} else {
 					long seq = recvSeq - initSeq;
 					int clientId = (int) (seq % clientCount);
-					long now = System.currentTimeMillis();
 					
 					int cursor = _header.getEventOffset();
 					ByteArrayBackedEvent event;
@@ -120,9 +127,7 @@ public class WorkerPerfTest {
 						_connectResEvent.setCallbackBits(clientId);
 						_connectResEvent.setClientId(clientId);
 						_connectResEvent.setResponseCode(ConnectResponseEvent.RES_OK);
-					} else if (_testStartFlag.get() && now - lastUpdateTime > updateTickMillis) {
-						lastUpdateTime = now;
-						
+					} else if (_testStartFlag.get() && remainingClientsToUpdate > 0) {
 						event = _updateEvent;
 						_updateEvent.setBackingArray(eventBuffer, cursor);
 						_updateEvent.setClientId(clientId);
@@ -130,6 +135,7 @@ public class WorkerPerfTest {
 						_updateEvent.setUpdateId((seq - clientCount) / clientCount);
 						_updateEvent.setHighestInputActionId((seq - clientCount) / clientCount * 10);
 						_updateEvent.setUsedLength(100);
+						remainingClientsToUpdate--;
 					} else {
 						initSeq++;
 						return false;
@@ -163,11 +169,14 @@ public class WorkerPerfTest {
 			
 		};
 		
+		final LogMetricContext metricContext = new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), new DefaultClock());
+		metricContext.start();
+		
 		ConcentusHandle<CrowdHammerConfiguration> concentusHandle = new ConcentusHandle<CrowdHammerConfiguration>(new InstanceFactory<SocketManager>() {
 
 			@Override
 			public SocketManager newInstance() {
-				return new StubSocketManager(new StubMessengerConfigurator() {
+				SocketManager socketManager = new StubSocketManager(new StubMessengerConfigurator() {
 					
 					@Override
 					public void onStubMessengerCreation(int socketId, StubMessenger messenger,
@@ -178,10 +187,11 @@ public class WorkerPerfTest {
 						}
 					}
 				});
+				return new TrackingSocketManagerDecorator(metricContext, socketManager, new DefaultClock());
 			}
 			
-		}, new StandardEventQueueFactory(new NullMetricContext()), new DefaultClock(), new StubCrowdHammerConfiguration(30), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
-		_worker = new WorkerService(concentusHandle, 100000, new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), new DefaultClock()));
+		}, new StandardEventQueueFactory(metricContext), new DefaultClock(), new StubCrowdHammerConfiguration(30), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
+		_worker = new WorkerService(concentusHandle, 100000, metricContext);
 		
 		_clusterHandle = new ClusterWorkerHandle() {
 			
@@ -223,12 +233,7 @@ public class WorkerPerfTest {
 			@Override
 			public byte[] getAssignment(String serviceType) {
 				getAssignmentInvocationCount++;
-				
 				if (getAssignmentInvocationCount == 1) {
-					byte[] workerIdRequest = new byte[8];
-					MessageBytesUtil.writeLong(workerIdRequest, 0, 0);
-					return workerIdRequest;
-				} else if (getAssignmentInvocationCount == 2) {
 					byte[] clientAllocationRequest = new byte[4];
 					MessageBytesUtil.writeInt(clientAllocationRequest, 0, clientCount);
 					return clientAllocationRequest;
@@ -323,7 +328,7 @@ public class WorkerPerfTest {
 			while(true) {
 				WorkerPerfTest perfTest = new WorkerPerfTest(consoleStream);
 				perfTest.updateCount = 100;
-				perfTest.clientCount = 16384;
+				perfTest.clientCount = 32768; // 10000;///16384;
 				perfTest.updateTickMillis = 100;
 				perfTest.setUp();
 				

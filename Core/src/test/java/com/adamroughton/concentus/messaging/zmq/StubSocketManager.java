@@ -72,7 +72,7 @@ public class StubSocketManager implements SocketManager {
 	public int create(int socketType, SocketSettings socketSettings, String name) {
 		int socketId = _socketId++;
 		_socketSettingsLookup.put(socketId, socketSettings);
-		StubMessenger stubMessenger = new StubMessenger(new int[] { socketId } );
+		StubMessenger stubMessenger = new StubMessenger(name, new int[] { socketId } );
 		_configurator.onStubMessengerCreation(socketId, stubMessenger, socketType, socketSettings);
 		_mutexLookup.put(socketId, new MessengerMutex<StubMessenger>(stubMessenger));
 		return socketId;
@@ -109,11 +109,21 @@ public class StubSocketManager implements SocketManager {
 				final Int2ObjectMap<StubMessenger> messengerLookup = new Int2ObjectArrayMap<>();
 				int[] socketIds = new int[messengers.size()];
 				int index = 0;
+				StringBuilder builder = new StringBuilder();
+				builder.append("set[");
+				boolean isFirst = true;
 				for (StubMessenger messenger : messengers) {
 					socketIds[index++] = messenger.getEndpointIds()[0];
 					messengerLookup.put(messenger.getEndpointIds()[0], messenger);
+					builder.append(messenger.name());						
+					if (isFirst) {
+						isFirst = false;
+					} else{
+						builder.append(", ");
+					}
 				}
-				StubMessenger multiMessenger = new StubMessenger(socketIds);
+				builder.append("]");
+				StubMessenger multiMessenger = new StubMessenger(builder.toString(), socketIds);
 				multiMessenger.setFakeRecvDelegate(new FakeRecvDelegate() {
 					
 					@Override

@@ -78,7 +78,7 @@ public class DeadlineBasedEventProcessor<T> implements EventProcessor {
 		_onDeadlineInvocationThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "onDeadlineInvocationThroughout", false));
 		_moveToDeadlineInvocationThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "moveToDeadlineInvocationThroughput", false));
 		_eventThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "eventThroughput", false));
-		_lateDeadlineMillisStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "lateMetricMillisStats", false));
+		_lateDeadlineMillisStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "lateDeadlineMillisStats", false));
 		_eventBatchSizeStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "eventBatchSizeStats", false));
 		_eventBatchProcMillisStatsMetric = _metrics.add(_metricContext.newStatsMetric(reference, "eventBatchProcMillisStats", false));
 	}

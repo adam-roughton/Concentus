@@ -99,20 +99,22 @@ public final class Client {
 		return _clientId != -1;
 	}
 	
-	public void onActionDeadline(SendQueue<OutgoingEventHeader> clientSendQueue, CountMetric sentActionThroughputMetric) {
+	public void onActionDeadline(SendQueue<OutgoingEventHeader> clientSendQueue, CountMetric sentActionThroughputMetric, 
+			CountMetric droppedActionThroughputMetric) {
 		if (_clientId == -1) {
 			// if we are waiting to connect, do nothing with this client
 			if (_isConnecting) return;
 			connect(clientSendQueue);
 			_isConnecting = true;
 		} else {
-			sendInputAction(clientSendQueue, sentActionThroughputMetric);
+			sendInputAction(clientSendQueue, sentActionThroughputMetric, droppedActionThroughputMetric);
 		}
 		_lastActionTime = _clock.currentMillis();
 	}
 	
-	private void sendInputAction(SendQueue<OutgoingEventHeader> clientSendQueue, CountMetric sentActionThroughputMetric) {
-		clientSendQueue.send(EventPattern.asTask(_inputEvent, new EventWriter<OutgoingEventHeader, ClientInputEvent>() {
+	private void sendInputAction(SendQueue<OutgoingEventHeader> clientSendQueue, 
+			CountMetric sentActionThroughputMetric, CountMetric droppedActionThroughputMetric) {		
+		if (!clientSendQueue.trySend(EventPattern.asTask(_inputEvent, new EventWriter<OutgoingEventHeader, ClientInputEvent>() {
 
 			@Override
 			public void write(OutgoingEventHeader header, ClientInputEvent event) throws Exception {
@@ -124,7 +126,9 @@ public final class Client {
 				event.setUsedLength(event.getInputBuffer());
 			}
 			
-		}));
+		}))) {
+			droppedActionThroughputMetric.push(1);
+		}
 		sentActionThroughputMetric.push(1);
 	}
 	

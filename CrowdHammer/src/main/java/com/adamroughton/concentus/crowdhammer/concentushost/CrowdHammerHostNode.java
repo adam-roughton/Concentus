@@ -15,7 +15,6 @@
  */
 package com.adamroughton.concentus.crowdhammer.concentushost;
 
-import java.lang.reflect.TypeVariable;
 import java.util.Arrays;
 import java.util.Map;
 import java.util.Objects;
@@ -62,7 +61,7 @@ public class CrowdHammerHostNode implements ConcentusWorkerNode<CrowdHammerConfi
 	@SuppressWarnings("static-access")
 	private static Option getServiceOption() {
 		return OptionBuilder.withArgName("concentus node class")
-				.hasArgs()
+				.hasArg()
 				.isRequired(true)
 				.withDescription("fully qualified class name of the concentus node to wrap.")
 				.create(CONCENTUS_NODE_CLASS_OPTION);

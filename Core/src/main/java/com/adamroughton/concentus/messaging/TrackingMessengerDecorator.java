@@ -38,6 +38,8 @@ public final class TrackingMessengerDecorator implements Messenger {
 	private final StatsMetric _sendCallNanosStatsMetric;
 	private final StatsMetric _recvCallNanosStatsMetric;
 	
+	private long _nextMetricTime;
+	
 	public TrackingMessengerDecorator(MetricContext metricContext, Messenger messenger, Clock clock) {
 		_messenger = Objects.requireNonNull(messenger);
 		_clock = Objects.requireNonNull(clock);
@@ -79,8 +81,9 @@ public final class TrackingMessengerDecorator implements Messenger {
 	}
 	
 	private void emitMetricIfReady() {
-		if (_clock.currentMillis() >= _metrics.nextBucketReadyTime()) {
+		if (_clock.currentMillis() >= _nextMetricTime) {
 			_metrics.publishPending();
+			_nextMetricTime = _metrics.nextBucketReadyTime();
 		}
 	}
 

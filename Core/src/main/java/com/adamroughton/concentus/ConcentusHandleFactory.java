@@ -35,10 +35,12 @@ public class ConcentusHandleFactory {
 			String zooKeeperAddress, 
 			InetAddress nodeAddress, 
 			final MetricContext metricContext,
-			boolean useTracingComponents) {
+			boolean traceMessengers,
+			boolean traceQueues) {
 		InstanceFactory<SocketManager> socketManagerFactory;
 		EventQueueFactory eventQueueFactory;
-		if (useTracingComponents) {
+		
+		if (traceMessengers) {
 			socketManagerFactory = new InstanceFactory<SocketManager>() {
 				
 				@Override
@@ -46,7 +48,6 @@ public class ConcentusHandleFactory {
 					return new TrackingSocketManagerDecorator(metricContext, new SocketManagerImpl(clock), clock);
 				}
 			};
-			eventQueueFactory = new StandardEventQueueFactory(metricContext);
 		} else {
 			socketManagerFactory = new InstanceFactory<SocketManager>() {
 				
@@ -55,9 +56,13 @@ public class ConcentusHandleFactory {
 					return new SocketManagerImpl(clock);
 				}
 			};
+		}
+		
+		if (traceQueues) {
+			eventQueueFactory = new MetricTrackingEventQueueFactory(metricContext, clock);
+		} else {
 			eventQueueFactory = new StandardEventQueueFactory(metricContext);
 		}
-		eventQueueFactory = new MetricTrackingEventQueueFactory(metricContext, clock);
 		
 		String zooKeeperRoot = config.getZooKeeper().getAppRoot();
 		//TODO move validation into configuration class

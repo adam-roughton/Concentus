@@ -87,7 +87,7 @@ public class SimulatedClientProcessorBenchmark {
 			client.setIsActive(true);
 			
 			// generate connect request
-			client.onActionDeadline(clientSendQueue, nullMetricContext.newCountMetric("", "", false));
+			client.onActionDeadline(clientSendQueue, nullMetricContext.newCountMetric("", "", false), nullMetricContext.newCountMetric("", "", false));
 			
 			connRes.setClientId(i);
 			connRes.setCallbackBits(i);

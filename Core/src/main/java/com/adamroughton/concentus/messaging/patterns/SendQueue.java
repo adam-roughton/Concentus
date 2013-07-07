@@ -31,45 +31,32 @@ public class SendQueue<TSendHeader extends OutgoingEventHeader> {
 			TSendHeader header, 
 			EventQueue<byte[]> sendQueue) {
 		_header = Objects.requireNonNull(header);
-		_sendQueuePublisher = sendQueue.createPublisher(name, true);
-	}
-	
-	/**
-	 * Flag indicating whether the queue was full at the time
-	 * of the call. This indicates whether the queue will block
-	 * on the next send (assuming it remains full).
-	 * @return {@code true} if the queue is full
-	 */
-	public final boolean isFull() {
-		return _sendQueuePublisher.hasUnpublished();
+		_sendQueuePublisher = sendQueue.createPublisher(name, false);
 	}
 	
 	public final void send(SendTask<TSendHeader> task) {
-		byte[] outgoingBuffer = _sendQueuePublisher.next();
-		try {
-			_header.reset(outgoingBuffer);
-			task.write(outgoingBuffer, _header);
-		} finally {
-			_sendQueuePublisher.publish();
-		}
+		while (!trySend(task));
 	}
 	
-	//TODO: this is wrong - need to semantically ensure that
-	// an entry is checked and claimed atomically to avoid
-	// blocking on multi-producer ring buffers
 	/**
 	 * Sends the task if there is space, failing if the call
-	 * would block. This call is not thread safe.
+	 * would block.
 	 * @param task the task to send
 	 * @return {@code true} if the task was send without blocking,
 	 * {@code false} otherwise
 	 */
 	public final boolean trySend(SendTask<TSendHeader> task) {
-		boolean canSendNoBlock = !isFull();
-		if (canSendNoBlock) {
-			send(task);
+		byte[] outgoingBuffer = _sendQueuePublisher.next();
+		if (outgoingBuffer == null) return false;
+		
+		boolean wasSuccessful;
+		try {
+			_header.reset(outgoingBuffer);
+			task.write(outgoingBuffer, _header);
+		} finally {
+			wasSuccessful = _sendQueuePublisher.publish();
 		}
-		return canSendNoBlock;
+		return wasSuccessful;
 	}
 	
 }

@@ -54,14 +54,15 @@ public class ConcentusExecutableOperations {
 		TConfig config = SharedCommandLineOptions.readConfig(workerNode.getConfigType(), commandLineArgs);
 		String zooKeeperAddress = SharedCommandLineOptions.readZooKeeperAddress(commandLineArgs);
 		InetAddress nodeAddress = SharedCommandLineOptions.readNodeAddress(commandLineArgs);
-		boolean useTracingComponents = SharedCommandLineOptions.readTraceOption(commandLineArgs);
+		boolean traceMessengers = SharedCommandLineOptions.readTraceOption("messengers", commandLineArgs);
+		boolean traceQueues = SharedCommandLineOptions.readTraceOption("queues", commandLineArgs);
 		
-		long metricBufferMillis = TimeUnit.SECONDS.toMillis(METRIC_BUFFER_SECONDS) * 5;
+		long metricBufferMillis = TimeUnit.SECONDS.toMillis(METRIC_BUFFER_SECONDS);
 		MetricContext metricContext = new LogMetricContext(Constants.METRIC_TICK, metricBufferMillis, clock);
 		metricContext.start();
 		
 		ConcentusHandle<TConfig> concentusHandle = ConcentusHandleFactory.createHandle(clock, 
-				config, zooKeeperAddress, nodeAddress, metricContext, useTracingComponents);
+				config, zooKeeperAddress, nodeAddress, metricContext, traceMessengers, traceQueues);
 		
 		ClusterListener<TClusterState> concentusWorkerService = workerNode.createService(commandLineArgs, concentusHandle, metricContext);
 		
@@ -94,12 +95,13 @@ public class ConcentusExecutableOperations {
 		TConfig config = SharedCommandLineOptions.readConfig(coordinatorNode.getConfigType(), commandLineArgs);
 		String zooKeeperAddress = SharedCommandLineOptions.readZooKeeperAddress(commandLineArgs);
 		InetAddress nodeAddress = SharedCommandLineOptions.readNodeAddress(commandLineArgs);
-		boolean useTracingComponents = SharedCommandLineOptions.readTraceOption(commandLineArgs);
+		boolean traceMessengers = SharedCommandLineOptions.readTraceOption("messengers", commandLineArgs);
+		boolean traceQueues = SharedCommandLineOptions.readTraceOption("queues", commandLineArgs);
 		
 		MetricContext metricContext = new NullMetricContext();
 		
 		ConcentusHandle<TConfig> concentusHandle = ConcentusHandleFactory.createHandle(clock, 
-				config, zooKeeperAddress, nodeAddress, metricContext, useTracingComponents);
+				config, zooKeeperAddress, nodeAddress, metricContext, traceMessengers, traceQueues);
 		ClusterCoordinatorHandle coordinatorClusterHandle = new ClusterCoordinatorHandle(
 				concentusHandle.getZooKeeperAddress(), 
 				concentusHandle.getConfig().getZooKeeper().getAppRoot(), 
@@ -133,10 +135,21 @@ public class ConcentusExecutableOperations {
 		CommandLineParser parser = new TolerantParser(ignoreUnknownOptions);
 		try {
 			CommandLine commandLine = parser.parse(cliOptions, args);
-			for (Object option : cliOptions.getOptions()) {
-				String opt = ((Option) option).getOpt();
+			for (Object optionObjRef : cliOptions.getOptions()) {
+				Option option = (Option) optionObjRef;
+				String opt = option.getOpt();
 				if (commandLine.hasOption(opt)) {
-					if (((Option) option).hasArgs()) {
+					if (option.hasArgs()) {
+						String[] arguments = commandLine.getOptionValues(opt);
+						StringBuilder builder = new StringBuilder();
+						for (int i = 0; i < arguments.length; i++) {
+							if (i > 0) {
+								builder.append(",");
+							}
+							builder.append(arguments[i].trim());
+						}
+						parsedCommandLine.put(opt, builder.toString());
+					} else if (option.hasArg()) {
 						parsedCommandLine.put(opt, commandLine.getOptionValue(opt).trim());
 					} else {
 						parsedCommandLine.put(opt, "");

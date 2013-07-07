@@ -12,6 +12,7 @@ public abstract class Metric<T> {
 	private final SlidingWindowMap<T> _windowMap;
 	private final MetricAccumulator<T> _accumulator;
 	
+	private final int _windowLength;
 	private long _lastPublishedBucketId;
 	
 	public Metric(
@@ -25,11 +26,12 @@ public abstract class Metric<T> {
 		_accumulator = Objects.requireNonNull(accumulator);
 		_metricPublisher = Objects.requireNonNull(metricPublisher);
 		_windowMap = Objects.requireNonNull(windowMap);
+		_windowLength = _windowMap.getLength();
 		_lastPublishedBucketId = _metricBucketInfo.getCurrentBucketId() - 1;
 	}
 	
 	/**
-	 * Publishes any completed buckets up to the given threshold bucket ID.
+	 * Publishes all pending buckets.
 	 */
 	public final void publishPending() {
 		long currentBucketId = _metricBucketInfo.getCurrentBucketId();
@@ -46,7 +48,7 @@ public abstract class Metric<T> {
 	 * @return the lower bound bucket ID for the metric (i.e. the lowest possible pending bucket ID)
 	 */
 	public final long bucketIdLowerBound() {
-		long lastPossibleWindowBucketId = _windowMap.getHeadIndex() - _windowMap.getLength() + 1;
+		long lastPossibleWindowBucketId = _windowMap.getHeadIndex() - _windowLength + 1;
 		return Math.max(_lastPublishedBucketId + 1, lastPossibleWindowBucketId);
 	}
 	

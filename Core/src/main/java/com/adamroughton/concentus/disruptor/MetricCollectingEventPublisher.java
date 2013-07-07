@@ -10,7 +10,7 @@ import com.adamroughton.concentus.metric.StatsMetric;
 import com.adamroughton.concentus.util.Util;
 
 final class MetricCollectingEventPublisher<T> implements EventQueuePublisher<T>, PrePublishDelegate {
-
+	
 	private final EnqueueTimeCollector _enqueueTimeCollector;
 	private final EventQueueStrategy<T> _decoratedStrategy;
 	private final Clock _clock;
@@ -24,6 +24,12 @@ final class MetricCollectingEventPublisher<T> implements EventQueuePublisher<T>,
 	private final CountMetric _failedPublishThroughputMetric;
 	private final StatsMetric _capacityPercentageStatsMetric;
 	
+	private final long _queueLength;
+	
+	private long _nextPubTime;
+	private final long _capacitySamplePeriod;
+	private long _nextCapacitySampleTime;
+	
 	public MetricCollectingEventPublisher(
 			MetricContext metricContext,
 			EnqueueTimeCollector enqueueTimeCollector,
@@ -32,10 +38,17 @@ final class MetricCollectingEventPublisher<T> implements EventQueuePublisher<T>,
 			EventQueuePublisher<T> decoratedPublisher) {
 		_enqueueTimeCollector = Objects.requireNonNull(enqueueTimeCollector);
 		_decoratedStrategy = Objects.requireNonNull(decoratedStrategy);
+		_queueLength = _decoratedStrategy.getLength();
 		_clock = clock;
 		_decoratedPublisher = Objects.requireNonNull(decoratedPublisher);
 		_decoratedPublisher.setPrePublishDelegate(this);
 		_additionalPrePubDelegate = new NullPrePublishDelegate();
+		
+		long capacitySamplePeriod = metricContext.getMetricBucketInfo().getBucketDuration() / 10;
+		if (capacitySamplePeriod < 10) {
+			capacitySamplePeriod = 10;
+		}
+		_capacitySamplePeriod = capacitySamplePeriod;
 		
 		_metrics = new MetricGroup();
 		String reference = String.format("QueuePublisher(%1$s->%2$s)", _decoratedPublisher.getName(), _decoratedStrategy.getQueueName());
@@ -59,7 +72,7 @@ final class MetricCollectingEventPublisher<T> implements EventQueuePublisher<T>,
 		if (claimedSlot == null) {
 			_failedClaimThroughputMetric.push(1);
 		}
-		emitMetricIfNeeded(_decoratedPublisher.getName());
+		emitMetricIfNeeded();
 		return claimedSlot;
 	}
 
@@ -70,7 +83,7 @@ final class MetricCollectingEventPublisher<T> implements EventQueuePublisher<T>,
 		if (!didPublish) {
 			_failedPublishThroughputMetric.push(1);
 		}
-		emitMetricIfNeeded(_decoratedPublisher.getName());
+		emitMetricIfNeeded();
 		return didPublish;
 	}
 
@@ -99,15 +112,20 @@ final class MetricCollectingEventPublisher<T> implements EventQueuePublisher<T>,
 		return _decoratedPublisher.getName();
 	}
 
-	private void emitMetricIfNeeded(String publisherName) {
-		_capacityPercentageStatsMetric.push(getCapacityPercentage());
-		if (_clock.currentMillis() >= _metrics.nextBucketReadyTime()) {
+	private void emitMetricIfNeeded() {
+		long now = _clock.currentMillis();
+		if (now > _nextCapacitySampleTime) {
+			_capacityPercentageStatsMetric.push(getCapacityPercentage());	
+			_nextCapacitySampleTime = now + _capacitySamplePeriod;
+		}
+		if (now >= _nextPubTime) {
 			_metrics.publishPending();
+			_nextPubTime = _metrics.nextBucketReadyTime();
 		}
 	}
 	
 	private double getCapacityPercentage() {
-		return 100 - Util.getPercentage(_decoratedStrategy.remainingCapacity(), _decoratedStrategy.getLength());
+		return 100 - Util.getPercentage(_decoratedStrategy.remainingCapacity(), _queueLength);
 	}
 
 }

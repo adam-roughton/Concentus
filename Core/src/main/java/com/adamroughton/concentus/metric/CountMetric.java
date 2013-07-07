@@ -31,7 +31,7 @@ public final class CountMetric extends Metric<Long> {
 		currentCount += count;
 		_countBuckets.put(bucketId, currentCount);
 	}
-
+	
 	@Override
 	protected void doPublish(long bucketId, MetricMetaData metricMetaData) {
 		long currentCount;

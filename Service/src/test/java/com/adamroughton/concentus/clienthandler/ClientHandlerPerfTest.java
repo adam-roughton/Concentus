@@ -26,7 +26,6 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.locks.LockSupport;
 
-import org.apache.commons.io.output.NullOutputStream;
 import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.ConcentusHandle;
@@ -40,6 +39,7 @@ import com.adamroughton.concentus.cluster.data.TestRunInfo;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.configuration.StubConfiguration;
+import com.adamroughton.concentus.disruptor.MetricTrackingEventQueueFactory;
 import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
@@ -57,8 +57,8 @@ import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager.StubMessengerConfigurator;
+import com.adamroughton.concentus.messaging.zmq.TrackingSocketManagerDecorator;
 import com.adamroughton.concentus.metric.LogMetricContext;
-import com.adamroughton.concentus.metric.NullMetricContext;
 import com.netflix.curator.framework.api.CuratorWatcher;
 
 import static com.adamroughton.concentus.ConcentusServiceState.*;
@@ -111,7 +111,6 @@ public class ClientHandlerPerfTest {
 					_header.setIsValid(eventBuffer, true);
 					_header.setSocketId(eventBuffer, endPointIds[0]);
 					_header.setRecvTime(eventBuffer, System.currentTimeMillis());
-					_header.setSocketId(eventBuffer, 0);
 					int cursor = _header.getEventOffset();
 					_header.setSegmentMetaData(eventBuffer, 0, cursor, 4);
 					MessageBytesUtil.writeInt(eventBuffer, cursor, clientId);
@@ -211,11 +210,14 @@ public class ClientHandlerPerfTest {
 			}
 		};
 		
+		final LogMetricContext metricContext = new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), new DefaultClock());
+		metricContext.start();
+		
 		ConcentusHandle<Configuration> concentusHandle = new ConcentusHandle<Configuration>(new InstanceFactory<SocketManager>() {
 
 			@Override
 			public SocketManager newInstance() {
-				return new StubSocketManager(new StubMessengerConfigurator() {
+				SocketManager stubManager = new StubSocketManager(new StubMessengerConfigurator() {
 					
 					@Override
 					public void onStubMessengerCreation(int socketId, StubMessenger messenger,
@@ -241,12 +243,12 @@ public class ClientHandlerPerfTest {
 						}
 					}
 				});
+				return new TrackingSocketManagerDecorator(metricContext, stubManager, new DefaultClock());
 			}
 			
-		}, new StandardEventQueueFactory(new NullMetricContext()), new DefaultClock(), new StubConfiguration(), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
-		_clientHandler = new ClientHandlerService(concentusHandle, 
-				new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), 
-				new DefaultClock()));
+		}, new StandardEventQueueFactory(metricContext) /* new MetricTrackingEventQueueFactory(metricContext, new DefaultClock()) */, new DefaultClock(), new StubConfiguration(), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
+		
+		_clientHandler = new ClientHandlerService(concentusHandle, metricContext);
 		
 		_clusterHandle = new ClusterWorkerHandle() {
 			
@@ -369,16 +371,17 @@ public class ClientHandlerPerfTest {
 		System.out.println("Press enter to start");
 		System.in.read();
 		PrintStream consoleStream = System.out;
+		/*
 		PrintStream nullPrintStream = new PrintStream(new NullOutputStream());
 		System.setOut(nullPrintStream);
-		System.setErr(nullPrintStream);
+		System.setErr(nullPrintStream);*/
 		
 		while(true) {
 			ClientHandlerPerfTest perfTest = new ClientHandlerPerfTest(consoleStream);
 			perfTest.messageCount = 100000000;
-			perfTest.clientCount = 32768;
+			perfTest.clientCount = 10000;
 			perfTest.updateTickPeriod = 100;
-			perfTest.msgSendDelayNanos = 100;
+			perfTest.msgSendDelayNanos = 1000;
 			perfTest.fakeStateUpdates = true;
 			perfTest.setUp();
 			

@@ -37,24 +37,25 @@ public class SharedCommandLineOptions {
 	public static Iterable<Option> getCommandLineOptions() {
 		return Arrays.asList(
 				OptionBuilder.withArgName("ZooKeeper Address")
-					.hasArgs()
+					.hasArg()
 					.isRequired(true)
 					.withDescription("the address of the ZooKeeper server")
 					.create(ZOOKEEPER_ADDRESS_OPTION),
 				OptionBuilder.withArgName("file path")
-					.hasArgs()
+					.hasArg()
 					.isRequired(true)
 					.withDescription("path to the properties file")
 					.create(PROPERTIES_FILE_OPTION),
 				OptionBuilder.withArgName("network address")
-					.hasArgs()
+					.hasArg()
 					.isRequired(true)
 					.withDescription("address to bind sockets to")
 					.create(NETWORK_ADDRESS_OPTION),
 				OptionBuilder.withArgName("trace")
-					.hasArg(false)
+					.hasArgs()
+					.withValueSeparator(' ')
 					.isRequired(false)
-					.withDescription("wraps select components with tracing versions that output to stdout")
+					.withDescription("trace selected components: -t <component1> <component2> (available: messengers, queues)")
 					.create(TRACE_OPTION)
 			);
 	}
@@ -77,8 +78,15 @@ public class SharedCommandLineOptions {
 		}
 	}
 	
-	public static boolean readTraceOption(Map<String, String> cmdLineValues) {
-		return cmdLineValues.containsKey(TRACE_OPTION);
+	public static boolean readTraceOption(String traceName, Map<String, String> cmdLineValues) {
+		if (!cmdLineValues.containsKey(TRACE_OPTION)) return false;
+		
+		String traceArrayString = cmdLineValues.get(TRACE_OPTION);
+		String[] traceOptions = traceArrayString.split(",");
+		for (String traceOption : traceOptions) {
+			if (traceOption.equals(traceName)) return true;
+		}
+		return false;
 	}
 
 }

@@ -40,7 +40,7 @@ public class WorkerNode implements ConcentusWorkerNode<CrowdHammerConfiguration,
 	@SuppressWarnings("static-access")
 	public Iterable<Option> getCommandLineOptions() {
 		return Arrays.asList(OptionBuilder.withArgName("max client count")
-				.hasArgs()
+				.hasArg()
 				.isRequired(true)
 				.withDescription("Maximum number of similated clients to run on this worker.")
 				.create(MAX_CLIENT_COUNT_OPTION));

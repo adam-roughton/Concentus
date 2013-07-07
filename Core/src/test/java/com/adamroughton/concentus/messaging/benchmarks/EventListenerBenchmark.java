@@ -62,7 +62,9 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _header.getEventOffset())), 
 				1, 
 				new YieldingWaitStrategy()), new NullMetricContext());
-		_recvQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
+		Sequence endlessGate = new Sequence(); 
+		_recvQueue.addGatingSequences(endlessGate);
+		endlessGate.set(Long.MAX_VALUE);
 		
 		_sendSocket = context.socket(ZMQ.DEALER);
 		_sendSocket.setLinger(0);

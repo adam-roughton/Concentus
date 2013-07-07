@@ -15,7 +15,7 @@
  */
 package com.adamroughton.concentus.crowdhammer.worker;
 
-import it.unimi.dsi.fastutil.longs.Long2LongArrayMap;
+import it.unimi.dsi.fastutil.longs.Long2LongAVLTreeMap;
 import it.unimi.dsi.fastutil.longs.Long2LongMap;
 
 import java.util.Objects;
@@ -60,15 +60,12 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	private final CountMetric _sentActionThroughputMetric;
 	private final StatsMetric _actionEffectLatencyMetric;
 	private final CountMetric _lateActionEffectCountMetric;	
-	private final StatsMetric _nanosFetchingClientStats;
-	private final StatsMetric _nanosUpdatingClientStats;
-	private final CountMetric _delayedClientActionThroughputMetric;
+	private final CountMetric _droppedActionThroughputMetric;
 	
 	private long _nextClientIndex = -1;
 	private boolean _sendMetric = false;
-	private boolean _delayedClientDeadline = false;
 	private long _nextDeadline = -1;
-		
+	
 	public SimulatedClientProcessor(
 			Clock clock,
 			StructuredArray<Client> clients,
@@ -80,7 +77,8 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 		_activeClientCount = activeClientCount;
 		
 		// create an index for quickly looking up clients
-		_clientsIndex = new Long2LongArrayMap((int)_clients.getLength());
+		_clientsIndex = new Long2LongAVLTreeMap();
+		//_clientsIndex = new Long2LongArrayMap((int)_clients.getLength());
 		
 		_clientSendQueue = Objects.requireNonNull(clientSendQueue);
 		_recvHeader = Objects.requireNonNull(recvHeader);
@@ -92,10 +90,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 		_sentActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "sentActionThroughput", false));
 		_actionEffectLatencyMetric = _metrics.add(_metricContext.newStatsMetric(reference, "actionEffectLatency", false));
 		_lateActionEffectCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "lateActionEffectCount", false));
-		_delayedClientActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "delayedClientActionThroughput", false));
-		
-		_nanosFetchingClientStats = _metrics.add(_metricContext.newStatsMetric(reference, "nanosFetchingClient", false));
-		_nanosUpdatingClientStats = _metrics.add(_metricContext.newStatsMetric(reference, "nanosUpdatingClient", false));
+		_droppedActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "droppedActionThroughput", false));
 		
 		_connectResRecvCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "connectResCount", true));
 	}
@@ -121,12 +116,8 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 				public void read(IncomingEventHeader header, ClientUpdateEvent event) {
 					long clientId = event.getClientId();
 					long clientIndex = _clientsIndex.get(clientId);
-					long startTime = System.nanoTime();
 					Client updatedClient = _clients.get(clientIndex);
-					_nanosFetchingClientStats.push(System.nanoTime() - startTime);
-					startTime = System.nanoTime();
 					updatedClient.onClientUpdate(event, _actionEffectLatencyMetric, _lateActionEffectCountMetric);
-					_nanosUpdatingClientStats.push(System.nanoTime() - startTime);
 				}
 			});
 		} else if (EventPattern.getEventType(event, _recvHeader) == EventType.CONNECT_RES.getId()) {
@@ -150,20 +141,14 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 		if (_sendMetric) {
 			_metrics.publishPending();
 		} else if (_isSendingInput) {
-			// only process the client if it will not block
-			if (_clientSendQueue.isFull()) {
-				_delayedClientActionThroughputMetric.push(1);
-				_delayedClientDeadline = true;
-			} else {
-				Client client = _clients.get(_nextClientIndex);
-				client.onActionDeadline(_clientSendQueue, _sentActionThroughputMetric);
-			}
+			Client client = _clients.get(_nextClientIndex);
+			client.onActionDeadline(_clientSendQueue, _sentActionThroughputMetric, _droppedActionThroughputMetric);
 		}
 	}
 
 	@Override
 	public long moveToNextDeadline(long pendingEventCount) {
-		if (!_sendMetric && !_delayedClientDeadline) {
+		if (!_sendMetric) {
 			// if we didn't send a metric on the last deadline, advance for the next client
 			_nextClientIndex++;
 			if (_nextClientIndex >= _activeClientCount) _nextClientIndex = 0;
@@ -184,7 +169,6 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 			_nextDeadline = nextMetricDeadline;
 		} else {
 			_sendMetric = false;
-			_delayedClientDeadline = false;
 			_nextDeadline = nextClientDeadline;
 		}
 		return _nextDeadline;
