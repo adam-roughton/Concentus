@@ -1,5 +1,5 @@
 #org.springsource.ide.eclipse.gradle.core.preferences.GradleImportPreferences
-#Sun Mar 17 23:04:25 NZDT 2013
+#Sat Aug 03 16:29:54 NZST 2013
 addResourceFilters=true
 afterTasks=afterEclipseImport;
 beforeTasks=cleanEclipse;eclipse;
@@ -7,4 +7,4 @@ enableAfterTasks=true
 enableBeforeTasks=true
 enableDSLD=true
 enableDependendencyManagement=true
-projects=;Core;CrowdHammer;Service;
+projects=SparkStreamingDriver;

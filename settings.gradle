@@ -1,1 +1,1 @@
-include 'Service', 'Core', 'CrowdHammer'
+include 'Service', 'Core', 'CrowdHammer', 'SparkStreamingDriver'
