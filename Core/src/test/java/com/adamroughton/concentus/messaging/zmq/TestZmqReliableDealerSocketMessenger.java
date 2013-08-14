@@ -19,7 +19,6 @@ import static com.adamroughton.concentus.messaging.ZmqTestUtil.assertRangeEqual;
 import static com.adamroughton.concentus.messaging.ZmqTestUtil.doesNotHaveFlags;
 import static com.adamroughton.concentus.messaging.ZmqTestUtil.fakeRecv;
 import static com.adamroughton.concentus.messaging.ZmqTestUtil.hasFlags;
-import static com.adamroughton.concentus.messaging.ZmqTestUtil.matchesLength;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
@@ -44,9 +43,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.invocation.InvocationOnMock;
 import org.mockito.runners.MockitoJUnitRunner;
-import org.mockito.stubbing.Answer;
 import org.zeromq.ZMQ;
 import org.zeromq.ZMQException;
 
@@ -58,7 +55,7 @@ import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 
 @RunWith(MockitoJUnitRunner.class)
-public class TestZmqSocketMessenger {
+public class TestZmqReliableDealerSocketMessenger {
 
 	private static final int EVENT_BUFFER_LENGTH = 512;
 	private final IncomingEventHeader _defaultHeader = new IncomingEventHeader(0, 2);
@@ -68,12 +65,14 @@ public class TestZmqSocketMessenger {
 	private byte[] _buffer;
 	private DrivableClock _clock;
 	
+	private final byte[] _nackSeqFrame = new byte[8];
+	
 	@Before
 	public void setUp() {
 		_buffer = new byte[EVENT_BUFFER_LENGTH];
 		_clock = new DrivableClock();
 		_clock.setTime(5500000, TimeUnit.MILLISECONDS);
-		_messenger = new ZmqStandardSocketMessenger(0, "", _zmqSocket, _clock);
+		_messenger = new ZmqReliableDealerSocketMessenger(0, "", _zmqSocket, _clock);
 	}
 	
 	private byte[] genContent(int length) {
@@ -92,6 +91,14 @@ public class TestZmqSocketMessenger {
 		byte[] idBytes = new byte[16];
 		MessageBytesUtil.writeUUID(idBytes, 0, id);
 		return idBytes;
+	}
+	
+	private void genSegmentData(int length, int seed, byte[][] segments, int...indices) {
+		for (int index : indices) {
+			if (index < 0 || index >= segments.length) 
+				throw new IllegalArgumentException(String.format("Provided index '%d' out of bounds [%d, %d]", index, 0, segments.length));
+			segments[index] = genContent(length, seed++);
+		}
 	}
 	
 	private byte[][] readMessageParts(byte[] bufferBytes, IncomingEventHeader header) {
@@ -121,10 +128,13 @@ public class TestZmqSocketMessenger {
 		IncomingEventHeader header = new IncomingEventHeader(0, 1);
 		
 		byte[] content = genContent(256);
+		MessageBytesUtil.writeLong(_nackSeqFrame, 0, -1);
 		
-		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
+		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
+			.then(fakeRecv(_nackSeqFrame))
 			.then(fakeRecv(content));
 		when(_zmqSocket.hasReceiveMore())
+			.thenReturn(true)
 			.thenReturn(false);
 		
 		assertTrue(_messenger.recv(_buffer, header, false));
@@ -138,14 +148,14 @@ public class TestZmqSocketMessenger {
 	public void recvMultipleSegments() {
 		IncomingEventHeader header = new IncomingEventHeader(0, 4);
 		
-		byte[] expectedIdBytes = genIdBytes(UUID.fromString("abababab-abab-abab-abab-abababababab"));
 		byte[][] contentSegments = new byte[3][];
 		for (int i = 0; i < 3; i++) {
 			contentSegments[i] = genContent(32, i);
 		}
+		MessageBytesUtil.writeLong(_nackSeqFrame, 0, -1);
 		
-		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
-			.then(fakeRecv(expectedIdBytes))
+		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
+			.then(fakeRecv(_nackSeqFrame))
 			.then(fakeRecv(contentSegments[0]))
 			.then(fakeRecv(contentSegments[1]))
 			.then(fakeRecv(contentSegments[2]));
@@ -160,28 +170,27 @@ public class TestZmqSocketMessenger {
 		byte[][] segments = readMessageParts(_buffer, header);
 		assertEquals(4, segments.length);
 		
-		assertArrayEquals(expectedIdBytes, segments[0]);
 		for (int i = 0; i < 3; i++) {
-			assertArrayEquals(contentSegments[i], segments[i + 1]);
+			assertArrayEquals(contentSegments[i], segments[i]);
 		}
 	}
 	
 	@Test
 	public void recvNoMessagesReady() {
-		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
+		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.thenReturn(-1);
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
 		
 		assertFalse(_messenger.recv(_buffer, _defaultHeader, false));
 		
-		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
+		verify(_zmqSocket).recv(any(byte[].class), anyInt(), anyInt(), anyInt());
 		verifyNoMoreInteractions(_zmqSocket);
 	}
 	
 	@Test
 	public void recvFailureOnFirstSegment() {
-		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
+		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.thenThrow(new ZMQException("Random error", 4));
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
@@ -193,10 +202,10 @@ public class TestZmqSocketMessenger {
 	
 	@Test
 	public void recvFailureOnSubsequentSegment() {
-		byte[] expectedIdBytes = genIdBytes(UUID.fromString("abababab-abab-abab-abab-abababababab"));
+		MessageBytesUtil.writeLong(_nackSeqFrame, 0, -1);
 		
-		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
-			.then(fakeRecv(expectedIdBytes))
+		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
+			.then(fakeRecv(_nackSeqFrame))
 			.thenThrow(new ZMQException("Random error", 4));
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(true)
@@ -208,49 +217,28 @@ public class TestZmqSocketMessenger {
 	}
 	
 	@Test
-	public void recvMessageTooLargeFirstSegment() {
+	public void recvMessageTooLargeFirstContentSegment() {
+		MessageBytesUtil.writeLong(_nackSeqFrame, 0, -1);
 		byte[] content1 = genContent(EVENT_BUFFER_LENGTH * 2);
-		byte[] content2 = genIdBytes(UUID.fromString("abababab-abab-abab-abab-abababababab"));
+		byte[] content2 = genContent(32);
 		
-		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
+		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
+			.then(fakeRecv(_nackSeqFrame))
 			.then(fakeRecv(content1));
 		when(_zmqSocket.recv(anyInt()))
 			.thenReturn(content2);
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(true)
+			.thenReturn(true)
 			.thenReturn(false);
 		
 		assertTrue(_messenger.recv(_buffer, _defaultHeader, false));
 		
-		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
+		verify(_zmqSocket, times(2)).recv(any(byte[].class), anyInt(), anyInt(), anyInt());
 		verify(_zmqSocket).recv();
 		
 		assertFalse(_defaultHeader.isValid(_buffer));
 	}
-	
-	/*
-	 * No way of telling this as jzmq transforms the return code to the truncated value using the standard send.
-	 * Moving to recvZeroCopy would fix this as it returns the actual size of the segment
-	 */
-//	@Test
-//	public void recvMessageTooLargeSubsequentSegment() {
-//		byte[] expectedIdBytes = genIdBytes(UUID.fromString("abababab-abab-abab-abab-abababababab"));
-//		byte[] content = genContent(EVENT_BUFFER_LENGTH * 2);
-//		
-//		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
-//			.then(fakeRecv(expectedIdBytes));
-//		when(_zmqSocket.recv(anyInt()))
-//			.thenReturn(content);
-//		when(_zmqSocket.hasReceiveMore())
-//			.thenReturn(true)
-//			.thenReturn(false);
-//		
-//		assertTrue(_receiver.recv(_socketPackage, _buffer));
-//		
-//		verify(_zmqSocket, times(2)).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
-//		
-//		assertFalse(_processingHeader.isValid(_buffer));
-//	}
 	
 	@Test
 	public void sendSingleSegment() {
@@ -261,11 +249,7 @@ public class TestZmqSocketMessenger {
 			.thenReturn(true);
 		
 		int segmentLength = 256;
-		
-		byte[] content = new byte[segmentLength];
-		for (int i = 0; i < segmentLength; i += 4) {
-			MessageBytesUtil.writeInt(content, i, i / 4);
-		}
+		byte[] content = genContent(256);
 		
 		int[] expectedOffsets = writeMessage(new byte[][] {content}, _buffer, header);		
 		assertTrue(_messenger.send(_buffer, header, false));
@@ -273,17 +257,23 @@ public class TestZmqSocketMessenger {
 		ArgumentCaptor<byte[]> eBytesCaptor = ArgumentCaptor.forClass(byte[].class);
 		ArgumentCaptor<Integer> eOffsetCaptor = ArgumentCaptor.forClass(Integer.class);
 		ArgumentCaptor<Integer> eLengthCaptor = ArgumentCaptor.forClass(Integer.class);
-		verify(_zmqSocket).send(eBytesCaptor.capture(), eOffsetCaptor.capture(), eLengthCaptor.capture(), intThat(doesNotHaveFlags(ZMQ.SNDMORE)));
+		verify(_zmqSocket, times(2)).send(eBytesCaptor.capture(), eOffsetCaptor.capture(), eLengthCaptor.capture(), anyInt());
 		
 		List<byte[]> eventParts = eBytesCaptor.getAllValues();
 		List<Integer> offsets = eOffsetCaptor.getAllValues();
 		List<Integer> lengths = eLengthCaptor.getAllValues();
 		
+		assertEquals(2, eventParts.size());
+		
+		// seq frame
+		MessageBytesUtil.writeLong(_nackSeqFrame, 0, -1);
+		assertArrayEquals(_nackSeqFrame, eventParts.get(0));
+		
 		// contents
-		byte[] messageBytes = eventParts.get(0);
-		int actualOffset = offsets.get(0);
+		byte[] messageBytes = eventParts.get(1);
+		int actualOffset = offsets.get(1);
 		assertEquals(expectedOffsets[0], actualOffset);
-		int actualLength = (int) lengths.get(0);
+		int actualLength = (int) lengths.get(1);
 		assertEquals(segmentLength, actualLength);
 		assertRangeEqual(content, messageBytes, actualOffset, actualLength);	
 	}
@@ -300,36 +290,33 @@ public class TestZmqSocketMessenger {
 			.thenReturn(true)
 			.thenReturn(true);
 		
-		byte[] content1 = new byte[32];
-		byte[] content2 = new byte[32];
-		byte[] content3 = new byte[32];
-		byte[][] contents = new byte[][] {content1, content2, content3};
 		
-		for (int i = 0; i < contents.length; i++) {
-			for (int j = 0; j < contents[i].length; j += 4) {
-				MessageBytesUtil.writeInt(contents[i], j, -(i + 1));
-			}
-		}
+		byte[][] contents = new byte[3][];
+		genSegmentData(32, 4, contents, 0, 1, 2);
 		
 		int[] expectedOffsets = writeMessage(contents, _buffer, header);
 		assertTrue(_messenger.send(_buffer, header, false));
 		
-		verify(_zmqSocket, times(2)).send(any(byte[].class), anyInt(), anyInt(), intThat(hasFlags(ZMQ.SNDMORE)));
+		verify(_zmqSocket, times(3)).send(any(byte[].class), anyInt(), anyInt(), intThat(hasFlags(ZMQ.SNDMORE)));
 		verify(_zmqSocket).send(any(byte[].class), anyInt(), anyInt(), intThat(doesNotHaveFlags(ZMQ.SNDMORE)));
 		
 		List<byte[]> eventParts = eventPartCaptor.getAllValues();
 		List<Integer> offsets = eOffsetCaptor.getAllValues();
 		List<Integer> lengths = eLengthCaptor.getAllValues();
-		assertEquals(3, eventParts.size());
-		for (int i = 0; i < 3; i++) {
+		assertEquals(4, eventParts.size());
+		
+		// seq frame
+		MessageBytesUtil.writeLong(_nackSeqFrame, 0, -1);
+		assertArrayEquals(_nackSeqFrame, eventParts.get(0));
+		
+		for (int i = 1; i < 3; i++) {
 			int actualLength = (int)lengths.get(i);
-			assertEquals(contents[i].length, actualLength);
+			assertEquals(contents[i - 1].length, actualLength);
 			int actualOffset = (int)offsets.get(i);
-			assertEquals(expectedOffsets[i], actualOffset);
+			assertEquals(expectedOffsets[i - 1], actualOffset);
 			byte[] contentBytes = eventParts.get(i);
-			assertRangeEqual(contents[i], contentBytes, actualOffset, actualLength);
+			assertRangeEqual(contents[i - 1], contentBytes, actualOffset, actualLength);
 		}
-		verifyNoMoreInteractions(_zmqSocket);
 	}
 	
 	@Test
@@ -372,106 +359,6 @@ public class TestZmqSocketMessenger {
 		int lastOffset = EventHeader.getSegmentOffset(lastSegmentMetaData);
 		header.setSegmentMetaData(_buffer, 2, lastOffset, EVENT_BUFFER_LENGTH);
 		_messenger.send(_buffer, header, false);
-	}
-	
-	@Test
-	public void recvTimeOneSegment() {
-		IncomingEventHeader header = new IncomingEventHeader(0, 1);
-		_clock.setTime(10000, TimeUnit.MILLISECONDS);
-		
-		Answer<Integer> clockAdvancer = new Answer<Integer>() {
-
-			@Override
-			public Integer answer(InvocationOnMock invocation) throws Throwable {
-				_clock.advance(1000, TimeUnit.MILLISECONDS);
-				return 32;
-			}
-			
-		};
-		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
-			.then(clockAdvancer);
-		when(_zmqSocket.hasReceiveMore())
-			.thenReturn(false);
-		
-		assertTrue(_messenger.recv(_buffer, header, false));
-		assertEquals(11000, header.getRecvTime(_buffer));
-	}
-	
-	@Test
-	public void recvTimeMultipleSegments() {
-		IncomingEventHeader header = new IncomingEventHeader(0, 4);
-		_clock.setTime(10000, TimeUnit.MILLISECONDS);
-		
-		Answer<Integer> clockAdvancer = new Answer<Integer>() {
-
-			@Override
-			public Integer answer(InvocationOnMock invocation) throws Throwable {
-				_clock.advance(1000, TimeUnit.MILLISECONDS);
-				return 32;
-			}
-			
-		};
-		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
-			.then(clockAdvancer);
-		when(_zmqSocket.hasReceiveMore())
-			.thenReturn(false);
-		
-		assertTrue(_messenger.recv(_buffer, header, false));
-		assertEquals(11000, header.getRecvTime(_buffer));
-	}
-	
-	@Test
-	public void sentTimeOneSegment() {
-		OutgoingEventHeader header = new OutgoingEventHeader(0, 1);
-		header.setSegmentMetaData(_buffer, 0, header.getEventOffset(), 45);
-		header.setIsValid(_buffer, true);
-		_clock.setTime(10000, TimeUnit.MILLISECONDS);
-		
-		Answer<Boolean> clockAdvancer = new Answer<Boolean>() {
-
-			@Override
-			public Boolean answer(InvocationOnMock invocation) throws Throwable {
-				_clock.advance(1000, TimeUnit.MILLISECONDS);
-				return true;
-			}
-			
-		};
-		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt(), anyInt()))
-			.then(clockAdvancer)
-			.then(clockAdvancer);
-
-		assertTrue(_messenger.send(_buffer, header, false));
-		assertEquals(11000, header.getSentTime(_buffer));
-	}
-	
-	@Test
-	public void sentTimeMultipleSegments() {
-		OutgoingEventHeader header = new OutgoingEventHeader(0, 3);
-		int cursor = header.getEventOffset();
-		int length = (_buffer.length - header.getEventOffset()) / header.getSegmentCount();
-		for (int i = 0; i < header.getSegmentCount(); i++) {
-			header.setSegmentMetaData(_buffer, i, cursor, length);
-			cursor += length;
-		}
-		header.setIsValid(_buffer, true);
-		_clock.setTime(10000, TimeUnit.MILLISECONDS);
-		
-		Answer<Boolean> clockAdvancer = new Answer<Boolean>() {
-
-			@Override
-			public Boolean answer(InvocationOnMock invocation) throws Throwable {
-				_clock.advance(1000, TimeUnit.MILLISECONDS);
-				return true;
-			}
-			
-		};
-		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt(), anyInt()))
-			.then(clockAdvancer)
-			.then(clockAdvancer)
-			.then(clockAdvancer);
-
-		assertTrue(_messenger.send(_buffer, header, false));
-		assertEquals(13000, header.getSentTime(_buffer));
 	}
 	
 	/**

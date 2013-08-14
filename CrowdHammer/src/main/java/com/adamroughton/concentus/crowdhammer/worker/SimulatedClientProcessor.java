@@ -61,6 +61,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	private final StatsMetric _actionEffectLatencyMetric;
 	private final CountMetric _lateActionEffectCountMetric;	
 	private final CountMetric _droppedActionThroughputMetric;
+	private final CountMetric _connectionInvalidMetric;
 	
 	private long _nextClientIndex = -1;
 	private boolean _sendMetric = false;
@@ -91,6 +92,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 		_actionEffectLatencyMetric = _metrics.add(_metricContext.newStatsMetric(reference, "actionEffectLatency", false));
 		_lateActionEffectCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "lateActionEffectCount", false));
 		_droppedActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "droppedActionThroughput", false));
+		_connectionInvalidMetric = _metrics.add(_metricContext.newCountMetric(reference, "connectionInvalid", false));
 		
 		_connectResRecvCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "connectResCount", true));
 	}
@@ -108,6 +110,11 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	public void onEvent(byte[] event, long sequence, boolean isEndOfBatch)
 			throws Exception {
 		if (!_recvHeader.isValid(event)) return;
+		if (_recvHeader.connectionInvalid(event)) {
+			_connectionInvalidMetric.push(1);
+			_isSendingInput = false;
+			return;
+		}
 		
 		if (EventPattern.getEventType(event, _recvHeader) == EventType.CLIENT_UPDATE.getId()) {
 			EventPattern.readContent(event, _recvHeader, _updateEvent, new EventReader<IncomingEventHeader, ClientUpdateEvent>() {

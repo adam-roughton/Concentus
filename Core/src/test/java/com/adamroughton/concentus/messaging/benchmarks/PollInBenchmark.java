@@ -29,6 +29,7 @@ import com.adamroughton.concentus.messaging.zmq.SocketPollInSet;
 import com.adamroughton.concentus.messaging.zmq.SocketPollSet;
 import com.adamroughton.concentus.messaging.zmq.ZmqSocketMessenger;
 import com.adamroughton.concentus.messaging.zmq.ZmqSocketSetMessenger;
+import com.adamroughton.concentus.messaging.zmq.ZmqStandardSocketMessenger;
 import com.google.caliper.Param;
 
 public class PollInBenchmark extends MessagingBenchmarkBase {
@@ -54,14 +55,14 @@ public class PollInBenchmark extends MessagingBenchmarkBase {
 	protected void setUp(Context context) throws Exception {
 		super.setUp(context);
 		_recvSockets = new ZMQ.Socket[socketCount];
-		ZmqSocketMessenger[] messengers = new ZmqSocketMessenger[socketCount];
+		ZmqSocketMessenger[] messengers = new ZmqStandardSocketMessenger[socketCount];
 		Clock clock = new DefaultClock();
 		for (int i = 0; i < socketCount; i++) {
 			ZMQ.Socket socket = context.socket(ZMQ.DEALER);
 			socket.setReceiveTimeOut(1000);
 			socket.bind("tcp://127.0.0.1:" + (_startPort + i));
 			_recvSockets[i] = socket;
-			messengers[i] = new ZmqSocketMessenger(i, "", socket, clock);
+			messengers[i] = new ZmqStandardSocketMessenger(i, "", socket, clock);
 		}
 		if (useAlternativePollIn) {
 			_socketPollSet = new HackSocketPollInSet(messengers);

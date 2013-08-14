@@ -74,7 +74,7 @@ public class CanonicalStateService implements ConcentusService {
 	private EventProcessor _publisher;	
 	
 	private final int _pubSocketId;
-	private final int _subSocketId;
+	private final int _inputSocketId;
 	
 	public CanonicalStateService(ConcentusHandle<? extends Configuration> concentusHandle, MetricContext metricContext) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
@@ -122,12 +122,12 @@ public class CanonicalStateService implements ConcentusService {
 		 * Configure sockets
 		 */
 		// sub socket
-		int subPort = ConfigurationUtil.getPort(config, SERVICE_TYPE, "sub");
+		int inputPort = ConfigurationUtil.getPort(config, SERVICE_TYPE, "input");
 		SocketSettings subSocketSettings = SocketSettings.create()
-				.bindToPort(subPort)
+				.bindToPort(inputPort)
 				.setHWM(1000)
 				.subscribeToAll();
-		_subSocketId = _socketManager.create(ZMQ.SUB, subSocketSettings, "input");
+		_inputSocketId = _socketManager.create(ZMQ.SUB, subSocketSettings, "input");
 		
 		// pub socket
 		int pubPort = ConfigurationUtil.getPort(config, SERVICE_TYPE, "pub");
@@ -159,7 +159,7 @@ public class CanonicalStateService implements ConcentusService {
 	
 	private void onBind(ClusterWorkerHandle cluster) throws Exception {
 		// infrastructure for sub socket
-		Mutex<Messenger> subSocketPackageMutex = _socketManager.getSocketMutex(_subSocketId);
+		Mutex<Messenger> subSocketPackageMutex = _socketManager.getSocketMutex(_inputSocketId);
 		_subListener = Util.asStateful(new EventListener("inputListener", _subHeader, subSocketPackageMutex, _inputQueue, _concentusHandle));
 		
 		// infrastructure for pub socket

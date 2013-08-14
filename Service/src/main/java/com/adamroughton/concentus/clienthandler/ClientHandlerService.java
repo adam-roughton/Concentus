@@ -68,7 +68,7 @@ public class ClientHandlerService implements ConcentusService {
 	
 	private final EventQueue<byte[]> _recvQueue;
 	private final EventQueue<byte[]> _routerSendQueue;
-	private final EventQueue<byte[]> _pubQueue;
+	private final EventQueue<byte[]> _outQueue;
 	private ProcessingPipeline<byte[]> _pipeline;
 	
 	private final OutgoingEventHeader _outgoingHeader; // both router and pub can share the same header
@@ -124,7 +124,7 @@ public class ClientHandlerService implements ConcentusService {
 		_routerSendQueue = eventQueueFactory.createSingleProducerQueue("routerSendQueue", msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
 				routerSendBufferLength, 
 				new YieldingWaitStrategy());
-		_pubQueue = eventQueueFactory.createSingleProducerQueue("pubQueue", msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
+		_outQueue = eventQueueFactory.createSingleProducerQueue("pubQueue", msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
 				pubBufferLength, 
 				new YieldingWaitStrategy());
 		_outgoingHeader = new OutgoingEventHeader(0, 2);
@@ -136,6 +136,9 @@ public class ClientHandlerService implements ConcentusService {
 		// router socket
 		int routerPort = ConfigurationUtil.getPort(config, SERVICE_TYPE, "input");
 		SocketSettings routerSocketSetting = SocketSettings.create()
+				.setSupportReliable(true)
+				.setReliableBufferLength(2048)
+				.setReliableTryAgainMillis(100)
 				.bindToPort(routerPort);
 		_routerSocketId = _socketManager.create(ZMQ.ROUTER, routerSocketSetting, "input");
 		
@@ -217,7 +220,7 @@ public class ClientHandlerService implements ConcentusService {
 
 		// infrastructure for pub socket
 		SendQueue<OutgoingEventHeader> routerSendQueue = new SendQueue<>("processor", _outgoingHeader, _routerSendQueue);
-		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>("processor", _outgoingHeader, _pubQueue);
+		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>("processor", _outgoingHeader, _outQueue);
 		Mutex<Messenger> pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
 		// event processing infrastructure
 		_processor = new ClientHandlerProcessor(
@@ -229,7 +232,7 @@ public class ClientHandlerService implements ConcentusService {
 				pubSendQueue, 
 				_incomingHeader,
 				_metricContext);
-		_publisher = MessagingUtil.asSocketOwner("publisher", _pubQueue, new Publisher(_outgoingHeader), pubSocketPackageMutex);
+		_publisher = MessagingUtil.asSocketOwner("publisher", _outQueue, new Publisher(_outgoingHeader), pubSocketPackageMutex);
 		
 		// create processing pipeline
 		PipelineSection<byte[]> subRecvSection = ProcessingPipeline.<byte[]>build(_subListener, _concentusHandle.getClock())
@@ -240,7 +243,7 @@ public class ClientHandlerService implements ConcentusService {
 				.thenConnector(_recvQueue)
 				.join(subRecvSection)
 				.into(_recvQueue.createEventProcessor("processor", _processor, _concentusHandle.getClock(), _concentusHandle))
-				.thenConnector(_pubQueue)
+				.thenConnector(_outQueue)
 				.then(_publisher)
 				.completeCycle(_executor);
 		
@@ -256,7 +259,7 @@ public class ClientHandlerService implements ConcentusService {
 
 		// assuming only one publishes at any given time (i.e. the slave publishes to null)
 		int canonicalPubPort = ConfigurationUtil.getPort(_concentusHandle.getConfig(), CanonicalStateService.SERVICE_TYPE ,"pub");
-		int canonicalSubPort = ConfigurationUtil.getPort(_concentusHandle.getConfig(), CanonicalStateService.SERVICE_TYPE, "sub");
+		int canonicalSubPort = ConfigurationUtil.getPort(_concentusHandle.getConfig(), CanonicalStateService.SERVICE_TYPE, "input");
 		for (String canonicalStateAddress : canonicalStateAddresses) {
 			_socketManager.connectSocket(_subSocketId, String.format("%s:%d", canonicalStateAddress, canonicalPubPort));
 			_socketManager.connectSocket(_pubSocketId, String.format("%s:%d", canonicalStateAddress, canonicalSubPort));

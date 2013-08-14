@@ -24,8 +24,23 @@ public class RouterPattern {
 	
 	private static final int SOCKET_ID_SEGMENT_INDEX = 0;
 	
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> SendTask<TSendHeader> asUnreliableTask(
+			final byte[] socketId,
+			final TEvent eventHelper, 
+			final EventWriter<TSendHeader, TEvent> eventWriter) {
+		return asTask(socketId, false, eventHelper, eventWriter);
+	}
+	
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> SendTask<TSendHeader> asReliableTask(
+			final byte[] socketId,
+			final TEvent eventHelper, 
+			final EventWriter<TSendHeader, TEvent> eventWriter) {
+		return asTask(socketId, true, eventHelper, eventWriter);
+	}
+	
 	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> SendTask<TSendHeader> asTask(
 			final byte[] socketId,
+			final boolean isReliable,
 			final TEvent eventHelper, 
 			final EventWriter<TSendHeader, TEvent> eventWriter) {
 		return new SendTask<TSendHeader>() {
@@ -33,21 +48,41 @@ public class RouterPattern {
 			@Override
 			public void write(byte[] outgoingBuffer, TSendHeader header) {
 				EventPattern.validate(header, 2);
-				writeEvent(outgoingBuffer, header, socketId, eventHelper, eventWriter);
+				writeEvent(outgoingBuffer, header, socketId, isReliable, eventHelper, eventWriter);
 			}
 			
 		};
 	}
 	
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> void writeUnreliableEvent(
+			byte[] outgoingBuffer,
+			TSendHeader header,
+			byte[] socketId,
+			TEvent eventHelper, 
+			EventWriter<TSendHeader, TEvent> eventWriter)  {
+		writeEvent(outgoingBuffer, header, socketId, false, eventHelper, eventWriter);
+	}
+	
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> void writeReliableEvent(
+			byte[] outgoingBuffer,
+			TSendHeader header,
+			byte[] socketId,
+			TEvent eventHelper, 
+			EventWriter<TSendHeader, TEvent> eventWriter)  {
+		writeEvent(outgoingBuffer, header, socketId, true, eventHelper, eventWriter);
+	}
+	
 	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> void writeEvent(
-			final byte[] outgoingBuffer,
-			final TSendHeader header,
-			final byte[] socketId,
-			final TEvent eventHelper, 
-			final EventWriter<TSendHeader, TEvent> eventWriter) {
+			byte[] outgoingBuffer,
+			TSendHeader header,
+			byte[] socketId,
+			boolean isReliable,
+			TEvent eventHelper, 
+			EventWriter<TSendHeader, TEvent> eventWriter) {
 		int cursor = header.getEventOffset();
 		System.arraycopy(socketId, 0, outgoingBuffer, cursor, socketId.length);
 		header.setSegmentMetaData(outgoingBuffer, SOCKET_ID_SEGMENT_INDEX, cursor, socketId.length);
+		header.setIsReliable(outgoingBuffer, isReliable);
 		cursor += socketId.length;
 		EventPattern.writeContent(outgoingBuffer, cursor, header, eventHelper, eventWriter);
 	}

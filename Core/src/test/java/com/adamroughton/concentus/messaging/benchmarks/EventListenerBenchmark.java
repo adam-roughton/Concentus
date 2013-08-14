@@ -30,6 +30,7 @@ import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessengerMutex;
 import com.adamroughton.concentus.messaging.zmq.ZmqSocketMessenger;
+import com.adamroughton.concentus.messaging.zmq.ZmqStandardSocketMessenger;
 import com.adamroughton.concentus.metric.NullMetricContext;
 import com.adamroughton.concentus.util.Util;
 import com.google.caliper.Param;
@@ -89,7 +90,7 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 		final ZMQ.Socket recvSocket = context.socket(ZMQ.DEALER);
 		recvSocket.setReceiveTimeOut(1000);
 		recvSocket.bind("tcp://127.0.0.1:" + _port);
-		ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, "", recvSocket, new DefaultClock());
+		ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", recvSocket, new DefaultClock());
 		
 		MessengerMutex<ZmqSocketMessenger> mutex = new MessengerMutex<ZmqSocketMessenger>(messenger);
 		FatalExceptionCallback exCallback = new FatalExceptionCallback() {

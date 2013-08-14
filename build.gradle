@@ -148,7 +148,7 @@ project(':Core') {
 	dependencies {
 		compile 'com.lmax:disruptor:3.0.1'
 		compile 'com.google.guava:guava:14.0'
-		compile 'org.zeromq:jzmq:2.1.3'
+		compile 'org.zeromq:jzmq:2.2.2'
 		compile 'com.esotericsoftware.kryo:kryo:2.20'
 		compile 'com.esotericsoftware.minlog:minlog:1.2'
 		compile 'com.netflix.curator:curator-recipes:1.3.2' // pulls in zookeeper as well
@@ -203,7 +203,7 @@ project(':SparkStreamingDriver') {
 	
 	dependencies {
 		compile project(':Core')
-		compile 'org.spark-project:spark-core_2.9.3:0.7.3'
+		compile 'org.spark-project:spark-streaming_2.9.3:0.7.3'
 		testCompile project(path: ':Core', configuration: 'tests')
 	}
 }

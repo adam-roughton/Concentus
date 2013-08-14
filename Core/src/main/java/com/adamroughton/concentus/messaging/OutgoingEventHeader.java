@@ -27,12 +27,13 @@ public class OutgoingEventHeader extends EventHeader {
 	private static final int SENT_TIME_LENGTH = 8;
 	private static final int TARGET_SOCKET_ID_LENGTH = 4;
 	private static final int ADDITIONAL_LENGTH = NEXT_SEGMENT_LENGTH + SENT_TIME_LENGTH + TARGET_SOCKET_ID_LENGTH;
-	private static final int FLAG_COUNT = 1;
+	private static final int FLAG_COUNT = 2;
 	
 	private final int _nextSegmentOffset;
 	private final int _sentTimeOffset;
 	private final int _targetSocketIdOffset;
 	private final int _isPartiallySentFlagIndex;
+	private final int _isReliableFlagIndex;
 	
 	public OutgoingEventHeader(final int startOffset, final int segmentCount) {
 		this(startOffset, segmentCount, 0, 0);
@@ -44,6 +45,7 @@ public class OutgoingEventHeader extends EventHeader {
 		_sentTimeOffset = _nextSegmentOffset + NEXT_SEGMENT_LENGTH;
 		_targetSocketIdOffset = _sentTimeOffset + SENT_TIME_LENGTH;
 		_isPartiallySentFlagIndex = super.getAdditionalFlagsStartIndex();
+		_isReliableFlagIndex = _isPartiallySentFlagIndex + 1;
 	}
 	
 	@Override
@@ -62,6 +64,14 @@ public class OutgoingEventHeader extends EventHeader {
 	
 	public final void setIsPartiallySent(byte[] event, boolean isPartiallySent) {
 		setFlag(event, _isPartiallySentFlagIndex, isPartiallySent);
+	}
+	
+	public final boolean isReliable(byte[] event) {
+		return getFlag(event, _isReliableFlagIndex);
+	}
+	
+	public final void setIsReliable(byte[] event, boolean isReliable) {
+		setFlag(event, _isReliableFlagIndex, isReliable);
 	}
 	
 	public final int getNextSegmentToSend(byte[] event) {

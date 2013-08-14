@@ -99,7 +99,7 @@ class MetricMetaDataRequestListener implements Runnable, OwnerDelegate<Messenger
 		synchronized(_metaDataLookup) {
 			requestedMetaData = _metaDataLookup.get(metricId);
 		}
-		RouterPattern.writeEvent(_sendBuffer, _outgoingEventHeader, destId, _metaDataEvent, 
+		RouterPattern.writeReliableEvent(_sendBuffer, _outgoingEventHeader, destId, _metaDataEvent, 
 				new EventWriter<OutgoingEventHeader, MetricMetaDataEvent>() {
 
 			@Override

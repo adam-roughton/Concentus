@@ -40,6 +40,7 @@ import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.SendRecvMessengerReactor;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
@@ -177,7 +178,8 @@ public final class WorkerService implements CrowdHammerService {
 			String connString = String.format("%s:%d", 
 					clientHandlerConnStrings[clientHandlerIndex],
 					clientHandlerPort);
-			int handlerSocketId = _socketManager.create(ZMQ.DEALER, "clientHandler" + clientHandlerIndex + " (" + connString + ")");
+			SocketSettings socketSettings = SocketSettings.create().setSupportReliable(true);
+			int handlerSocketId = _socketManager.create(ZMQ.DEALER, socketSettings, "clientHandler" + clientHandlerIndex + " (" + connString + ")");
 			_socketManager.connectSocket(handlerSocketId, connString);
 			_handlerIds[clientHandlerIndex] = handlerSocketId;
 		}

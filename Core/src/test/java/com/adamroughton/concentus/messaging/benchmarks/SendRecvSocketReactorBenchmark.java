@@ -37,6 +37,7 @@ import com.adamroughton.concentus.messaging.SendRecvMessengerReactor;
 import com.adamroughton.concentus.messaging.MessengerMutex;
 import com.adamroughton.concentus.messaging.TrackingMessengerDecorator;
 import com.adamroughton.concentus.messaging.zmq.ZmqSocketMessenger;
+import com.adamroughton.concentus.messaging.zmq.ZmqStandardSocketMessenger;
 import com.adamroughton.concentus.metric.LogMetricContext;
 import com.adamroughton.concentus.metric.NullMetricContext;
 import com.adamroughton.concentus.util.Mutex;
@@ -145,7 +146,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 		
 		LogMetricContext metricContext = new LogMetricContext(1000, 10000, new DefaultClock());
 		metricContext.start();
-		ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, "", dealerSocket, new DefaultClock());
+		ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", dealerSocket, new DefaultClock());
 		TrackingMessengerDecorator trackingMessenger = new TrackingMessengerDecorator(metricContext, messenger, new DefaultClock());
 		
 		Mutex<Messenger> mutex = new MessengerMutex<Messenger>(trackingMessenger);

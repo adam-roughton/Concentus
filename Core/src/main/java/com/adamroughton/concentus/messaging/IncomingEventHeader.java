@@ -26,18 +26,26 @@ public class IncomingEventHeader extends EventHeader {
 	private final static int SOCKET_ID_LENGTH = 4;
 	private final static int RECV_TIME_LENGTH = 8;
 	private final static int ADDITIONAL_LENGTH = SOCKET_ID_LENGTH + RECV_TIME_LENGTH;
+	private final static int FLAG_COUNT = 1;
 	
 	private final int _socketIdOffset;
 	private final int _recvTimeOffset;
+	private final int _connectionInvalidFlagOffset;
 	
 	public IncomingEventHeader(final int startOffset, final int segmentCount) {
 		this(startOffset, segmentCount, 0, 0);
 	}
 	
 	protected IncomingEventHeader(final int startOffset, final int segmentCount, final int additionalLength, final int additionalFlagCount) {
-		super(startOffset, segmentCount, additionalLength + ADDITIONAL_LENGTH, additionalFlagCount);
+		super(startOffset, segmentCount, additionalLength + ADDITIONAL_LENGTH, additionalFlagCount + FLAG_COUNT);
 		_socketIdOffset = super.getAdditionalOffset();
 		_recvTimeOffset = _socketIdOffset + SOCKET_ID_LENGTH;
+		_connectionInvalidFlagOffset = super.getAdditionalFlagsStartIndex();
+	}
+	
+	@Override
+	protected int getAdditionalFlagsStartIndex() {
+		return super.getAdditionalFlagsStartIndex() + FLAG_COUNT;
 	}
 	
 	@Override
@@ -45,6 +53,14 @@ public class IncomingEventHeader extends EventHeader {
 		return super.getAdditionalOffset() + ADDITIONAL_LENGTH;
 	}
 
+	public final boolean connectionInvalid(byte[] event) {
+		return getFlag(event, _connectionInvalidFlagOffset);
+	}
+	
+	public final void setConnectionInvalid(byte[] event, boolean connectionInvalid) {
+		setFlag(event, _connectionInvalidFlagOffset, connectionInvalid);
+	}
+	
 	public final int getSocketId(byte[] event) {
 		return MessageBytesUtil.readInt(event, _socketIdOffset);
 	}

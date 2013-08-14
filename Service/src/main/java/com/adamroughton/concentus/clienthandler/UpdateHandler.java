@@ -125,7 +125,7 @@ class UpdateHandler {
 					nanosGettingHighestActionId += clock.nanoTime() - lookupStart;
 					
 					long sendStartTime = clock.nanoTime();
-					if (!updateQueue.trySend(RouterPattern.asTask(client.getSocketId(), _clientUpdateEvent, new EventWriter<OutgoingEventHeader, ClientUpdateEvent>() {
+					if (!updateQueue.trySend(RouterPattern.asUnreliableTask(client.getSocketId(), _clientUpdateEvent, new EventWriter<OutgoingEventHeader, ClientUpdateEvent>() {
 		
 						@Override
 						public void write(OutgoingEventHeader header,

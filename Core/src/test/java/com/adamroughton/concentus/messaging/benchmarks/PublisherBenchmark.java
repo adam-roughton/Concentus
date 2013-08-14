@@ -26,6 +26,7 @@ import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
 import com.adamroughton.concentus.messaging.zmq.ZmqSocketMessenger;
+import com.adamroughton.concentus.messaging.zmq.ZmqStandardSocketMessenger;
 import com.adamroughton.concentus.util.Util;
 import com.google.caliper.Param;
 
@@ -51,7 +52,7 @@ public class PublisherBenchmark extends MessagingBenchmarkBase {
 		_recvSocket = context.socket(ZMQ.DEALER);
 		_recvSocket.setReceiveTimeOut(1000);
 		_recvSocket.bind("tcp://127.0.0.1:" + _port);
-		_messenger = new ZmqSocketMessenger(0, "", _recvSocket, new DefaultClock());
+		_messenger = new ZmqStandardSocketMessenger(0, "", _recvSocket, new DefaultClock());
 	
 		_header = new IncomingEventHeader(0, 1);
 		_recvBuffer = new byte[Util.nextPowerOf2(messageSize + _header.getEventOffset())];
@@ -73,7 +74,7 @@ public class PublisherBenchmark extends MessagingBenchmarkBase {
 		socket.setLinger(0);
 		socket.setSendTimeOut(1000);
 		socket.connect("tcp://127.0.0.1:" + _port);
-		final ZmqSocketMessenger messenger = new ZmqSocketMessenger(0, "", socket, new DefaultClock());
+		final ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", socket, new DefaultClock());
 		
 		OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, 1);
 		final byte[] msg = new byte[Util.nextPowerOf2(messageSize + sendHeader.getEventOffset())];

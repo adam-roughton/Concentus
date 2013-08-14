@@ -9,7 +9,7 @@ services:
   CanonicalState:
     ports:
       pub: 9000
-      sub: 9001
+      input: 9001
     messageBufferSizes:
       recv: 1048576
       pub: 1048576

@@ -108,6 +108,10 @@ public class ZmqTestUtil {
 	}
 	
 	public static void assertRangeEqual(byte[] expected, byte[] actual, int offsetOnActual, int length) {
+		assertRangeEqual("", expected, actual, offsetOnActual, length);
+	}
+	
+	public static void assertRangeEqual(String msg, byte[] expected, byte[] actual, int offsetOnActual, int length) {
 		if (offsetOnActual < 0)
 			throw new IllegalArgumentException("The offset must be 0 or greater.");
 		if (length < 0)
@@ -127,7 +131,7 @@ public class ZmqTestUtil {
 				}
 			}
 		}
-		assertTrue(reason, areEqual);
+		assertTrue(msg + " - " + reason, areEqual);
 	}
 	
 	public static String getUnmatchedOffsetMessage(int expectedValue, int offset, byte[] actual) {

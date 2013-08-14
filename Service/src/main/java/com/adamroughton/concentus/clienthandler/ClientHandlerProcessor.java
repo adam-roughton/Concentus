@@ -241,7 +241,7 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	private void onClientConnected(final byte[] clientSocketId, final ClientConnectEvent connectEvent) {
 		if (_nextClientId >= _clientLookup.getLength()) {
 			// over-subscribed - turn away
-			_routerSendQueue.send(RouterPattern.asTask(clientSocketId, _connectResEvent, new EventWriter<OutgoingEventHeader, ConnectResponseEvent>() {
+			_routerSendQueue.send(RouterPattern.asReliableTask(clientSocketId, _connectResEvent, new EventWriter<OutgoingEventHeader, ConnectResponseEvent>() {
 
 				@Override
 				public void write(OutgoingEventHeader header, ConnectResponseEvent event) {
@@ -259,7 +259,7 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 			newClient.setIsActive(true);
 			
 			// send a connect response
-			_routerSendQueue.send(RouterPattern.asTask(newClient.getSocketId(), _connectResEvent, new EventWriter<OutgoingEventHeader, ConnectResponseEvent>() {
+			_routerSendQueue.send(RouterPattern.asReliableTask(newClient.getSocketId(), _connectResEvent, new EventWriter<OutgoingEventHeader, ConnectResponseEvent>() {
 
 				@Override
 				public void write(OutgoingEventHeader header, ConnectResponseEvent event) {
