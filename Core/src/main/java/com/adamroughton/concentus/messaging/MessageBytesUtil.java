@@ -56,6 +56,16 @@ public final class MessageBytesUtil {
 	//private static final int INT_ARRAY_OFFSET = _unsafe.arrayBaseOffset(int[].class);
 	//private static final int LONG_ARRAY_OFFSET = _unsafe.arrayBaseOffset(long[].class);
 	
+	/**
+	 * The number of bits used to represent a serialized {@link ClientId} value in two's complement binary form.
+	 */
+	public static final int CLIENT_ID_SIZE = 64;
+	
+	/**
+	 * The number of bits used to represent a serialized {@link RunningStats} value in two's complement binary form.
+	 */
+	public static final int RUNNING_STATS_SIZE = 36;
+	
 	public static boolean readBoolean(byte[] array, long offset) {
 		return _unsafe.getBoolean(array, BYTE_ARRAY_OFFSET + offset);
 	}
@@ -177,6 +187,23 @@ public final class MessageBytesUtil {
 		_unsafe.putLong(array, BYTE_ARRAY_OFFSET + offset, lVal);
 	}
 	
+	public static byte[] readBytes(byte[] array, long offset) {
+		int len = readInt(array, offset);
+		byte[] bytes = new byte[len];
+		_unsafe.copyMemory(array, BYTE_ARRAY_OFFSET + offset + 4, bytes, BYTE_ARRAY_OFFSET, len);
+		return bytes;
+	}
+	
+	public static int writeBytes(byte[] array, long offset, byte[] src, int srcOffset, int srcLength) {
+		writeInt(array, offset, srcLength);
+		_unsafe.copyMemory(src, BYTE_ARRAY_OFFSET + srcOffset, array, BYTE_ARRAY_OFFSET + offset + 4, srcLength);
+		return 4 + srcLength;
+	}
+	
+	public static int writeBytes(byte[] array, long offset, byte[] src) {
+		return writeBytes(array, offset, src, 0, src.length);
+	}
+	
 	public static String read8BitCharString(byte[] array, long offset) {
 		return readString(array, offset, StandardCharsets.ISO_8859_1);
 	}
@@ -190,10 +217,7 @@ public final class MessageBytesUtil {
 	}
 	
 	public static String readString(byte[] array, long offset, Charset charset) {
-		int len = readInt(array, offset);
-		byte[] stringBytes = new byte[len];
-		_unsafe.copyMemory(array, BYTE_ARRAY_OFFSET + offset + 4, stringBytes, BYTE_ARRAY_OFFSET, len);
-		return new String(stringBytes, charset);
+		return new String(readBytes(array, offset), charset);
 	}
 	
 	public static int writeString(byte[] array, long offset, String value, String charsetName) {
@@ -202,10 +226,7 @@ public final class MessageBytesUtil {
 	
 	public static int writeString(byte[] array, long offset, String value, Charset charset) {
 		byte[] stringBytes = value.getBytes(charset);
-		int len = stringBytes.length;
-		writeInt(array, offset, len);
-		_unsafe.copyMemory(stringBytes, BYTE_ARRAY_OFFSET, array, BYTE_ARRAY_OFFSET + offset + 4, len);
-		return len;
+		return writeBytes(array, offset, stringBytes);
 	}
 	
 	public static UUID readUUID(byte[] array, long offset) {
@@ -252,7 +273,7 @@ public final class MessageBytesUtil {
 		return new RunningStats(count, mean, sumSqrs, min, max);
 	}
 	
-	public static int writeRunningStats(byte[] array, long offset, RunningStats value) {
+	public static void writeRunningStats(byte[] array, long offset, RunningStats value) {
 		writeInt(array, offset, value.getCount());
 		offset += 4;
 		writeDouble(array, offset, value.getMean());
@@ -262,7 +283,6 @@ public final class MessageBytesUtil {
 		writeDouble(array, offset, value.getMin());
 		offset += 8;
 		writeDouble(array, offset, value.getMax());
-		return 28;
 	}
 	
 	/*public static int[] readIntArray(byte[] array, long offset) {

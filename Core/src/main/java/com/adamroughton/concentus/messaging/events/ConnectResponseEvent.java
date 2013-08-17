@@ -15,21 +15,21 @@
  */
 package com.adamroughton.concentus.messaging.events;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.model.ClientId;
+import static com.adamroughton.concentus.messaging.ResizingBuffer.*;
 
-public class ConnectResponseEvent extends ByteArrayBackedEvent {
+public final class ConnectResponseEvent extends BufferBackedObject {
 	
-	private static final int CALLBACK_BITS_OFFSET = 0;
-	private static final int RES_CODE_OFFSET = 8;
-	private static final int CLIENT_ID_OFFSET = 12;
-	private static final int EVENT_SIZE = CLIENT_ID_OFFSET + 8;
+	private final Field callbackBitsField = super.getBaseField().then(LONG_SIZE);
+	private final Field resCodeField = callbackBitsField.then(INT_SIZE);
+	private final Field clientIdField = resCodeField.then(LONG_SIZE)
+			.resolveOffsets();
 	
 	public static final int RES_OK = 0;
 	public static final int RES_ERROR = 1;
 
 	public ConnectResponseEvent() {
-		super(EventType.CONNECT_RES.getId(), EVENT_SIZE);
+		super(EventType.CONNECT_RES.getId());
 	}
 	
 	/**
@@ -40,40 +40,40 @@ public class ConnectResponseEvent extends ByteArrayBackedEvent {
 	 * @return the data stored in the connect request event by the sender
 	 * @see ClientConnectEvent#setCallbackBits(long)
 	 */
-	public final long getCallbackBits() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(CALLBACK_BITS_OFFSET));
+	public long getCallbackBits() {
+		return getBuffer().readLong(callbackBitsField.offset);
 	}
 	
 	/**
 	 * @see ConnectResponseEvent#getCallbackBits()
 	 * @param callbackBits the data stored in the connect request event by the sender 
 	 */
-	public final void setCallbackBits(long callbackBits) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CALLBACK_BITS_OFFSET), callbackBits);
+	public void setCallbackBits(long callbackBits) {
+		getBuffer().writeLong(callbackBitsField.offset, callbackBits);
 	}
 	
-	public final int getResponseCode() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(RES_CODE_OFFSET));
+	public int getResponseCode() {
+		return getBuffer().readInt(resCodeField.offset);
 	}
 	
 	public final void setResponseCode(final int responseCode) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(RES_CODE_OFFSET), responseCode);
+		getBuffer().writeInt(resCodeField.offset, responseCode);
 	}
 	
 	public final ClientId getClientId() {
-		return MessageBytesUtil.readClientId(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
+		return getBuffer().readClientId(clientIdField.offset);
 	}
 
 	public final void setClientId(ClientId clientId) {
-		MessageBytesUtil.writeClientId(getBackingArray(), getOffset(CLIENT_ID_OFFSET), clientId);
+		getBuffer().writeClientId(clientIdField.offset, clientId);
 	}
 	
 	public final void setClientId(long clientIdBits) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET), clientIdBits);
+		getBuffer().writeLong(clientIdField.offset, clientIdBits);
 	}
 	
 	public final long getClientIdBits() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
+		return getBuffer().readLong(clientIdField.offset);
 	}
 	
 }

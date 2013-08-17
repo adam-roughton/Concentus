@@ -28,29 +28,29 @@ import com.lmax.disruptor.SequenceBarrier;
 
 public class MessagingUtil {
 	
-	public static <TEvent> EventProcessor asSocketOwner(
+	public static <TBuffer extends ResizingBuffer> EventProcessor asSocketOwner(
 			String name,
-			EventQueue<TEvent> eventQueue, 
-			MessengerDependentEventHandler<TEvent> eventHandler, 
-			final Mutex<Messenger> messengerMutex,
+			EventQueue<TBuffer> eventQueue, 
+			MessengerDependentEventHandler<TBuffer> eventHandler, 
+			final Mutex<Messenger<TBuffer>> messengerMutex,
 			Sequence...gatingSequences) {	
-		final EventHandlerAdapter<TEvent> adapter = new EventHandlerAdapter<>(eventHandler);
-		return eventQueue.createEventProcessor(name, new EventProcessorFactory<TEvent, EventProcessor>() {
+		final EventHandlerAdapter<TBuffer> adapter = new EventHandlerAdapter<>(eventHandler);
+		return eventQueue.createEventProcessor(name, new EventProcessorFactory<TBuffer, EventProcessor>() {
 
 			@Override
 			public EventProcessor createProcessor(
-					final DataProvider<TEvent> eventProvider, final SequenceBarrier barrier) {
+					final DataProvider<TBuffer> eventProvider, final SequenceBarrier barrier) {
 				return new EventProcessor() {
 
-					private final BatchEventProcessor<TEvent> _batchProcessor = 
+					private final BatchEventProcessor<TBuffer> _batchProcessor = 
 							new BatchEventProcessor<>(eventProvider, barrier, adapter);
 					
 					@Override
 					public void run() {
-						messengerMutex.runAsOwner(new OwnerDelegate<Messenger>() {
+						messengerMutex.runAsOwner(new OwnerDelegate<Messenger<TBuffer>>() {
 
 							@Override
-							public void asOwner(Messenger messenger) {
+							public void asOwner(Messenger<TBuffer> messenger) {
 								adapter.setMessenger(messenger);
 								_batchProcessor.run();
 							}
@@ -73,26 +73,26 @@ public class MessagingUtil {
 		}, gatingSequences);
 	}
 	
-	public interface MessengerDependentEventHandler<TEvent> {
-		void onEvent(TEvent event, long sequence, boolean endOfBatch, Messenger messenger)
+	public interface MessengerDependentEventHandler<TBuffer extends ResizingBuffer> {
+		void onEvent(TBuffer event, long sequence, boolean endOfBatch, Messenger<TBuffer> messenger)
 			throws Exception;
 	}
 	
-	private static final class EventHandlerAdapter<TEvent> implements EventHandler<TEvent> {
+	private static final class EventHandlerAdapter<TBuffer extends ResizingBuffer> implements EventHandler<TBuffer> {
 
-		private final MessengerDependentEventHandler<TEvent> _eventHandler;
-		private Messenger _messenger;
+		private final MessengerDependentEventHandler<TBuffer> _eventHandler;
+		private Messenger<TBuffer> _messenger;
 		
-		public EventHandlerAdapter(MessengerDependentEventHandler<TEvent> eventHandler) {
+		public EventHandlerAdapter(MessengerDependentEventHandler<TBuffer> eventHandler) {
 			_eventHandler = eventHandler;
 		}
 		
-		public void setMessenger(Messenger messenger) {
+		public void setMessenger(Messenger<TBuffer> messenger) {
 			_messenger = messenger;
 		}
 		
 		@Override
-		public void onEvent(TEvent event, long sequence, boolean endOfBatch)
+		public void onEvent(TBuffer event, long sequence, boolean endOfBatch)
 				throws Exception {
 			_eventHandler.onEvent(event, sequence, endOfBatch, _messenger);
 		}

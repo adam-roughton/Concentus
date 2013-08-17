@@ -22,6 +22,7 @@ import org.zeromq.ZMQ;
 import org.zeromq.ZMQ.Context;
 
 import com.adamroughton.concentus.DefaultClock;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
@@ -35,7 +36,7 @@ public class PublisherBenchmark extends MessagingBenchmarkBase {
 	private final int _port;
 	private ZMQ.Socket _recvSocket;
 	private ZmqSocketMessenger _messenger;
-	private byte[] _recvBuffer;
+	private ArrayBackedResizingBuffer _recvBuffer;
 	private IncomingEventHeader _header;
 	
 	@Param int messageCount;
@@ -55,7 +56,7 @@ public class PublisherBenchmark extends MessagingBenchmarkBase {
 		_messenger = new ZmqStandardSocketMessenger(0, "", _recvSocket, new DefaultClock());
 	
 		_header = new IncomingEventHeader(0, 1);
-		_recvBuffer = new byte[Util.nextPowerOf2(messageSize + _header.getEventOffset())];
+		_recvBuffer = new ArrayBackedResizingBuffer(Util.nextPowerOf2(messageSize + _header.getEventOffset()));
 	}
 
 	@Override
@@ -77,10 +78,11 @@ public class PublisherBenchmark extends MessagingBenchmarkBase {
 		final ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", socket, new DefaultClock());
 		
 		OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, 1);
-		final byte[] msg = new byte[Util.nextPowerOf2(messageSize + sendHeader.getEventOffset())];
-		sendHeader.setSegmentMetaData(msg, 0, sendHeader.getEventOffset(), msg.length - sendHeader.getEventOffset());
+		int msgSize = Util.nextPowerOf2(messageSize + sendHeader.getEventOffset());
+		final ArrayBackedResizingBuffer msg = new ArrayBackedResizingBuffer(msgSize);
+		sendHeader.setSegmentMetaData(msg, 0, sendHeader.getEventOffset(), msgSize - sendHeader.getEventOffset());
 		sendHeader.setIsValid(msg, true);
-		final Publisher publisher = new Publisher(sendHeader);
+		final Publisher<ArrayBackedResizingBuffer> publisher = new Publisher<>(sendHeader);
 		
 		return new Runnable() {
 			
@@ -107,7 +109,7 @@ public class PublisherBenchmark extends MessagingBenchmarkBase {
 		long val = 0;
 		while (recvCount < messageCount) {
 			if (_messenger.recv(_recvBuffer, _header, isBlockingRecv)) {
-				val ^= _recvBuffer[4];
+				val ^= _recvBuffer.readByte(4);
 				recvCount++;
 			}
 		}

@@ -26,6 +26,7 @@ import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.events.ClientConnectEvent;
 import com.adamroughton.concentus.messaging.events.ClientInputEvent;
 import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
@@ -46,7 +47,7 @@ import com.esotericsoftware.minlog.Log;
 
 import static com.adamroughton.concentus.messaging.events.EventType.*;
 
-public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]> {
+public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements DeadlineBasedEventHandler<TBuffer> {
 	
 	private final Clock _clock;
 	
@@ -54,8 +55,8 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	private final int _routerSocketId;
 	private final int _subSocketId;
 	
-	private final SendQueue<OutgoingEventHeader> _pubSendQueue;
-	private final SendQueue<OutgoingEventHeader> _routerSendQueue;
+	private final SendQueue<OutgoingEventHeader, TBuffer> _pubSendQueue;
+	private final SendQueue<OutgoingEventHeader, TBuffer> _routerSendQueue;
 	
 	private final UpdateHandler _updateHandler;
 	private final IncomingEventHeader _incomingQueueHeader;
@@ -100,8 +101,8 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 			int clientHandlerId,
 			int routerSocketId,
 			int subSocketId,
-			SendQueue<OutgoingEventHeader> routerSendQueue,
-			SendQueue<OutgoingEventHeader> pubSendQueue,
+			SendQueue<OutgoingEventHeader, TBuffer> routerSendQueue,
+			SendQueue<OutgoingEventHeader, TBuffer> pubSendQueue,
 			IncomingEventHeader incomingQueueHeader,
 			MetricContext metricContext) {
 		_clock = Objects.requireNonNull(clock);
@@ -141,21 +142,21 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 	 */
 	
 	@Override
-	public void onEvent(byte[] eventBytes, long sequence, boolean isEndOfBatch)
+	public void onEvent(TBuffer eventBuffer, long sequence, boolean isEndOfBatch)
 			throws Exception {
-		if (!_incomingQueueHeader.isValid(eventBytes)) {
+		if (!_incomingQueueHeader.isValid(eventBuffer)) {
 			return;
 		}
 		
 		_incomingThroughputMetric.push(1);
 		
-		int recvSocketId = _incomingQueueHeader.getSocketId(eventBytes);
-		int eventTypeId = EventPattern.getEventType(eventBytes, _incomingQueueHeader);
+		int recvSocketId = _incomingQueueHeader.getSocketId(eventBuffer);
+		int eventTypeId = EventPattern.getEventType(eventBuffer, _incomingQueueHeader);
 		
 		if (recvSocketId == _routerSocketId) {
-			final byte[] clientSocketId = RouterPattern.getSocketId(eventBytes, _incomingQueueHeader);
+			final byte[] clientSocketId = RouterPattern.getSocketId(eventBuffer, _incomingQueueHeader);
 			if (eventTypeId == CLIENT_CONNECT.getId()) {
-				EventPattern.readContent(eventBytes, _incomingQueueHeader, _clientConnectEvent, new EventReader<IncomingEventHeader, ClientConnectEvent>() {
+				EventPattern.readContent(eventBuffer, _incomingQueueHeader, _clientConnectEvent, new EventReader<IncomingEventHeader, ClientConnectEvent>() {
 
 					@Override
 					public void read(IncomingEventHeader header, ClientConnectEvent event) {
@@ -164,7 +165,7 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 					
 				});				
 			} else if (eventTypeId == CLIENT_INPUT.getId()) {
-				EventPattern.readContent(eventBytes, _incomingQueueHeader, _clientInputEvent, new EventReader<IncomingEventHeader, ClientInputEvent>() {
+				EventPattern.readContent(eventBuffer, _incomingQueueHeader, _clientInputEvent, new EventReader<IncomingEventHeader, ClientInputEvent>() {
 
 					@Override
 					public void read(IncomingEventHeader header, ClientInputEvent event) {
@@ -176,16 +177,16 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 			}
 		} else if (recvSocketId == _subSocketId) {
 			if (eventTypeId == STATE_UPDATE.getId()) {
-				EventPattern.readContent(eventBytes, _incomingQueueHeader, _stateUpdateEvent, new EventReader<IncomingEventHeader, StateUpdateEvent>() {
+				EventPattern.readContent(eventBuffer, _incomingQueueHeader, _stateUpdateEvent, new EventReader<IncomingEventHeader, StateUpdateEvent>() {
 
 					@Override
 					public void read(IncomingEventHeader header, StateUpdateEvent event) {
 						long updateId = event.getUpdateId();
 						int contentIndex = _incomingQueueHeader.getSegmentCount() - 1;
-						int contentMetaData = _incomingQueueHeader.getSegmentMetaData(event.getBackingArray(), contentIndex);
+						int contentMetaData = _incomingQueueHeader.getSegmentMetaData(event.getBuffer(), contentIndex);
 						int contentOffset = EventHeader.getSegmentOffset(contentMetaData);
 						int contentLength = EventHeader.getSegmentLength(contentMetaData);
-						_updateHandler.addUpdate(updateId, event.getBackingArray(), contentOffset, contentLength);
+						_updateHandler.addUpdate(updateId, event.getBuffer(), contentOffset, contentLength);
 						_incomingUpdateThroughputMetric.push(1);
 						if (_updateHandler.hasFullUpdateData(updateId)) {
 							_updateHandler.sendUpdates(updateId, _clientLookup, _routerSendQueue);
@@ -194,7 +195,7 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 					
 				});				
 			} else if (eventTypeId == STATE_INFO.getId()) {
-				EventPattern.readContent(eventBytes, _incomingQueueHeader, _updateInfoEvent, new EventReader<IncomingEventHeader, StateUpdateInfoEvent>() {
+				EventPattern.readContent(eventBuffer, _incomingQueueHeader, _updateInfoEvent, new EventReader<IncomingEventHeader, StateUpdateInfoEvent>() {
 
 					@Override
 					public void read(IncomingEventHeader header, StateUpdateInfoEvent event) {
@@ -288,8 +289,7 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 					event.setClientHandlerId(_clientHandlerId);
 					event.setInputId(handlerInputId);
 					event.setIsHeartbeat(false);
-					int inputBytes = inputEvent.copyFromInputBytes(event.getBackingArray(), event.getInputOffset(), event.getAvailableInputBufferLength());
-					event.setUsedLength(inputBytes);
+					inputEvent.getInputSlice().copyTo(event.getInputSlice());
 					client.storeAssociation(inputEvent.getClientActionId(), handlerInputId);
 				}
 				
@@ -307,7 +307,6 @@ public class ClientHandlerProcessor implements DeadlineBasedEventHandler<byte[]>
 				long handlerInputId = _inputId++;
 				event.setClientHandlerId(_clientHandlerId);
 				event.setInputId(handlerInputId);
-				event.setUsedLength(0);
 				event.setIsHeartbeat(true);
 			}
 			

@@ -15,13 +15,13 @@
  */
 package com.adamroughton.concentus.canonicalstate;
 
-import java.nio.ByteBuffer;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 
 public interface StateLogic {
 
-	void collectInput(ByteBuffer inputBuffer);
+	void collectInput(ResizingBuffer inputBuffer);
 	
 	void tick(long simTime, long timeDelta);
 	
-	void createUpdate(ByteBuffer updateBuffer);
+	void createUpdate(ResizingBuffer updateBuffer);
 }

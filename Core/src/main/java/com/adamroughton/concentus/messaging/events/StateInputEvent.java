@@ -15,91 +15,48 @@
  */
 package com.adamroughton.concentus.messaging.events;
 
-import java.nio.ByteBuffer;
+import static com.adamroughton.concentus.messaging.ResizingBuffer.*;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 
-public class StateInputEvent extends ByteArrayBackedEvent {
+public final class StateInputEvent extends BufferBackedObject {
 	
-	private static final int CLIENT_HANDLER_ID_OFFSET = 0;
-	private static final int INPUT_ID_OFFSET = 4;
-	private static final int IS_HEARTBEAT_FLAG = 12;
-	private static final int INPUT_BUFFER_LENGTH_OFFSET = 13;
-	private static final int INPUT_BUFFER_OFFSET = 16;
-	private static final int BASE_SIZE = INPUT_BUFFER_OFFSET;
+	private final Field clientHandlerIdField = super.getBaseField().then(INT_SIZE);
+	private final Field inputIdField = clientHandlerIdField.then(LONG_SIZE);
+	private final Field isHeartbeatField = inputIdField.then(BOOL_SIZE);
+	private final Field inputField = isHeartbeatField.thenVariableLength()
+			.resolveOffsets();
 
 	public StateInputEvent() {
 		super(EventType.STATE_INPUT.getId());
 	}
 	
-	public final int getClientHandlerId() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(CLIENT_HANDLER_ID_OFFSET));
+	public int getClientHandlerId() {
+		return getBuffer().readInt(clientHandlerIdField.offset);
 	}
 
-	public final void setClientHandlerId(int clientHandlerId) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(CLIENT_HANDLER_ID_OFFSET), clientHandlerId);
+	public void setClientHandlerId(int clientHandlerId) {
+		getBuffer().writeInt(clientHandlerIdField.offset, clientHandlerId);
 	}
 
-	public final long getInputId() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(INPUT_ID_OFFSET));
+	public long getInputId() {
+		return getBuffer().readLong(inputIdField.offset);
 	}
 
-	public final void setInputId(long inputId) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(INPUT_ID_OFFSET), inputId);
+	public void setInputId(long inputId) {
+		getBuffer().writeLong(inputIdField.offset, inputId);
 	}
 	
-	public final boolean isHeartbeat() {
-		return MessageBytesUtil.readBoolean(getBackingArray(), getOffset(IS_HEARTBEAT_FLAG));
+	public boolean isHeartbeat() {
+		return getBuffer().readBoolean(isHeartbeatField.offset);
 	}
 	
-	public final void setIsHeartbeat(boolean isHeartbeat) {
-		MessageBytesUtil.writeBoolean(getBackingArray(), IS_HEARTBEAT_FLAG, isHeartbeat);
+	public void setIsHeartbeat(boolean isHeartbeat) {
+		getBuffer().writeBoolean(isHeartbeatField.offset, isHeartbeat);
 	}
 	
-	public final int getInputBufferLength() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(INPUT_BUFFER_LENGTH_OFFSET));
-	}
-	
-	public final int getInputOffset() {
-		return getOffset(INPUT_BUFFER_OFFSET);
-	}
-	
-	public final int getAvailableInputBufferLength() {
-		return getBackingArray().length - getOffset(INPUT_BUFFER_OFFSET);
-	}
-	
-	public final ByteBuffer getInputBuffer() {
-		byte[] backingArray = getBackingArray();
-		int offset = getOffset(INPUT_BUFFER_OFFSET);
-		return ByteBuffer.wrap(backingArray, offset, backingArray.length - offset);
-	}
-	
-	public final int copyFromInputBytes(final byte[] exBuffer, final int offset, final int length) {
-		int updateLength = getInputBufferLength();
-		int copyLength = length < updateLength? length : updateLength;
-		System.arraycopy(getBackingArray(), getOffset(INPUT_BUFFER_OFFSET), exBuffer, offset, 
-				copyLength);
-		return copyLength;
-	}
-	
-	public final int copyToInputBytes(final byte[] exBuffer, final int offset, final int length) {
-		byte[] backingArray = getBackingArray();
-		int maxLength = backingArray.length - getOffset(INPUT_BUFFER_OFFSET);
-		int copyLength = length < maxLength? length : maxLength;
-		System.arraycopy(exBuffer, offset, getBackingArray(), getOffset(INPUT_BUFFER_OFFSET), 
-				copyLength);
-		return copyLength;
-	}
-	
-	public final void setUsedLength(final ByteBuffer inputBuffer) {
-		int usedLength = getUsedLength(getOffset(INPUT_BUFFER_OFFSET), inputBuffer);
-		setUsedLength(usedLength);
-	}
-	
-	public final void setUsedLength(int length) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(INPUT_BUFFER_LENGTH_OFFSET), length);
-		setEventSize(BASE_SIZE + length);
-		
+	public ResizingBuffer getInputSlice() {
+		return getBuffer().slice(inputField.offset);
 	}
 	
 }

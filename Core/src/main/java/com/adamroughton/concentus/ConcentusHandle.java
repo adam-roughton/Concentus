@@ -21,14 +21,15 @@ import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.esotericsoftware.minlog.Log;
 
-public class ConcentusHandle<TConfig extends Configuration> implements FatalExceptionCallback {
+public class ConcentusHandle<TConfig extends Configuration, TBuffer extends ResizingBuffer> implements FatalExceptionCallback {
 	
 	private final AtomicBoolean _isShuttingDown = new AtomicBoolean(false);
 	
-	private final InstanceFactory<SocketManager> _socketManager;
+	private final InstanceFactory<SocketManager<TBuffer>> _socketManager;
 	private final EventQueueFactory _eventQueueFactory;
 	private final Clock _clock;
 	private final TConfig _config;
@@ -36,7 +37,7 @@ public class ConcentusHandle<TConfig extends Configuration> implements FatalExce
 	private final String _zooKeeperAddress;
 	
 	public ConcentusHandle(
-			InstanceFactory<SocketManager> socketManagerFactory,
+			InstanceFactory<SocketManager<TBuffer>> socketManagerFactory,
 			EventQueueFactory eventQueueFactory,
 			Clock clock, 
 			TConfig config, 
@@ -50,7 +51,7 @@ public class ConcentusHandle<TConfig extends Configuration> implements FatalExce
 		_zooKeeperAddress = Objects.requireNonNull(zooKeeperAddress);
 	}
 	
-	public SocketManager newSocketManager() {
+	public SocketManager<TBuffer> newSocketManager() {
 		return _socketManager.newInstance();
 	}
 	

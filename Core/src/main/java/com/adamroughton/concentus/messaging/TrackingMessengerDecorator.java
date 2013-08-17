@@ -23,9 +23,9 @@ import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.MetricGroup;
 import com.adamroughton.concentus.metric.StatsMetric;
 
-public final class TrackingMessengerDecorator implements Messenger {
+public final class TrackingMessengerDecorator<TBuffer extends ResizingBuffer> implements Messenger<TBuffer> {
 	
-	private final Messenger _messenger;
+	private final Messenger<TBuffer> _messenger;
 	private final Clock _clock;
 	
 	private final MetricContext _metricContext;
@@ -40,7 +40,7 @@ public final class TrackingMessengerDecorator implements Messenger {
 	
 	private long _nextMetricTime;
 	
-	public TrackingMessengerDecorator(MetricContext metricContext, Messenger messenger, Clock clock) {
+	public TrackingMessengerDecorator(MetricContext metricContext, Messenger<TBuffer> messenger, Clock clock) {
 		_messenger = Objects.requireNonNull(messenger);
 		_clock = Objects.requireNonNull(clock);
 
@@ -88,14 +88,14 @@ public final class TrackingMessengerDecorator implements Messenger {
 	}
 
 	@Override
-	public boolean send(byte[] outgoingBuffer, OutgoingEventHeader header,
+	public boolean send(TBuffer outgoingBuffer, OutgoingEventHeader header,
 			boolean isBlocking) throws MessengerClosedException {
 		long startTime = _clock.nanoTime();
 		return onSend(startTime, _messenger.send(outgoingBuffer, header, isBlocking));
 	}
 
 	@Override
-	public boolean recv(byte[] eventBuffer, IncomingEventHeader header,
+	public boolean recv(TBuffer eventBuffer, IncomingEventHeader header,
 			boolean isBlocking) throws MessengerClosedException {
 		long startTime = _clock.nanoTime();
 		return onRecv(startTime, _messenger.recv(eventBuffer, header, isBlocking));

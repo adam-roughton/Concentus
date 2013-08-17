@@ -17,9 +17,9 @@ package com.adamroughton.concentus.messaging.patterns;
 
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.events.ByteArrayBackedEvent;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.messaging.events.BufferBackedObject;
 
 public class EventPattern {
 
@@ -29,13 +29,13 @@ public class EventPattern {
 	 * @param eventWriter
 	 * @return
 	 */
-	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> SendTask<TSendHeader> asTask(
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends BufferBackedObject> SendTask<TSendHeader> asTask(
 			final TEvent eventHelper, 
 			final EventWriter<TSendHeader, TEvent> eventWriter) {
 		return new SendTask<TSendHeader>() {
 
 			@Override
-			public void write(byte[] outgoingBuffer, TSendHeader header) {
+			public void write(ResizingBuffer outgoingBuffer, TSendHeader header) {
 				validate(header, 1);
 				writeContent(outgoingBuffer, header.getEventOffset(), header, eventHelper, eventWriter);
 			}
@@ -53,18 +53,18 @@ public class EventPattern {
 	 * @param writer the writer to use to create the content
 	 * @return the number of bytes written into the buffer
 	 */
-	public static <TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> int writeContent(
-			final byte[] outgoingBuffer,
-			final int offset,
-			final TSendHeader header,
-			final TEvent eventHelper, 
-			final EventWriter<TSendHeader, TEvent> writer) {
+	public static <TSendHeader extends OutgoingEventHeader, TEvent extends BufferBackedObject> int writeContent(
+			ResizingBuffer outgoingBuffer,
+			int offset,
+			TSendHeader header,
+			TEvent eventHelper, 
+			EventWriter<TSendHeader, TEvent> writer) {
 		try {
-			eventHelper.setBackingArray(outgoingBuffer, offset);
+			eventHelper.attachToBuffer(outgoingBuffer, offset);
 			try {
-				eventHelper.writeEventTypeId();
+				eventHelper.writeTypeId();
 				writer.write(header, eventHelper);
-				int length = eventHelper.getEventSize();
+				int length = eventHelper.getBuffer().getContentSize();
 				int contentSegmentIndex = header.getSegmentCount() - 1;
 				header.setSegmentMetaData(outgoingBuffer, contentSegmentIndex, offset, length);
 				header.setIsValid(outgoingBuffer, true);
@@ -74,7 +74,7 @@ public class EventPattern {
 				throw new RuntimeException(e);
 			}
 		} finally {
-			eventHelper.releaseBackingArray();
+			eventHelper.releaseBuffer();
 		}
 	}
 	
@@ -86,17 +86,17 @@ public class EventPattern {
 	 * @param eventHelper the helper to use to translate the event bytes
 	 * @param reader the reader to use to extract the event data
 	 */
-	public static <TRecvHeader extends IncomingEventHeader, TEvent extends ByteArrayBackedEvent> void readContent(
-			final byte[] incomingBuffer, 
+	public static <TRecvHeader extends IncomingEventHeader, TEvent extends BufferBackedObject> void readContent(
+			final ResizingBuffer incomingBuffer, 
 			final TRecvHeader header,
 			final TEvent eventHelper,
 			final EventReader<TRecvHeader, TEvent> reader) {
 		int contentOffset = getContentOffset(incomingBuffer, header);
-		eventHelper.setBackingArray(incomingBuffer, contentOffset);
+		eventHelper.attachToBuffer(incomingBuffer, contentOffset);
 		try {
 			reader.read(header, eventHelper);
 		} finally {
-			eventHelper.releaseBackingArray();
+			eventHelper.releaseBuffer();
 		}
 	}
 	
@@ -114,7 +114,7 @@ public class EventPattern {
 	 * @param header
 	 * @return
 	 */
-	public static int getContentOffset(byte[] incomingBuffer, final IncomingEventHeader header) {
+	public static int getContentOffset(ResizingBuffer incomingBuffer, final IncomingEventHeader header) {
 		int contentSegmentIndex = header.getSegmentCount() - 1;
 		int contentSegmentMetaData = header.getSegmentMetaData(incomingBuffer, contentSegmentIndex);
 		return EventHeader.getSegmentOffset(contentSegmentMetaData);
@@ -126,8 +126,8 @@ public class EventPattern {
 	 * @param header
 	 * @return the event type ID of the event
 	 */
-	public static int getEventType(byte[] incomingBuffer, IncomingEventHeader header) {
-		return MessageBytesUtil.readInt(incomingBuffer, getContentOffset(incomingBuffer, header));
+	public static int getEventType(ResizingBuffer incomingBuffer, IncomingEventHeader header) {
+		return incomingBuffer.readInt(getContentOffset(incomingBuffer, header));
 	}
 	
 }

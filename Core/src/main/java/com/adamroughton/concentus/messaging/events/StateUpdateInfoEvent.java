@@ -15,69 +15,54 @@
  */
 package com.adamroughton.concentus.messaging.events;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import static com.adamroughton.concentus.messaging.ResizingBuffer.*;
 
-public class StateUpdateInfoEvent extends ByteArrayBackedEvent {
+public final class StateUpdateInfoEvent extends BufferBackedObject {
 
-	private final static int UPDATE_ID_OFFSET = 0;
-	private final static int ENTRY_COUNT_OFFSET = 8;
-	private final static int ENTRY_START_OFFSET = 12;
-	private final static int ENTRY_SIZE = 12;
-	private static final int BASE_SIZE = ENTRY_START_OFFSET;
+	private final Field updateIdField = super.getBaseField().then(LONG_SIZE);
+	private final Field entryCountField = updateIdField.then(INT_SIZE);
+	private final Field entryContentField = entryCountField.thenVariableLength()
+			.resolveOffsets();
+	private final static int ENTRY_SIZE = INT_SIZE + LONG_SIZE;
 
 	public StateUpdateInfoEvent() {
 		super(EventType.STATE_INFO.getId());
 	}
 	
-	public final long getUpdateId() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET));
+	public long getUpdateId() {
+		return getBuffer().readLong(updateIdField.offset);
 	}
 	
-	public final void setUpdateId(long updateId) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET), updateId);
+	public void setUpdateId(long updateId) {
+		getBuffer().writeLong(updateIdField.offset, updateId);
 	}
 	
-	public final int getEntryCount() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(ENTRY_COUNT_OFFSET));
+	public int getEntryCount() {
+		return getBuffer().readInt(entryCountField.offset);
 	}
 	
-	public final void setEntryCount(int entryCount) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(ENTRY_COUNT_OFFSET), entryCount);
-		setEventSize(BASE_SIZE + entryCount * ENTRY_SIZE);
+	public void setEntryCount(int entryCount) {
+		getBuffer().writeInt(entryCountField.offset, entryCount);
 	}
 	
 	public final ClientHandlerEntry getHandlerEntry(int index) {
-		int clientHandlerId = MessageBytesUtil.readInt(getBackingArray(), getOffset(getEntryOffset(index)));
-		long highestSeq = MessageBytesUtil.readLong(getBackingArray(), getOffset(getEntryOffset(index) + 4));
+		int clientHandlerId = getBuffer().readInt(getEntryOffset(index));
+		long highestSeq = getBuffer().readLong(getEntryOffset(index) + INT_SIZE);
 		return new ClientHandlerEntry(clientHandlerId, highestSeq);
 	}
 	
 	public final void setHandlerEntry(int index, ClientHandlerEntry entry) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(getEntryOffset(index)), entry.getClientHandlerId());
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(getEntryOffset(index) + 4), entry.getHighestHandlerSeq());
+		getBuffer().writeInt(getEntryOffset(index), entry.getClientHandlerId());
+		getBuffer().writeLong(getEntryOffset(index) + INT_SIZE, entry.getHighestHandlerSeq());
 	}
 
 	/**
-	 * Gets the offset of the entry at index {@code index} relative to the {@link StateUpdateInfoEvent#ENTRY_START_OFFSET}.
-	 * This must be transformed by {@link ByteArrayBackedEvent#getOffset(int)} to get the offset relative to the
-	 * start of the event.
+	 * Gets the offset of the entry at index {@code index} relative to the {@link StateUpdateInfoEvent#entryContentField}.
 	 * @param index the index of the entry
-	 * @return the offset relative to {@link StateUpdateInfoEvent#ENTRY_START_OFFSET}
+	 * @return the offset relative to {@link StateUpdateInfoEvent#entryContentField}
 	 */
 	private final int getEntryOffset(int index) {
-		return ENTRY_START_OFFSET + ENTRY_SIZE * index;
-	}
-	
-	/**
-	 * Helper method for determining the number of entries that can
-	 * be placed in this event given the underlying byte array size.
-	 * {@link #setBackingArray(byte[], int)} should be called with the 
-	 * intended backing array before invoking this method.
-	 * @return the number of entries that can be written into this event
-	 */
-	public final int getMaximumEntries() {
-		int availableBytes = getAvailableSize() - getOffset(ENTRY_START_OFFSET);
-		return availableBytes / ENTRY_SIZE;
+		return entryContentField.offset + ENTRY_SIZE * index;
 	}
 	
 	/**
@@ -96,11 +81,11 @@ public class StateUpdateInfoEvent extends ByteArrayBackedEvent {
 	}
 	
 	public final int getClientHandlerIdAtIndex(int index) {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(getEntryOffset(index)));
+		return getBuffer().readInt(getEntryOffset(index));
 	}
 	
 	public final long getHighestSequenceAtIndex(int index) {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(getEntryOffset(index) + 4));
+		return getBuffer().readLong(getEntryOffset(index) + INT_SIZE);
 	}
 	
 	/**

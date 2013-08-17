@@ -46,7 +46,7 @@ public class DeadlineBasedEventProcessorPerfTest {
 	public void setUp() {
 		Clock clock = new DefaultClock();
 		
-		_ringBuffer = RingBuffer.createSingleProducer(Util.msgBufferFactory(512), 1, new YieldingWaitStrategy());
+		_ringBuffer = RingBuffer.createSingleProducer(Util.byteArrayEventFactory(512), 1, new YieldingWaitStrategy());
 		_ringBuffer.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		SequenceBarrier barrier = _ringBuffer.newBarrier();

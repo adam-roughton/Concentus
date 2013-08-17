@@ -39,39 +39,40 @@ import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
+import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.events.EventType;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
-import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 import org.zeromq.*;
 
-public class MetricListenerService implements CrowdHammerService {
+public class MetricListenerService<TBuffer extends ResizingBuffer> implements CrowdHammerService {
 	
 	public static final String SERVICE_TYPE = "MetricListener";
 	
 	private static final Logger LOG = Logger.getLogger(MetricListenerService.class.getName());
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
-	private final ConcentusHandle<? extends CrowdHammerConfiguration> _concentusHandle;
-	private SocketManager _socketManager;
-	private EventQueue<byte[]> _inputQueue;
+	private final ConcentusHandle<? extends CrowdHammerConfiguration, TBuffer> _concentusHandle;
+	private SocketManager<TBuffer> _socketManager;
+	private EventQueue<TBuffer> _inputQueue;
 	private final IncomingEventHeader _header;
 	
-	private ProcessingPipeline<byte[]> _pipeline;
+	private ProcessingPipeline<TBuffer> _pipeline;
 	
-	private MetricTestRunProcessor _metricProcessor;
-	private EventListener _eventListener;
+	private MetricTestRunProcessor<TBuffer> _metricProcessor;
+	private EventListener<TBuffer> _eventListener;
 	
 	private final SocketSettings _subSocketSettings;
 	private int _subSocketId;
 	private final IntSet _sutMetricConnIdSet = new IntArraySet();
 	
-	public MetricListenerService(ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle) {
+	public MetricListenerService(ConcentusHandle<? extends CrowdHammerConfiguration, TBuffer> concentusHandle) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_header = new IncomingEventHeader(0, 2);
 		
@@ -106,7 +107,7 @@ public class MetricListenerService implements CrowdHammerService {
 	}
 	
 	private void onInit(ClusterWorkerHandle cluster) {
-		_metricProcessor = new MetricTestRunProcessor(_header);
+		_metricProcessor = new MetricTestRunProcessor<TBuffer>(_header);
 	}
 	
 	private void onInitTest(ClusterWorkerHandle cluster) {
@@ -119,13 +120,15 @@ public class MetricListenerService implements CrowdHammerService {
 		EventQueueFactory eventQueueFactory = _concentusHandle.getEventQueueFactory();
 		
 		int recvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "recv");
-		_inputQueue = eventQueueFactory.createSingleProducerQueue("input", Util.msgBufferFactory(Constants.MSG_BUFFER_ENTRY_LENGTH), 
-				recvBufferLength, new YieldingWaitStrategy());
+		MessageQueueFactory<TBuffer> messageQueueFactory = 
+				_socketManager.newMessageQueueFactory(eventQueueFactory);
+		_inputQueue = messageQueueFactory.createSingleProducerQueue("input", recvBufferLength, 
+				Constants.MSG_BUFFER_ENTRY_LENGTH, new YieldingWaitStrategy());
 		
-		Mutex<Messenger> subMessengerMutex = _socketManager.getSocketMutex(_subSocketId);
-		_eventListener = new EventListener("inputListener", _header, subMessengerMutex, _inputQueue, _concentusHandle);
+		Mutex<Messenger<TBuffer>> subMessengerMutex = _socketManager.getSocketMutex(_subSocketId);
+		_eventListener = new EventListener<TBuffer>("inputListener", _header, subMessengerMutex, _inputQueue, _concentusHandle);
 		
-		_pipeline = ProcessingPipeline.<byte[]>build(_eventListener, _concentusHandle.getClock())
+		_pipeline = ProcessingPipeline.<TBuffer>build(_eventListener, _concentusHandle.getClock())
 				.thenConnector(_inputQueue)
 				.then(_inputQueue.createEventProcessor("metricProcessor", _metricProcessor))
 				.createPipeline(_executor);

@@ -15,7 +15,6 @@
  */
 package com.adamroughton.concentus.canonicalstate;
 
-import java.nio.ByteBuffer;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -29,13 +28,14 @@ import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.disruptor.EventQueue;
-import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
+import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.MessagingUtil;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
@@ -50,33 +50,32 @@ import com.lmax.disruptor.YieldingWaitStrategy;
 import org.zeromq.*;
 
 import static com.adamroughton.concentus.Constants.MSG_BUFFER_ENTRY_LENGTH;
-import static com.adamroughton.concentus.util.Util.msgBufferFactory;
 
-public class CanonicalStateService implements ConcentusService {
+public class CanonicalStateService<TBuffer extends ResizingBuffer> implements ConcentusService {
 	
 	public final static String SERVICE_TYPE = "CanonicalState";
 	private final static Logger LOG = Logger.getLogger(SERVICE_TYPE);
 
-	private final ConcentusHandle<? extends Configuration> _concentusHandle;
+	private final ConcentusHandle<? extends Configuration, TBuffer> _concentusHandle;
 	private final MetricContext _metricContext;
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
-	private final SocketManager _socketManager;
-	private final EventQueue<byte[]> _inputQueue;
-	private final EventQueue<byte[]> _outputQueue;
+	private final SocketManager<TBuffer> _socketManager;
+	private final EventQueue<TBuffer> _inputQueue;
+	private final EventQueue<TBuffer> _outputQueue;
 	private final OutgoingEventHeader _pubHeader;
 	private final IncomingEventHeader _subHeader;
 	private final StateLogic _stateLogic;
 	
-	private ProcessingPipeline<byte[]> _pipeline;
-	private StatefulRunnable<EventListener> _subListener;
-	private StateProcessor _stateProcessor;
+	private ProcessingPipeline<TBuffer> _pipeline;
+	private StatefulRunnable<EventListener<TBuffer>> _subListener;
+	private StateProcessor<TBuffer> _stateProcessor;
 	private EventProcessor _publisher;	
 	
 	private final int _pubSocketId;
 	private final int _inputSocketId;
 	
-	public CanonicalStateService(ConcentusHandle<? extends Configuration> concentusHandle, MetricContext metricContext) {
+	public CanonicalStateService(ConcentusHandle<? extends Configuration, TBuffer> concentusHandle, MetricContext metricContext) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_metricContext = Objects.requireNonNull(metricContext);
 		_socketManager = _concentusHandle.newSocketManager();
@@ -86,13 +85,17 @@ public class CanonicalStateService implements ConcentusService {
 		int recvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "recv");
 		int pubBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "pub");
 		
-		EventQueueFactory eventQueueFactory = _concentusHandle.getEventQueueFactory();
+		MessageQueueFactory<TBuffer> messageQueueFactory = _socketManager.newMessageQueueFactory(_concentusHandle.getEventQueueFactory());
 		
-		_inputQueue = eventQueueFactory.createSingleProducerQueue("inputQueue", msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
-				recvBufferLength, new YieldingWaitStrategy());
+		_inputQueue = messageQueueFactory.createSingleProducerQueue("inputQueue", 
+				recvBufferLength, 
+				MSG_BUFFER_ENTRY_LENGTH, 
+				new YieldingWaitStrategy());
 		
-		_outputQueue = eventQueueFactory.createSingleProducerQueue("pubQueue", msgBufferFactory(MSG_BUFFER_ENTRY_LENGTH), 
-				pubBufferLength, new YieldingWaitStrategy());
+		_outputQueue = messageQueueFactory.createSingleProducerQueue("pubQueue", 
+				pubBufferLength, 
+				MSG_BUFFER_ENTRY_LENGTH, 
+				new YieldingWaitStrategy());
 		
 		_pubHeader = new OutgoingEventHeader(0, 2);
 		_subHeader = new IncomingEventHeader(0, 2);
@@ -102,7 +105,7 @@ public class CanonicalStateService implements ConcentusService {
 			private int i = 0;
 			
 			@Override
-			public void collectInput(ByteBuffer inputBuffer) {
+			public void collectInput(ResizingBuffer inputBuffer) {
 				i++;
 			}
 
@@ -112,8 +115,8 @@ public class CanonicalStateService implements ConcentusService {
 			}
 
 			@Override
-			public void createUpdate(ByteBuffer updateBuffer) {
-				updateBuffer.putInt(i);
+			public void createUpdate(ResizingBuffer updateBuffer) {
+				updateBuffer.writeInt(i, 0);
 			}
 			
 		};
@@ -159,17 +162,17 @@ public class CanonicalStateService implements ConcentusService {
 	
 	private void onBind(ClusterWorkerHandle cluster) throws Exception {
 		// infrastructure for sub socket
-		Mutex<Messenger> subSocketPackageMutex = _socketManager.getSocketMutex(_inputSocketId);
-		_subListener = Util.asStateful(new EventListener("inputListener", _subHeader, subSocketPackageMutex, _inputQueue, _concentusHandle));
+		Mutex<Messenger<TBuffer>> subSocketPackageMutex = _socketManager.getSocketMutex(_inputSocketId);
+		_subListener = Util.asStateful(new EventListener<>("inputListener", _subHeader, subSocketPackageMutex, _inputQueue, _concentusHandle));
 		
 		// infrastructure for pub socket
-		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>("publisher", _pubHeader, _outputQueue);
-		Mutex<Messenger> pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
-		_publisher = MessagingUtil.asSocketOwner("publisher", _outputQueue, new Publisher(_pubHeader), pubSocketPackageMutex);
+		SendQueue<OutgoingEventHeader, TBuffer> pubSendQueue = new SendQueue<>("publisher", _pubHeader, _outputQueue);
+		Mutex<Messenger<TBuffer>> pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
+		_publisher = MessagingUtil.asSocketOwner("publisher", _outputQueue, new Publisher<TBuffer>(_pubHeader), pubSocketPackageMutex);
 		
-		_stateProcessor = new StateProcessor(_concentusHandle.getClock(), _stateLogic, _subHeader, pubSendQueue, _metricContext);
+		_stateProcessor = new StateProcessor<>(_concentusHandle.getClock(), _stateLogic, _subHeader, pubSendQueue, _metricContext);
 		
-		_pipeline = ProcessingPipeline.<byte[]>build(_subListener, _concentusHandle.getClock())
+		_pipeline = ProcessingPipeline.<TBuffer>build(_subListener, _concentusHandle.getClock())
 				.thenConnector(_inputQueue)
 				.then(_inputQueue.createEventProcessor("stateProcessor", _stateProcessor, _concentusHandle.getClock(), _concentusHandle))
 				.thenConnector(_outputQueue)

@@ -19,7 +19,7 @@ import java.util.Objects;
 
 import com.adamroughton.concentus.messaging.MessagingUtil.MessengerDependentEventHandler;
 
-public class Publisher implements MessengerDependentEventHandler<byte[]> {
+public class Publisher<TBuffer extends ResizingBuffer> implements MessengerDependentEventHandler<TBuffer> {
 
 	private final OutgoingEventHeader _header;
 	
@@ -28,7 +28,7 @@ public class Publisher implements MessengerDependentEventHandler<byte[]> {
 	}
 
 	@Override
-	public void onEvent(byte[] event, long sequence, boolean endOfBatch, Messenger messenger)
+	public void onEvent(TBuffer event, long sequence, boolean endOfBatch, Messenger<TBuffer> messenger)
 			throws Exception {
 		messenger.send(event, _header, true);
 	}

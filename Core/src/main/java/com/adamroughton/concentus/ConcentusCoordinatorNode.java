@@ -4,9 +4,10 @@ import java.util.Map;
 
 import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle;
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 
 public interface ConcentusCoordinatorNode<TConfig extends Configuration> extends ConcentusNode<TConfig> {
 
-	void run(Map<String, String> commandLineArgs, ConcentusHandle<TConfig> processHandle, ClusterCoordinatorHandle clusterHandle);
+	<TBuffer extends ResizingBuffer> void run(Map<String, String> commandLineArgs, ConcentusHandle<TConfig, TBuffer> processHandle, ClusterCoordinatorHandle clusterHandle);
 	
 }

@@ -17,32 +17,32 @@ package com.adamroughton.concentus.messaging.events;
 
 import java.util.UUID;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import static com.adamroughton.concentus.messaging.ResizingBuffer.*;
 
-public final class MetricMetaDataRequestEvent extends ByteArrayBackedEvent {
+public final class MetricMetaDataRequestEvent extends BufferBackedObject {
 
-	private static final int SOURCE_ID_OFFSET = 0;
-	private static final int METRIC_ID_OFFSET = 16;
-	private static final int LENGTH = METRIC_ID_OFFSET + 4;
+	private final Field sourceIdField = super.getBaseField().then(UUID_SIZE);
+	private final Field metricIdField = sourceIdField.then(INT_SIZE)
+			.resolveOffsets();
 	
 	public MetricMetaDataRequestEvent() {
-		super(EventType.METRIC_META_DATA_REQ.getId(), LENGTH);
+		super(EventType.METRIC_META_DATA_REQ.getId());
 	}
 	
 	public final UUID getSourceId() {
-		return MessageBytesUtil.readUUID(getBackingArray(), getOffset(SOURCE_ID_OFFSET));
+		return getBuffer().readUUID(sourceIdField.offset);
 	}
 	
 	public final void setSourceId(UUID sourceId) {
-		MessageBytesUtil.writeUUID(getBackingArray(), getOffset(SOURCE_ID_OFFSET), sourceId);
+		getBuffer().writeUUID(sourceIdField.offset, sourceId);
 	}
 	
 	public final int getMetricId() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(METRIC_ID_OFFSET));
+		return getBuffer().readInt(metricIdField.offset);
 	}
 	
 	public final void setMetricId(int metricId) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(METRIC_ID_OFFSET), metricId);
+		getBuffer().writeInt(metricIdField.offset, metricId);
 	}
 	
 }

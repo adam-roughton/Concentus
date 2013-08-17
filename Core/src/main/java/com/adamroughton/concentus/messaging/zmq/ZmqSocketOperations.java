@@ -3,6 +3,7 @@ package com.adamroughton.concentus.messaging.zmq;
 import org.zeromq.ZMQ;
 import org.zeromq.ZMQException;
 
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.MessengerClosedException;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
@@ -25,7 +26,7 @@ final class ZmqSocketOperations {
 	 */
 	public static int sendSegments(
 			ZMQ.Socket socket,
-			byte[] outgoingBuffer, 
+			ArrayBackedResizingBuffer outgoingBuffer, 
 			OutgoingEventHeader header,
 			int startSegmentIndex,
 			int endSegmentIndex,
@@ -41,12 +42,14 @@ final class ZmqSocketOperations {
 		int segmentCount = header.getSegmentCount();
 		int segmentIndex = startSegmentIndex;
 		
+		byte[] msgBytes = outgoingBuffer.getBuffer();
+		
 		for (;segmentIndex <= endSegmentIndex; segmentIndex++) {
 			int segmentMetaData = header.getSegmentMetaData(outgoingBuffer, segmentIndex);
 			int offset = EventHeader.getSegmentOffset(segmentMetaData);
 			int length = EventHeader.getSegmentLength(segmentMetaData);
 			int flags = zmqFlags | ((segmentIndex < segmentCount - 1)? ZMQ.SNDMORE : 0);
-			if (!ZmqSocketOperations.doSend(socket, outgoingBuffer, offset, length, flags)) {
+			if (!ZmqSocketOperations.doSend(socket, msgBytes, offset, length, flags)) {
 				break;
 			}
 		}
@@ -85,6 +88,7 @@ final class ZmqSocketOperations {
 	}
 	
 	public static int doRecv(ZMQ.Socket socket, byte[] eventBuffer, int offset, int length, boolean isBlocking) {
+		int safeLength = Math.min(eventBuffer.length - offset, length);
 		try {
 			int recvFlag = isBlocking? 0 : ZMQ.NOBLOCK;
 			
@@ -104,10 +108,10 @@ final class ZmqSocketOperations {
 						Thread.currentThread().interrupt();
 						return 0;
 					}
-					recvdAmount = socket.recv(eventBuffer, offset, eventBuffer.length - offset, recvFlag);
+					recvdAmount = socket.recv(eventBuffer, offset, safeLength, recvFlag);
 				}
 			} else {
-				recvdAmount = socket.recv(eventBuffer, offset, eventBuffer.length - offset, recvFlag);
+				recvdAmount = socket.recv(eventBuffer, offset, safeLength, recvFlag);
 				recvdAmount = recvdAmount == -1? 0 : recvdAmount;
 			}
 			return recvdAmount;

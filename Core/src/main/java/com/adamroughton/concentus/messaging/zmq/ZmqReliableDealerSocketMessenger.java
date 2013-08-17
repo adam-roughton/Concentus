@@ -20,10 +20,12 @@ import java.util.Objects;
 import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.esotericsoftware.minlog.Log;
 
 public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenger {
@@ -35,7 +37,7 @@ public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenge
 	
 	private long _lastRecvReliableSeq = -1;
 	private long _nack = -1;
-	private final byte[] _headerBytes = new byte[8];
+	private final byte[] _headerBytes = new byte[ResizingBuffer.LONG_SIZE + ResizingBuffer.INT_SIZE];
 	
 	public ZmqReliableDealerSocketMessenger(int socketId, String name, ZMQ.Socket socket, Clock clock) {
 		_socketId = socketId;
@@ -45,7 +47,7 @@ public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenge
 	}
 	
 	@Override
-	public boolean send(byte[] outgoingBuffer, 
+	public boolean send(ArrayBackedResizingBuffer outgoingBuffer, 
 			OutgoingEventHeader header,
 			boolean isBlocking) {
 		// only send if the event is valid
@@ -53,14 +55,15 @@ public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenge
 		
 		// check event bounds
 		int segmentCount = header.getSegmentCount();
+		int bufferContentSize = outgoingBuffer.getContentSize();
 		int lastSegmentMetaData = header.getSegmentMetaData(outgoingBuffer, segmentCount - 1);
 		int lastSegmentOffset = EventHeader.getSegmentOffset(lastSegmentMetaData);
 		int lastSegmentLength = EventHeader.getSegmentLength(lastSegmentMetaData);
 		int requiredLength = lastSegmentOffset + lastSegmentLength;
-		if (requiredLength > outgoingBuffer.length) {
+		if (requiredLength > bufferContentSize) {
 			header.setSentTime(outgoingBuffer, -1);
 			throw new RuntimeException(String.format("The buffer length is less than the content length (%d < %d)", 
-					outgoingBuffer.length, requiredLength));
+					bufferContentSize, requiredLength));
 		}
 		
 		int startSegmentIndex;
@@ -71,7 +74,7 @@ public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenge
 		}
 		
 		if (startSegmentIndex == 0) {
-			if (!sendHeader(isBlocking))
+			if (!sendHeader(bufferContentSize - header.getEventOffset(), isBlocking))
 				return false;
 		}
 		
@@ -87,13 +90,15 @@ public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenge
 		return true;
 	}
 		
-	public boolean sendHeader(boolean isBlocking) {
+	public boolean sendHeader(int msgSize, boolean isBlocking) {
 		MessageBytesUtil.writeLong(_headerBytes, 0, _nack);
+		MessageBytesUtil.writeInt(_headerBytes, ResizingBuffer.LONG_SIZE, msgSize);
 		return ZmqSocketOperations.doSend(_socket, _headerBytes, 0, _headerBytes.length, (isBlocking? 0 : ZMQ.NOBLOCK) | ZMQ.SNDMORE);
 	}
 	
 	@Override
-	public boolean recv(byte[] eventBuffer, IncomingEventHeader header,
+	public boolean recv(ArrayBackedResizingBuffer eventBuffer, 
+			IncomingEventHeader header,
 			boolean isBlocking) {
 		int cursor = header.getEventOffset();
 		int expectedSegmentCount = header.getSegmentCount() + 1;
@@ -103,13 +108,13 @@ public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenge
 		long recvTime = -1;
 		
 		do {
-			if (segmentIndex > expectedSegmentCount || cursor >= eventBuffer.length) {
+			if (segmentIndex > expectedSegmentCount) {
 				isValid = false;
 			}
 			
 			if (isValid) {
 				if (segmentIndex == 0) {
-					int retVal = processSeqFrame(isBlocking, eventBuffer, header);
+					int retVal = processHeaderFrame(eventBuffer, header, isBlocking);
 					if (retVal == 0) {
 						return false;
 					} else {
@@ -117,7 +122,8 @@ public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenge
 					}
 					segmentIndex++;
 				} else {
-					int recvdAmount = ZmqSocketOperations.doRecv(_socket, eventBuffer, cursor, eventBuffer.length - cursor, isBlocking);
+					byte[] eventBufferByteArray = eventBuffer.getBuffer();
+					int recvdAmount = ZmqSocketOperations.doRecv(_socket, eventBufferByteArray, cursor, eventBufferByteArray.length - cursor, isBlocking);
 					if (segmentIndex == 0 && recvdAmount == 0) {
 						// no message ready
 						return false;
@@ -143,7 +149,7 @@ public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenge
 		return true;
 	}
 	
-	public int processSeqFrame(boolean isBlocking, byte[] incomingBuffer, IncomingEventHeader eventHeader) {	
+	public int processHeaderFrame(ArrayBackedResizingBuffer incomingBuffer, IncomingEventHeader eventHeader, boolean isBlocking) {	
 		// get seq header
 		int headerSize = ZmqSocketOperations.doRecv(_socket, _headerBytes, 0, _headerBytes.length, isBlocking);
 		if (headerSize == 0) {
@@ -152,11 +158,13 @@ public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenge
 			return -1;
 		} else if (headerSize != _headerBytes.length) {
 			Log.warn(String.format("Expected to find a " +
-					"reliable seq message frame of length 8 bytes, " +
-					"but instead found %d bytes.", headerSize));
+					"reliable seq message frame of length %d bytes, " +
+					"but instead found %d bytes.", _headerBytes.length, headerSize));
 			return -1;
 		} else {
 			long seq = MessageBytesUtil.readLong(_headerBytes, 0);
+			int msgSize = MessageBytesUtil.readInt(_headerBytes, ResizingBuffer.LONG_SIZE);
+			incomingBuffer.allocateForWriting(msgSize + eventHeader.getEventOffset());
 			
 			if (seq != -1) {
 				if (seq == Long.MAX_VALUE) {

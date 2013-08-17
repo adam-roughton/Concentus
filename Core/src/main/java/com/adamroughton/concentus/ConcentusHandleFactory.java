@@ -21,6 +21,7 @@ import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.disruptor.MetricTrackingEventQueueFactory;
 import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketManagerImpl;
 import com.adamroughton.concentus.messaging.zmq.TrackingSocketManagerDecorator;
@@ -29,7 +30,7 @@ import com.adamroughton.concentus.util.Util;
 
 public class ConcentusHandleFactory {
 
-	public static <TConfig extends Configuration> ConcentusHandle<TConfig> createHandle(
+	public static <TConfig extends Configuration> ConcentusHandle<TConfig, ArrayBackedResizingBuffer> createHandle(
 			final Clock clock, 
 			TConfig config, 
 			String zooKeeperAddress, 
@@ -37,22 +38,22 @@ public class ConcentusHandleFactory {
 			final MetricContext metricContext,
 			boolean traceMessengers,
 			boolean traceQueues) {
-		InstanceFactory<SocketManager> socketManagerFactory;
+		InstanceFactory<SocketManager<ArrayBackedResizingBuffer>> socketManagerFactory;
 		EventQueueFactory eventQueueFactory;
 		
 		if (traceMessengers) {
-			socketManagerFactory = new InstanceFactory<SocketManager>() {
+			socketManagerFactory = new InstanceFactory<SocketManager<ArrayBackedResizingBuffer>>() {
 				
 				@Override
-				public SocketManager newInstance() {
-					return new TrackingSocketManagerDecorator(metricContext, new SocketManagerImpl(clock), clock);
+				public SocketManager<ArrayBackedResizingBuffer> newInstance() {
+					return new TrackingSocketManagerDecorator<>(metricContext, new SocketManagerImpl(clock), clock);
 				}
 			};
 		} else {
-			socketManagerFactory = new InstanceFactory<SocketManager>() {
+			socketManagerFactory = new InstanceFactory<SocketManager<ArrayBackedResizingBuffer>>() {
 				
 				@Override
-				public SocketManager newInstance() {
+				public SocketManager<ArrayBackedResizingBuffer> newInstance() {
 					return new SocketManagerImpl(clock);
 				}
 			};
@@ -72,7 +73,7 @@ public class ConcentusHandleFactory {
 							"(can be '/' or '/[A-Za-z0-9]+')", zooKeeperRoot));
 		}	
 	
-		return new ConcentusHandle<TConfig>(socketManagerFactory, eventQueueFactory, clock, config, nodeAddress, zooKeeperAddress);
+		return new ConcentusHandle<>(socketManagerFactory, eventQueueFactory, clock, config, nodeAddress, zooKeeperAddress);
 	}
 
 }

@@ -17,78 +17,74 @@ package com.adamroughton.concentus.messaging.events;
 
 import java.util.UUID;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 
-public final class MetricMetaDataEvent extends ByteArrayBackedEvent {
+import static com.adamroughton.concentus.messaging.ResizingBuffer.*;
 
-	private static final int MAX_STRING_LENGTH = 100;
-	private static final int STRING_FIELD_LENGTH = MAX_STRING_LENGTH + 4;
+public final class MetricMetaDataEvent extends BufferBackedObject {
 	
-	private static final int SOURCE_ID_OFFSET = 0;
-	private static final int METRIC_ID_OFFSET = SOURCE_ID_OFFSET + 16;
-	private static final int METRIC_TYPE_OFFSET = METRIC_ID_OFFSET + 4;
-	private static final int IS_CUMULATIVE_OFFSET = METRIC_TYPE_OFFSET + 4;
-	private static final int REFERENCE_NAME_OFFSET = IS_CUMULATIVE_OFFSET + 1;
-	private static final int METRIC_NAME_OFFSET = REFERENCE_NAME_OFFSET + STRING_FIELD_LENGTH;
-	private static final int LENGTH = METRIC_NAME_OFFSET + STRING_FIELD_LENGTH;
+	private final Field sourceIdField = super.getBaseField().then(UUID_SIZE);
+	private final Field metricIdField = sourceIdField.then(INT_SIZE);
+	private final Field metricTypeField = metricIdField.then(INT_SIZE);
+	private final Field isCumulativeField = metricTypeField.then(BOOL_SIZE);
+	private final Field metricNameOffsetField = isCumulativeField.then(INT_SIZE);
+	private final Field nameContentField = metricNameOffsetField.thenVariableLength()
+			.resolveOffsets();
 	
 	public MetricMetaDataEvent() {
-		super(EventType.METRIC_META_DATA.getId(), LENGTH);
+		super(EventType.METRIC_META_DATA.getId());
 	}
 	
-	public final UUID getSourceId() {
-		return MessageBytesUtil.readUUID(getBackingArray(), getOffset(SOURCE_ID_OFFSET));
+	public UUID getSourceId() {
+		return getBuffer().readUUID(sourceIdField.offset);
 	}
 	
-	public final void setSourceId(UUID sourceId) {
-		MessageBytesUtil.writeUUID(getBackingArray(), getOffset(SOURCE_ID_OFFSET), sourceId);
+	public void setSourceId(UUID sourceId) {
+		getBuffer().writeUUID(sourceIdField.offset, sourceId);
 	}
 	
-	public final int getMetricId() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(METRIC_ID_OFFSET));
+	public int getMetricId() {
+		return getBuffer().readInt(metricIdField.offset);
 	}
 	
-	public final void setMetricId(int metricId) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(METRIC_ID_OFFSET), metricId);
+	public void setMetricId(int metricId) {
+		getBuffer().writeInt(metricIdField.offset, metricId);
 	}
 	
-	public final int getMetricType() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(METRIC_TYPE_OFFSET));
+	public int getMetricType() {
+		return getBuffer().readInt(metricTypeField.offset);
 	}
 	
-	public final void setMetricType(int metricType) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(METRIC_TYPE_OFFSET), metricType);
+	public void setMetricType(int metricType) {
+		getBuffer().writeInt(metricTypeField.offset, metricType);
 	}
 	
-	public final boolean getIsCumulative() {
-		return MessageBytesUtil.readBoolean(getBackingArray(), getOffset(IS_CUMULATIVE_OFFSET));
+	public boolean getIsCumulative() {
+		return getBuffer().readBoolean(isCumulativeField.offset);
 	}
 	
-	public final void setIsCumulative(boolean isCumulative) {
-		MessageBytesUtil.writeBoolean(getBackingArray(), getOffset(IS_CUMULATIVE_OFFSET), isCumulative);
+	public void setIsCumulative(boolean isCumulative) {
+		getBuffer().writeBoolean(isCumulativeField.offset, isCumulative);
 	}
 	
-	public final String getReferenceName() {
-		return MessageBytesUtil.read8BitCharString(getBackingArray(), getOffset(REFERENCE_NAME_OFFSET));
+	public void setNames(String referenceName, String metricName) {
+		ResizingBuffer buffer = getBuffer();
+		
+		// clear any existing strings
+		buffer.clear(nameContentField.offset);
+		
+		int refNameByteLength = buffer.write8BitCharString(nameContentField.offset, referenceName);
+		int metricNameOffset = nameContentField.offset + refNameByteLength;
+		buffer.writeInt(metricNameOffsetField.offset, metricNameOffset);
+		buffer.write8BitCharString(metricNameOffset, metricName);
 	}
 	
-	public final void setReference(String referenceName) {
-		if (referenceName.length() > MAX_STRING_LENGTH) 
-			throw new IllegalArgumentException(String.format("The referenceName can have up to a maximum " +
-					"of %d characters (was %d).", MAX_STRING_LENGTH, referenceName.length()));
-		MessageBytesUtil.write8BitCharString(getBackingArray(), getOffset(REFERENCE_NAME_OFFSET), referenceName);
+	public String getReferenceName() {
+		return getBuffer().read8BitCharString(nameContentField.offset);
 	}
 	
-	public final String getMetricName() {
-		return MessageBytesUtil.read8BitCharString(getBackingArray(), getOffset(METRIC_NAME_OFFSET));
+	public String getMetricName() {
+		return getBuffer().read8BitCharString(metricNameOffsetField.offset);
 	}
-	
-	public final void setMetricName(String metricName) {
-		if (metricName.length() > MAX_STRING_LENGTH) 
-			throw new IllegalArgumentException(String.format("The metricName can have up to a maximum " +
-					"of %d characters (was %d).", MAX_STRING_LENGTH, metricName.length()));
-		MessageBytesUtil.write8BitCharString(getBackingArray(), getOffset(METRIC_NAME_OFFSET), metricName);
-	}
-	
 	
 }

@@ -44,13 +44,13 @@ public class ConcentusServiceAdapter implements CrowdHammerService {
 	
 	private final ConcentusWorkerNode<Configuration, ConcentusServiceState> _adaptedNode;
 	private final Map<String, String> _commandLineOptions;
-	private final ConcentusHandle<? extends CrowdHammerConfiguration> _concentusHandle;
+	private final ConcentusHandle<? extends CrowdHammerConfiguration, ?> _concentusHandle;
 	private final MetricContext _metricContext;
 	
 	private ClusterListener<ConcentusServiceState> _currentInstance;
 	
 	public ConcentusServiceAdapter(
-			ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle,
+			ConcentusHandle<? extends CrowdHammerConfiguration, ?> concentusHandle,
 			ConcentusWorkerNode<Configuration, ConcentusServiceState> adaptedNode,
 			Map<String, String> commandLineOptions,
 			MetricContext metricContext) {

@@ -25,14 +25,17 @@ import java.util.concurrent.atomic.AtomicLong;
 
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.DrivableClock;
+import com.adamroughton.concentus.disruptor.CollocatedBufferEventFactory;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueImpl;
 import com.adamroughton.concentus.disruptor.SingleProducerQueueStrategy;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBufferFactory;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.events.ByteArrayBackedEvent;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.messaging.events.BufferBackedObject;
 import com.adamroughton.concentus.messaging.events.ClientConnectEvent;
 import com.adamroughton.concentus.messaging.events.ClientHandlerEntry;
 import com.adamroughton.concentus.messaging.events.ClientInputEvent;
@@ -46,7 +49,6 @@ import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.metric.LogMetricContext;
 import com.adamroughton.concentus.metric.NullMetricContext;
-import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.YieldingWaitStrategy;
@@ -60,20 +62,15 @@ public class PerfTestClientHandlerProcessor {
 		}
 	}
 	
-	private static EventQueue<byte[]> createQueue() {
-		return new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", new EventFactory<byte[]>() {
-
-			@Override
-			public byte[] newInstance() {
-				return new byte[512];
-			}
-			
-		}, 1024 * 1024,
+	private static EventQueue<ArrayBackedResizingBuffer> createQueue() {
+		return new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", 
+			new CollocatedBufferEventFactory<>(1024 * 1024, new ArrayBackedResizingBufferFactory(), 512),
+			1024 * 1024,
 			new YieldingWaitStrategy()), new NullMetricContext());
 	}
 	
-	private static <TEvent extends ByteArrayBackedEvent> void fakeRecv(
-			byte[] buffer, 
+	private static <TEvent extends BufferBackedObject, TBuffer extends ResizingBuffer> void fakeRecv(
+			TBuffer buffer, 
 			IncomingEventHeader header,
 			int firstSegData,
 			int socketId,
@@ -81,38 +78,38 @@ public class PerfTestClientHandlerProcessor {
 			EventWriter<OutgoingEventHeader, TEvent> writer) throws Exception {
 		int cursor = header.getEventOffset();
 		header.setSegmentMetaData(buffer, 0, cursor, 4);
-		MessageBytesUtil.writeInt(buffer, cursor, firstSegData);
+		buffer.writeInt(cursor, firstSegData);
 		cursor += 4;
-		event.setBackingArray(buffer, cursor);
+		event.attachToBuffer(buffer, cursor);
 		try {
-			event.writeEventTypeId();
+			event.writeTypeId();
 			writer.write(null, event);
-			header.setSegmentMetaData(buffer, 1, cursor, event.getEventSize());
+			header.setSegmentMetaData(buffer, 1, cursor, buffer.getContentSize());
 			header.setSocketId(buffer, socketId);
 			header.setIsValid(buffer, true);
 		} finally {
-			event.releaseBackingArray();	
+			event.releaseBuffer();	
 		}
 	}
 	
-	private static int getContentOffset(byte[] event, OutgoingEventHeader header) {
+	private static int getContentOffset(ArrayBackedResizingBuffer event, OutgoingEventHeader header) {
 		int contentSegIndex = header.getSegmentCount() - 1;
 		int contentSegMetaData = header.getSegmentMetaData(event, contentSegIndex);
 		return EventHeader.getSegmentOffset(contentSegMetaData);
 	}
 	
-	private static int getEventType(byte[] event, OutgoingEventHeader header) {
-		return MessageBytesUtil.readInt(event, getContentOffset(event, header));
+	private static int getEventType(ArrayBackedResizingBuffer event, OutgoingEventHeader header) {
+		return event.readInt(getContentOffset(event, header));
 	}
 	
-	private static <TEvent extends ByteArrayBackedEvent> void readContent(byte[] event, 
+	private static <TEvent extends BufferBackedObject> void readContent(ArrayBackedResizingBuffer event, 
 			OutgoingEventHeader header, TEvent eventHelper, EventReader<IncomingEventHeader, TEvent> reader) {
 		int contentOffset = getContentOffset(event, header);
-		eventHelper.setBackingArray(event, contentOffset);
+		eventHelper.attachToBuffer(event, contentOffset);
 		try {
 			reader.read(null, eventHelper);
 		} finally {
-			eventHelper.releaseBackingArray();
+			eventHelper.releaseBuffer();
 		}
 	}
 	
@@ -131,7 +128,7 @@ public class PerfTestClientHandlerProcessor {
 		final OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, 2);
 		final DrivableClock testClock = new DrivableClock();
 		
-		final EventQueue<byte[]> genericOutQueue = createQueue();
+		final EventQueue<ArrayBackedResizingBuffer> genericOutQueue = createQueue();
 		
 		final AtomicLong testVal = new AtomicLong();
 		final AtomicLong updatesRecvd = new AtomicLong();
@@ -139,13 +136,13 @@ public class PerfTestClientHandlerProcessor {
 		final AtomicLong unknownEventCount = new AtomicLong();
 		final AtomicLong metricsRecv = new AtomicLong();
 		final AtomicLong stateInputsProc = new AtomicLong();
-		final EventProcessor genericConsumer = genericOutQueue.createEventProcessor("", new EventHandler<byte[]>() {
+		final EventProcessor genericConsumer = genericOutQueue.createEventProcessor("", new EventHandler<ArrayBackedResizingBuffer>() {
 
 			final ClientUpdateEvent updateEvent = new ClientUpdateEvent();
 			final ConnectResponseEvent connectResEvent = new ConnectResponseEvent();
 			
 			@Override
-			public void onEvent(byte[] event, long sequence, boolean endOfBatch)
+			public void onEvent(ArrayBackedResizingBuffer event, long sequence, boolean endOfBatch)
 					throws Exception {
 				final long val = testVal.get();
 				int eventType = getEventType(event, sendHeader);
@@ -155,7 +152,7 @@ public class PerfTestClientHandlerProcessor {
 						@Override
 						public void read(IncomingEventHeader header,
 								ConnectResponseEvent event) {
-							testVal.lazySet(val ^ event.getCallbackBits() ^ event.getEventSize() ^ event.getResponseCode());
+							testVal.lazySet(val ^ event.getCallbackBits() ^ event.getBuffer().getContentSize() ^ event.getResponseCode());
 							connectResRecved.incrementAndGet();
 						}
 						
@@ -166,7 +163,7 @@ public class PerfTestClientHandlerProcessor {
 						@Override
 						public void read(IncomingEventHeader header,
 								ClientUpdateEvent event) {
-							testVal.lazySet(val ^ event.getClientId() ^ event.getEventSize() ^ event.getSimTime() ^ event.getUpdateId() ^ event.getHighestInputActionId());
+							testVal.lazySet(val ^ event.getClientId() ^ event.getBuffer().getContentSize() ^ event.getSimTime() ^ event.getUpdateId() ^ event.getHighestInputActionId());
 							updatesRecvd.incrementAndGet();
 						}
 						
@@ -180,15 +177,15 @@ public class PerfTestClientHandlerProcessor {
 			}
 		});
 		
-		SendQueue<OutgoingEventHeader> routerSendQueue = new SendQueue<>("", sendHeader, genericOutQueue);
-		SendQueue<OutgoingEventHeader> pubSendQueue = new SendQueue<>("", sendHeader, genericOutQueue);
+		SendQueue<OutgoingEventHeader, ArrayBackedResizingBuffer> routerSendQueue = new SendQueue<>("", sendHeader, genericOutQueue);
+		SendQueue<OutgoingEventHeader, ArrayBackedResizingBuffer> pubSendQueue = new SendQueue<>("", sendHeader, genericOutQueue);
 		
 		final int routerSocketId = 0;
 		final int subSocketId = 1;
 		
-		final ClientHandlerProcessor clientHandler = new ClientHandlerProcessor(testClock, 0, routerSocketId, subSocketId, routerSendQueue, pubSendQueue, recvHeader,
+		final ClientHandlerProcessor<ArrayBackedResizingBuffer> clientHandler = new ClientHandlerProcessor<>(testClock, 0, routerSocketId, subSocketId, routerSendQueue, pubSendQueue, recvHeader,
 				new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), testClock));
-		final byte[] buffer = new byte[512];
+		final ArrayBackedResizingBuffer buffer = new ArrayBackedResizingBuffer(512);
 		
 		// consumes events to prevent test being optimised away
 		Future<?> consumerFuture = executor.submit(genericConsumer);
@@ -256,7 +253,7 @@ public class PerfTestClientHandlerProcessor {
 									StateUpdateEvent event) throws Exception {
 								event.setUpdateId(updateId);
 								event.setSimTime(testClock.currentMillis());
-								event.setUsedLength(updateLength);
+								event.getContentSlice().writeByte(updateLength - 1, (byte)0);
 							}
 						});
 						clientHandler.onEvent(buffer, seq++, true);
@@ -268,10 +265,11 @@ public class PerfTestClientHandlerProcessor {
 									StateUpdateInfoEvent event)
 									throws Exception {
 								event.setUpdateId(updateId);
-								event.setEntryCount(event.getMaximumEntries());
+								int entryCount = 100;
+								event.setEntryCount(entryCount);
 								long highestActionId = actionId - 4;
 								highestActionId = highestActionId < -1? -1 : highestActionId;
-								for (int j = 0; j < event.getMaximumEntries(); j++) {
+								for (int j = 0; j < entryCount; j++) {
 									event.setHandlerEntry(j, new ClientHandlerEntry(j, highestActionId));
 								}
 							}
@@ -287,7 +285,7 @@ public class PerfTestClientHandlerProcessor {
 								ClientInputEvent event) throws Exception {
 							event.setClientActionId(actionId);
 							event.setClientId(clientId);
-							event.setUsedLength(250);
+							event.getInputSlice().writeByte(249, (byte)0);
 						}
 						
 					});

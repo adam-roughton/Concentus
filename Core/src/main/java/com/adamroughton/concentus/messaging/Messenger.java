@@ -15,7 +15,7 @@
  */
 package com.adamroughton.concentus.messaging;
 
-public interface Messenger {
+public interface Messenger<TBuffer extends ResizingBuffer> {
 
 	/**
 	 * Attempts to send a pending event from the outgoing buffer, succeeding
@@ -30,7 +30,7 @@ public interface Messenger {
 	 * @return whether an event was sent OR the header indicated the message was invalid.
 	 * @throws MessengerClosedException if the messenger has been closed
 	 */
-	boolean send(byte[] outgoingBuffer,
+	boolean send(TBuffer outgoingBuffer,
 			OutgoingEventHeader header,
 			boolean isBlocking) throws MessengerClosedException;
 	
@@ -45,7 +45,7 @@ public interface Messenger {
 	 * @return whether an event was placed in the buffer
 	 * @throws MessengerClosedException if the messenger has been closed
 	 */
-	 boolean recv(byte[] eventBuffer,
+	 boolean recv(TBuffer eventBuffer,
 			IncomingEventHeader header,
 			boolean isBlocking) throws MessengerClosedException;
 	 

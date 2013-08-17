@@ -9,9 +9,11 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectRBTreeMap;
 
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.messaging.BufferFactory;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.events.MetricMetaDataEvent;
 import com.adamroughton.concentus.messaging.events.MetricMetaDataRequestEvent;
 import com.adamroughton.concentus.messaging.patterns.EventPattern;
@@ -22,9 +24,9 @@ import com.adamroughton.concentus.metric.MetricMetaData;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 
-class MetricMetaDataRequestListener implements Runnable, OwnerDelegate<Messenger> {
+class MetricMetaDataRequestListener<TBuffer extends ResizingBuffer> implements Runnable, OwnerDelegate<Messenger<TBuffer>> {
 
-	private final Mutex<Messenger> _messengerMutex;
+	private final Mutex<Messenger<TBuffer>> _messengerMutex;
 	private final IncomingEventHeader _incomingEventHeader;
 	private final OutgoingEventHeader _outgoingEventHeader;
 	private final Long2ObjectMap<MetricMetaData> _metaDataLookup = new Long2ObjectRBTreeMap<>();
@@ -41,14 +43,19 @@ class MetricMetaDataRequestListener implements Runnable, OwnerDelegate<Messenger
 	private final MetricMetaDataRequestEvent _metaDataReqEvent = new MetricMetaDataRequestEvent();
 	private final MetricMetaDataEvent _metaDataEvent = new MetricMetaDataEvent();
 	
-	private final byte[] _recvBuffer = new byte[Constants.MSG_BUFFER_ENTRY_LENGTH];
-	private final byte[] _sendBuffer = new byte[Constants.MSG_BUFFER_ENTRY_LENGTH];
+	private final TBuffer _recvBuffer;
+	private final TBuffer _sendBuffer;
 	
-	public MetricMetaDataRequestListener(Mutex<Messenger> messengerMutex, 
+	public MetricMetaDataRequestListener(
+			BufferFactory<TBuffer> bufferFactory,
+			Mutex<Messenger<TBuffer>> messengerMutex, 
 			IncomingEventHeader recvHeader, 
 			OutgoingEventHeader sendHeader, 
 			UUID sourceId, 
 			FatalExceptionCallback exceptionCallback) {
+		_recvBuffer = bufferFactory.newInstance(Constants.DEFAULT_MSG_BUFFER_SIZE);
+		_sendBuffer = bufferFactory.newInstance(Constants.DEFAULT_MSG_BUFFER_SIZE);
+		
 		_messengerMutex = Objects.requireNonNull(messengerMutex);
 		_incomingEventHeader = Objects.requireNonNull(recvHeader);
 		_outgoingEventHeader = Objects.requireNonNull(sendHeader);
@@ -70,7 +77,7 @@ class MetricMetaDataRequestListener implements Runnable, OwnerDelegate<Messenger
 	}
 	
 	@Override
-	public void asOwner(final Messenger messenger) {
+	public void asOwner(final Messenger<TBuffer> messenger) {
 		try {
 			while (_state.get() == State.RUNNING) {
 				if (messenger.recv(_recvBuffer, _incomingEventHeader, true)) {
@@ -94,7 +101,7 @@ class MetricMetaDataRequestListener implements Runnable, OwnerDelegate<Messenger
 		_state.set(State.STOPPED);
 	}
 	
-	private void sendMetaData(byte[] destId, int metricId, Messenger messenger) {
+	private void sendMetaData(byte[] destId, int metricId, Messenger<TBuffer> messenger) {
 		final MetricMetaData requestedMetaData;
 		synchronized(_metaDataLookup) {
 			requestedMetaData = _metaDataLookup.get(metricId);
@@ -107,8 +114,7 @@ class MetricMetaDataRequestListener implements Runnable, OwnerDelegate<Messenger
 					MetricMetaDataEvent event)
 					throws Exception {
 				event.setMetricId(requestedMetaData.getMetricId());
-				event.setReference(requestedMetaData.getReference());
-				event.setMetricName(requestedMetaData.getMetricName());
+				event.setNames(requestedMetaData.getReference(), requestedMetaData.getMetricName());
 			}
 			
 		});

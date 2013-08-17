@@ -40,5 +40,7 @@ public final class Constants {
 	public static final int MSG_BUFFER_ENTRY_LENGTH = 512;
 	
 	public static final int DEFAULT_MSG_BUFFER_SIZE = 2048;
+	
+	public static final int MAX_BYTE_ARRAY_SIZE = 16 * 1024 * 1024;
 			
 }

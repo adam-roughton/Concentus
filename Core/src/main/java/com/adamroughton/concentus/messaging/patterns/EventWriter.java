@@ -16,13 +16,13 @@
 package com.adamroughton.concentus.messaging.patterns;
 
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.events.ByteArrayBackedEvent;
+import com.adamroughton.concentus.messaging.events.BufferBackedObject;
 
-public interface EventWriter<TSendHeader extends OutgoingEventHeader, TEvent extends ByteArrayBackedEvent> {
+public interface EventWriter<TSendHeader extends OutgoingEventHeader, TEvent extends BufferBackedObject> {
 
 	/**
 	 * Writes the content of an event using the given
-	 * {@link ByteArrayBackedEvent} instance.
+	 * {@link BufferBackedObject} instance.
 	 * @param header the header of the event
 	 * @param event the event to write into
 	 * @throws Exception if there is an error writing the event

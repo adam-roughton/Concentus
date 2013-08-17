@@ -23,9 +23,12 @@ import org.zeromq.ZMQ.Context;
 
 import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.disruptor.CollocatedBufferEventFactory;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueImpl;
 import com.adamroughton.concentus.disruptor.SingleProducerQueueStrategy;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBufferFactory;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessengerMutex;
@@ -42,7 +45,7 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 	private final int _port;
 	private ZMQ.Socket _sendSocket;
 	private IncomingEventHeader _header;
-	private EventQueue<byte[]> _recvQueue;
+	private EventQueue<ArrayBackedResizingBuffer> _recvQueue;
 	private byte[] _sendBuffer;
 	
 	@Param int messageCount;
@@ -59,9 +62,11 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 		
 		_header = new IncomingEventHeader(0, 1);
 		
-		_recvQueue = new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", 
-				Util.msgBufferFactory(Util.nextPowerOf2(messageSize + _header.getEventOffset())), 
-				1, 
+		CollocatedBufferEventFactory<ArrayBackedResizingBuffer> bufferFactory = new CollocatedBufferEventFactory<>(
+				1, new ArrayBackedResizingBufferFactory(), Util.nextPowerOf2(messageSize + _header.getEventOffset()));
+		_recvQueue = new EventQueueImpl<>(new SingleProducerQueueStrategy<>("",
+				bufferFactory, 
+				bufferFactory.getCount(), 
 				new YieldingWaitStrategy()), new NullMetricContext());
 		Sequence endlessGate = new Sequence(); 
 		_recvQueue.addGatingSequences(endlessGate);
@@ -92,7 +97,7 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 		recvSocket.bind("tcp://127.0.0.1:" + _port);
 		ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", recvSocket, new DefaultClock());
 		
-		MessengerMutex<ZmqSocketMessenger> mutex = new MessengerMutex<ZmqSocketMessenger>(messenger);
+		MessengerMutex<ArrayBackedResizingBuffer, ZmqSocketMessenger> mutex = new MessengerMutex<>(messenger);
 		FatalExceptionCallback exCallback = new FatalExceptionCallback() {
 			
 			@Override
@@ -102,7 +107,7 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 			}
 		};
 		
-		final EventListener listener = new EventListener("", _header, mutex, _recvQueue, exCallback);
+		final EventListener<ArrayBackedResizingBuffer> listener = new EventListener<ArrayBackedResizingBuffer>("", _header, mutex, _recvQueue, exCallback);
 		
 		return new Runnable() {
 

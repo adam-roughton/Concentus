@@ -29,6 +29,7 @@ import com.adamroughton.concentus.ConcentusExecutableOperations;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.esotericsoftware.minlog.Log;
 
 import asg.cliche.Command;
@@ -45,13 +46,13 @@ public final class CrowdHammerCoordinatorNode implements ConcentusCoordinatorNod
 	
 	public static class CrowdHammerCoordinatorProcess {
 		private final ExecutorService _executor = Executors.newCachedThreadPool();
-		private final ConcentusHandle<? extends CrowdHammerConfiguration> _concentusHandle;
+		private final ConcentusHandle<? extends CrowdHammerConfiguration, ?> _concentusHandle;
 		private ClusterCoordinatorHandle _clusterHandle;
 		
 		private Future<?> _currentTask = null;
 		private CrowdHammerCoordinator _coordinator;
 			
-		public CrowdHammerCoordinatorProcess(ConcentusHandle<? extends CrowdHammerConfiguration> concentusHandle) {
+		public CrowdHammerCoordinatorProcess(ConcentusHandle<? extends CrowdHammerConfiguration, ?> concentusHandle) {
 			_concentusHandle = Objects.requireNonNull(concentusHandle);
 		}
 		
@@ -132,8 +133,8 @@ public final class CrowdHammerCoordinatorNode implements ConcentusCoordinatorNod
 	}
 
 	@Override
-	public void run(Map<String, String> commandLineArgs,
-			ConcentusHandle<CrowdHammerConfiguration> processHandle,
+	public <TBuffer extends ResizingBuffer> void run(Map<String, String> commandLineArgs,
+			ConcentusHandle<CrowdHammerConfiguration, TBuffer> processHandle,
 			ClusterCoordinatorHandle clusterHandle) {
 		CrowdHammerCoordinatorProcess coordinatorProcess = new CrowdHammerCoordinatorProcess(processHandle);
 		coordinatorProcess.run(clusterHandle);

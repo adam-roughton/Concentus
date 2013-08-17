@@ -15,91 +15,53 @@
  */
 package com.adamroughton.concentus.messaging.events;
 
-import java.nio.ByteBuffer;
-
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.messaging.ResizingBufferSlice;
 import com.adamroughton.concentus.model.ClientId;
+import static com.adamroughton.concentus.messaging.ResizingBuffer.*;
 
-public class ClientInputEvent extends ByteArrayBackedEvent {
+public final class ClientInputEvent extends BufferBackedObject {
 	
-	private static final int CLIENT_ID_OFFSET = 0;
-	private static final int CLIENT_ACTION_ID_OFFSET = 8;
-	private static final int INPUT_BUFFER_LENGTH_OFFSET = 16;
-	private static final int INPUT_BUFFER_OFFSET = 20;
-	
-	private static final int BASE_SIZE = INPUT_BUFFER_OFFSET;
+	private final Field clientIdField = super.getBaseField().then(LONG_SIZE);
+	private final Field actionIdField = clientIdField.then(LONG_SIZE);
+	private final Field actionField = actionIdField.thenVariableLength()
+			.resolveOffsets();
 
 	public ClientInputEvent() {
 		super(EventType.CLIENT_INPUT.getId());
 	}
 	
+	@Override
+	protected Field getBaseField() {
+		return actionField;
+	}
+	
 	public final ClientId getClientId() {
-		return MessageBytesUtil.readClientId(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
+		return getBuffer().readClientId(clientIdField.offset);
 	}
 
 	public final void setClientId(final ClientId clientId) {
-		MessageBytesUtil.writeClientId(getBackingArray(), getOffset(CLIENT_ID_OFFSET), clientId);
+		getBuffer().writeClientId(clientIdField.offset, clientId);
 	}
 	
 	public final void setClientId(final long clientIdBits) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET), clientIdBits);
+		getBuffer().writeLong(clientIdField.offset, clientIdBits);
 	}
 	
 	public final long getClientIdBits() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
+		return getBuffer().readLong(clientIdField.offset);
 	}
 	
 	public final long getClientActionId() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(CLIENT_ACTION_ID_OFFSET));
+		return getBuffer().readLong(actionIdField.offset);
 	}
 	
 	public final void setClientActionId(final long clientActionId) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CLIENT_ACTION_ID_OFFSET), clientActionId);
+		getBuffer().writeLong(actionIdField.offset, clientActionId);
 	}
 	
-	public final int getInputBufferLength() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(INPUT_BUFFER_LENGTH_OFFSET));
-	}
-	
-	public final int getInputOffset() {
-		return getOffset(INPUT_BUFFER_OFFSET);
-	}
-	
-	public final int getAvailableInputBufferLength() {
-		return getBackingArray().length - getOffset(INPUT_BUFFER_OFFSET);
-	}
-	
-	public final ByteBuffer getInputBuffer() {
-		byte[] backingArray = getBackingArray();
-		int offset = getOffset(INPUT_BUFFER_OFFSET);
-		return ByteBuffer.wrap(backingArray, offset, backingArray.length - offset);
-	}
-	
-	public final int copyFromInputBytes(final byte[] exBuffer, final int offset, final int length) {
-		int updateLength = getInputBufferLength();
-		int copyLength = length < updateLength? length : updateLength;
-		System.arraycopy(getBackingArray(), getOffset(INPUT_BUFFER_OFFSET), exBuffer, offset, 
-				copyLength);
-		return copyLength;
-	}
-	
-	public final int copyToInputBytes(final byte[] exBuffer, final int offset, final int length) {
-		byte[] backingArray = getBackingArray();
-		int maxLength = backingArray.length - getOffset(INPUT_BUFFER_OFFSET);
-		int copyLength = length < maxLength? length : maxLength;
-		System.arraycopy(exBuffer, offset, getBackingArray(), getOffset(INPUT_BUFFER_OFFSET), 
-				copyLength);
-		return copyLength;
-	}
-	
-	public final void setUsedLength(final ByteBuffer inputBuffer) {
-		int usedLength = getUsedLength(getOffset(INPUT_BUFFER_OFFSET), inputBuffer);
-		setUsedLength(usedLength);
-	}
-	
-	public final void setUsedLength(int length) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(INPUT_BUFFER_LENGTH_OFFSET), length);
-		setEventSize(BASE_SIZE + length);
+	public ResizingBuffer getInputSlice() {
+		return new ResizingBufferSlice(getBuffer(), actionField.offset);
 	}
 	
 }

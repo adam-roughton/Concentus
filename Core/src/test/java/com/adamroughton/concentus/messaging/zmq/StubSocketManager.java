@@ -22,10 +22,16 @@ import it.unimi.dsi.fastutil.ints.IntArraySet;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Objects;
 
+import com.adamroughton.concentus.disruptor.EventQueueFactory;
+import com.adamroughton.concentus.messaging.BufferFactory;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
+import com.adamroughton.concentus.messaging.MessageQueueFactory;
+import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.MessengerMutex;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.StubMessenger;
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerFactory;
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerMutex;
@@ -34,33 +40,46 @@ import com.adamroughton.concentus.messaging.StubMessenger.FakeSendDelegate;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 
-public class StubSocketManager implements SocketManager {
+public class StubSocketManager<TBuffer extends ResizingBuffer> implements SocketManager<TBuffer> {
 
-	private final StubMessengerConfigurator _configurator;
+	private final StubMessengerConfigurator<TBuffer> _configurator;
+	private final BufferFactory<TBuffer> _bufferFactory;
 	private int _socketId = 0;
 	private Int2ObjectMap<SocketSettings> _socketSettingsLookup = new Int2ObjectArrayMap<>();
-	private Int2ObjectMap<MessengerMutex<StubMessenger>> _mutexLookup = new Int2ObjectArrayMap<>();
+	private Int2ObjectMap<MessengerMutex<TBuffer, StubMessenger<TBuffer>>> _mutexLookup = new Int2ObjectArrayMap<>();
 	private Int2ObjectMap<Int2ObjectMap<String>> _connectionStringLookup = new Int2ObjectArrayMap<>();
 	
-	public interface StubMessengerConfigurator {
-		void onStubMessengerCreation(int socketId, StubMessenger messenger, int socketType, SocketSettings settings);
+	public interface StubMessengerConfigurator<TBuffer extends ResizingBuffer> {
+		void onStubMessengerCreation(int socketId, StubMessenger<TBuffer> messenger, int socketType, SocketSettings settings);
 	}
 	
-	public StubSocketManager() {
-		this(null);
+	public StubSocketManager(BufferFactory<TBuffer> bufferFactory) {
+		this(bufferFactory, null);
 	}
 	
-	public StubSocketManager(StubMessengerConfigurator configurator) {
+	public StubSocketManager(BufferFactory<TBuffer> bufferFactory, StubMessengerConfigurator<TBuffer> configurator) {
 		if (configurator == null) {
-			configurator = new StubMessengerConfigurator() {
+			configurator = new StubMessengerConfigurator<TBuffer>() {
 				
 				@Override
-				public void onStubMessengerCreation(int socketId, StubMessenger messenger,
+				public void onStubMessengerCreation(int socketId, StubMessenger<TBuffer> messenger,
 						int socketType, SocketSettings settings) {
 				}
 			};
 		}
 		_configurator = configurator;
+		_bufferFactory = Objects.requireNonNull(bufferFactory);
+	}
+	
+	@Override
+	public BufferFactory<TBuffer> getBufferFactory() {
+		return _bufferFactory;
+	}
+	
+	@Override
+	public MessageQueueFactory<TBuffer> newMessageQueueFactory(
+			EventQueueFactory eventQueueFactory) {
+		return new MessageQueueFactory<>(eventQueueFactory, _bufferFactory);
 	}
 	
 	@Override
@@ -72,9 +91,9 @@ public class StubSocketManager implements SocketManager {
 	public int create(int socketType, SocketSettings socketSettings, String name) {
 		int socketId = _socketId++;
 		_socketSettingsLookup.put(socketId, socketSettings);
-		StubMessenger stubMessenger = new StubMessenger(name, new int[] { socketId } );
+		StubMessenger<TBuffer> stubMessenger = new StubMessenger<TBuffer>(name, new int[] { socketId } );
 		_configurator.onStubMessengerCreation(socketId, stubMessenger, socketType, socketSettings);
-		_mutexLookup.put(socketId, new MessengerMutex<StubMessenger>(stubMessenger));
+		_mutexLookup.put(socketId, new MessengerMutex<TBuffer, StubMessenger<TBuffer>>(stubMessenger));
 		return socketId;
 	}
 
@@ -89,30 +108,30 @@ public class StubSocketManager implements SocketManager {
 	}
 
 	@Override
-	public MessengerMutex<StubMessenger> getSocketMutex(int socketId) {
+	public MessengerMutex<TBuffer, StubMessenger<TBuffer>> getSocketMutex(int socketId) {
 		return _mutexLookup.get(socketId);
 	}
 
 	@Override
-	public MultiMessengerMutex<StubMessenger> createPollInSet(int... socketIds) {
+	public MultiMessengerMutex<TBuffer, Messenger<TBuffer>, StubMessenger<TBuffer>> createPollInSet(int... socketIds) {
 		if (socketIds.length < 1) 
 			throw new IllegalArgumentException("There must be at least one socket ID in the poll set.");
-		ArrayList<MessengerMutex<StubMessenger>> messengerMutexes = new ArrayList<>(socketIds.length);
+		ArrayList<MessengerMutex<TBuffer, StubMessenger<TBuffer>>> messengerMutexes = new ArrayList<>(socketIds.length);
 		for (int i = 0; i < socketIds.length; i++) {
 			messengerMutexes.add(i, getSocketMutex(socketIds[i]));
 		}
-		return MessengerMutex.createMultiMessengerMutex(new MultiMessengerFactory<StubMessenger>() {
+		return MessengerMutex.createMultiMessengerMutex(new MultiMessengerFactory<TBuffer, Messenger<TBuffer>, StubMessenger<TBuffer>>() {
 
 			@Override
-			public StubMessenger create(Collection<StubMessenger> messengers) {
-				final ArrayList<StubMessenger> messengersList = new ArrayList<>(messengers);
-				final Int2ObjectMap<StubMessenger> messengerLookup = new Int2ObjectArrayMap<>();
+			public StubMessenger<TBuffer> create(Collection<StubMessenger<TBuffer>> messengers) {
+				final ArrayList<StubMessenger<TBuffer>> messengersList = new ArrayList<>(messengers);
+				final Int2ObjectMap<StubMessenger<TBuffer>> messengerLookup = new Int2ObjectArrayMap<>();
 				int[] socketIds = new int[messengers.size()];
 				int index = 0;
 				StringBuilder builder = new StringBuilder();
 				builder.append("set[");
 				boolean isFirst = true;
-				for (StubMessenger messenger : messengers) {
+				for (StubMessenger<TBuffer> messenger : messengers) {
 					socketIds[index++] = messenger.getEndpointIds()[0];
 					messengerLookup.put(messenger.getEndpointIds()[0], messenger);
 					builder.append(messenger.name());						
@@ -123,19 +142,19 @@ public class StubSocketManager implements SocketManager {
 					}
 				}
 				builder.append("]");
-				StubMessenger multiMessenger = new StubMessenger(builder.toString(), socketIds);
-				multiMessenger.setFakeRecvDelegate(new FakeRecvDelegate() {
+				StubMessenger<TBuffer> multiMessenger = new StubMessenger<>(builder.toString(), socketIds);
+				multiMessenger.setFakeRecvDelegate(new FakeRecvDelegate<TBuffer>() {
 					
 					@Override
 					public boolean fakeRecv(int[] endPointIds, long recvSeq,
-							byte[] eventBuffer, IncomingEventHeader header, boolean isBlocking) {
+							TBuffer eventBuffer, IncomingEventHeader header, boolean isBlocking) {
 						return messengersList.get((int)(recvSeq % messengersList.size())).recv(eventBuffer, header, isBlocking);
 					}
 				});
-				multiMessenger.setFakeSendDelegate(new FakeSendDelegate() {
+				multiMessenger.setFakeSendDelegate(new FakeSendDelegate<TBuffer>() {
 					
 					@Override
-					public boolean fakeSend(long sendSeq, byte[] eventBuffer,
+					public boolean fakeSend(long sendSeq, TBuffer eventBuffer,
 							OutgoingEventHeader header, boolean isBlocking) {
 						int socketId = header.getTargetSocketId(eventBuffer);
 						return messengerLookup.get(socketId).send(eventBuffer, header, isBlocking);

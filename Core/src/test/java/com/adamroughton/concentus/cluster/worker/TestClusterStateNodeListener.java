@@ -55,7 +55,7 @@ public class TestClusterStateNodeListener extends TestClusterBase {
 	@Before
 	public void setUp() {
 		_executor = Executors.newCachedThreadPool();
-		_disruptor = new Disruptor<>(Util.msgBufferFactory(8), 32, _executor);
+		_disruptor = new Disruptor<>(Util.byteArrayEventFactory(8), 32, _executor);
 		_stateChangeHandler = new StateChangeHandler();
 		_disruptor.handleEventsWith(_stateChangeHandler);
 		_disruptor.start();

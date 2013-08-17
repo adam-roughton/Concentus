@@ -31,13 +31,18 @@ import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.Constants;
+import com.adamroughton.concentus.disruptor.EventQueueFactory;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBufferFactory;
+import com.adamroughton.concentus.messaging.BufferFactory;
+import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.MessengerMutex;
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerFactory;
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerMutex;
 import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 
-public final class SocketManagerImpl implements SocketManager {
+public final class SocketManagerImpl implements SocketManager<ArrayBackedResizingBuffer> {
 
 	private static final int SOCKET_TIMEOUT = 1000;
 	
@@ -45,7 +50,7 @@ public final class SocketManagerImpl implements SocketManager {
 	private final ZMQ.Context _zmqContext;
 	private final Int2IntMap _socketTypeLookup = new Int2IntArrayMap();
 	private final Int2ObjectMap<ConnectionsRecord> _socketConnLookup = new Int2ObjectArrayMap<>();
-	private final Int2ObjectMap<MessengerMutex<ZmqSocketMessenger>> _socketMutexLookup = new Int2ObjectArrayMap<>();
+	private final Int2ObjectMap<MessengerMutex<ArrayBackedResizingBuffer, ZmqSocketMessenger>> _socketMutexLookup = new Int2ObjectArrayMap<>();
 	private final Int2ObjectMap<SocketSettings> _settingsLookup = new Int2ObjectArrayMap<>();
 	private int _nextSocketId = 0;
 	private boolean _isActive = true;
@@ -57,6 +62,17 @@ public final class SocketManagerImpl implements SocketManager {
 	public SocketManagerImpl(Clock clock, int ioThreads) {
 		_clock = Objects.requireNonNull(clock);
 		_zmqContext = ZMQ.context(ioThreads);
+	}
+	
+	@Override
+	public BufferFactory<ArrayBackedResizingBuffer> getBufferFactory() {
+		return new ArrayBackedResizingBufferFactory();
+	}
+	
+	@Override
+	public MessageQueueFactory<ArrayBackedResizingBuffer> newMessageQueueFactory(
+			EventQueueFactory eventQueueFactory) {
+		return new MessageQueueFactory<>(eventQueueFactory, new ArrayBackedResizingBufferFactory());
 	}
 	
 	/**
@@ -124,12 +140,12 @@ public final class SocketManagerImpl implements SocketManager {
 	public synchronized void updateSettings(final int socketId, SocketSettings socketSettings) {
 		assertManagerActive();
 		assertSocketExists(socketId);
-		MessengerMutex<ZmqSocketMessenger> mutex = _socketMutexLookup.get(socketId);
+		MessengerMutex<ArrayBackedResizingBuffer, ZmqSocketMessenger> mutex = _socketMutexLookup.get(socketId);
 		final String[] nameContainer = new String[1];
-		mutex.runAsOwner(new OwnerDelegate<Messenger>() {
+		mutex.directRunAsOwner(new OwnerDelegate<ZmqSocketMessenger>() {
 			
 			@Override
-			public void asOwner(Messenger messenger) {
+			public void asOwner(ZmqSocketMessenger messenger) {
 				ZmqSocketMessenger socketMessenger = (ZmqSocketMessenger) messenger;
 				nameContainer[0] = messenger.name();
 				if (_settingsLookup.get(socketId).isBound()) {
@@ -147,24 +163,27 @@ public final class SocketManagerImpl implements SocketManager {
 		return _settingsLookup.get(socketId);
 	}
 	
-	public synchronized MessengerMutex<ZmqSocketMessenger> getSocketMutex(final int socketId) {
+	public synchronized MessengerMutex<ArrayBackedResizingBuffer, ZmqSocketMessenger> getSocketMutex(final int socketId) {
 		assertManagerActive();
 		assertSocketExists(socketId);
 		return _socketMutexLookup.get(socketId);
 	}
 	
-	public synchronized MultiMessengerMutex<ZmqSocketMessenger> createPollInSet(int... socketIds) {
+	public synchronized MultiMessengerMutex<ArrayBackedResizingBuffer, 
+			Messenger<ArrayBackedResizingBuffer>, 
+			ZmqSocketMessenger> createPollInSet(int... socketIds) {
 		Objects.requireNonNull(socketIds);
 		if (socketIds.length < 1) 
 			throw new IllegalArgumentException("There must be at least one socket ID in the poll set.");
-		ArrayList<MessengerMutex<ZmqSocketMessenger>> messengerMutexes = new ArrayList<>(socketIds.length);
+		ArrayList<MessengerMutex<ArrayBackedResizingBuffer, ZmqSocketMessenger>> messengerMutexes = new ArrayList<>(socketIds.length);
 		for (int i = 0; i < socketIds.length; i++) {
 			messengerMutexes.add(i, getSocketMutex(socketIds[i]));
 		}
-		return MessengerMutex.createMultiMessengerMutex(new MultiMessengerFactory<ZmqSocketMessenger>() {
+		return MessengerMutex.createMultiMessengerMutex(new MultiMessengerFactory<ArrayBackedResizingBuffer, 
+				Messenger<ArrayBackedResizingBuffer>, ZmqSocketMessenger>() {
 
 			@Override
-			public Messenger create(Collection<ZmqSocketMessenger> messengers) {
+			public Messenger<ArrayBackedResizingBuffer> create(Collection<ZmqSocketMessenger> messengers) {
 				return new ZmqSocketSetMessenger(new AlphaSocketPollInSet(messengers.toArray(new ZmqSocketMessenger[messengers.size()])));
 			}
 			
@@ -175,11 +194,11 @@ public final class SocketManagerImpl implements SocketManager {
 		assertManagerActive();
 		assertSocketExists(socketId);
 		
-		MessengerMutex<ZmqSocketMessenger> socketToken = _socketMutexLookup.get(socketId);
-		socketToken.runAsOwner(new OwnerDelegate<Messenger>() {
+		MessengerMutex<ArrayBackedResizingBuffer, ZmqSocketMessenger> socketToken = _socketMutexLookup.get(socketId);
+		socketToken.directRunAsOwner(new OwnerDelegate<ZmqSocketMessenger>() {
 			
 			@Override
-			public void asOwner(Messenger messenger) {
+			public void asOwner(ZmqSocketMessenger messenger) {
 				ZmqSocketMessenger socketMessenger = (ZmqSocketMessenger) messenger;
 				ZMQ.Socket socket = socketMessenger.getSocket();
 				socket.connect(address);
@@ -195,11 +214,11 @@ public final class SocketManagerImpl implements SocketManager {
 		final ConnectionsRecord connsRecord = _socketConnLookup.get(socketId);
 		final String connString = connsRecord.getConnString(connId);
 		if (connString != null) {
-			MessengerMutex<ZmqSocketMessenger> token = _socketMutexLookup.get(socketId);
-			token.runAsOwner(new OwnerDelegate<Messenger>() {
+			MessengerMutex<ArrayBackedResizingBuffer, ZmqSocketMessenger> token = _socketMutexLookup.get(socketId);
+			token.directRunAsOwner(new OwnerDelegate<ZmqSocketMessenger>() {
 
 				@Override
-				public void asOwner(Messenger messenger) {
+				public void asOwner(ZmqSocketMessenger messenger) {
 					ZmqSocketMessenger socketMessenger = (ZmqSocketMessenger) messenger;
 					socketMessenger.getSocket().disconnect(connString);
 					connsRecord.removeConnString(connId);
@@ -211,7 +230,7 @@ public final class SocketManagerImpl implements SocketManager {
 	}
 	
 	public synchronized void destroySocket(int socketId) {
-		MessengerMutex<ZmqSocketMessenger> socketToken = getSocketMutex(socketId);
+		MessengerMutex<ArrayBackedResizingBuffer, ZmqSocketMessenger> socketToken = getSocketMutex(socketId);
 		try {
 			socketToken.waitForRelease(60, TimeUnit.SECONDS);
 			if (socketToken.isOwned()) {
@@ -222,10 +241,10 @@ public final class SocketManagerImpl implements SocketManager {
 		}
 
 		try {
-			socketToken.runAsOwner(new OwnerDelegate<Messenger>() {
+			socketToken.directRunAsOwner(new OwnerDelegate<ZmqSocketMessenger>() {
 
 				@Override
-				public void asOwner(Messenger messenger) {
+				public void asOwner(ZmqSocketMessenger messenger) {
 					ZmqSocketMessenger socketMessenger = (ZmqSocketMessenger) messenger;
 					socketMessenger.getSocket().close();
 				}

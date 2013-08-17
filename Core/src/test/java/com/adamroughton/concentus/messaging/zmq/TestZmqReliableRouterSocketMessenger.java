@@ -15,16 +15,15 @@
  */
 package com.adamroughton.concentus.messaging.zmq;
 
+import static com.adamroughton.concentus.messaging.zmq.MessengerTestUtil.*;
 import static com.adamroughton.concentus.messaging.ZmqTestUtil.assertRangeEqual;
 import static com.adamroughton.concentus.messaging.ZmqTestUtil.doesNotHaveFlags;
 import static com.adamroughton.concentus.messaging.ZmqTestUtil.fakeRecv;
 import static com.adamroughton.concentus.messaging.ZmqTestUtil.hasFlags;
-import static com.adamroughton.concentus.messaging.ZmqTestUtil.matchesLength;
 import static org.junit.Assert.assertArrayEquals;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.junit.Assert.fail;
 import static org.mockito.Matchers.any;
 import static org.mockito.Matchers.anyInt;
 import static org.mockito.Matchers.argThat;
@@ -35,7 +34,6 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
-import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
@@ -49,11 +47,13 @@ import org.zeromq.ZMQ;
 import org.zeromq.ZMQException;
 
 import com.adamroughton.concentus.DrivableClock;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.ByteArrayCaptor;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 
 @RunWith(MockitoJUnitRunner.class)
 public class TestZmqReliableRouterSocketMessenger {
@@ -63,66 +63,18 @@ public class TestZmqReliableRouterSocketMessenger {
 	
 	@Mock private ZMQ.Socket _zmqSocket;
 	private ZmqSocketMessenger _messenger;
-	private byte[] _buffer;
+	private ArrayBackedResizingBuffer _buffer;
 	private DrivableClock _clock;
-	private final byte[] _nackSeqFrame = new byte[8];
+	private final byte[] _headerFrame = new byte[ResizingBuffer.LONG_SIZE + ResizingBuffer.INT_SIZE];
 	
 	@Before
 	public void setUp() {
 		when(_zmqSocket.getType()).thenReturn(ZMQ.ROUTER);
 		
-		_buffer = new byte[EVENT_BUFFER_LENGTH];
+		_buffer = new ArrayBackedResizingBuffer(EVENT_BUFFER_LENGTH);
 		_clock = new DrivableClock();
 		_clock.setTime(5500000, TimeUnit.MILLISECONDS);
 		_messenger = new ZmqReliableRouterSocketMessenger(0, "", _zmqSocket, _clock, 1000, 2048, EVENT_BUFFER_LENGTH);
-	}
-	
-	private byte[] genContent(int length) {
-		return genContent(length, 0);
-	}
-	
-	private byte[] genContent(int length, int seed) {
-		byte[] content = new byte[length];
-		for (int i = 0; i < length; i += 4) {
-			MessageBytesUtil.writeInt(content, i, i / 4 + seed);
-		}
-		return content;
-	}
-	
-	private void genSegmentData(int length, int seed, byte[][] segments, int...indices) {
-		for (int index : indices) {
-			if (index < 0 || index >= segments.length) 
-				throw new IllegalArgumentException(String.format("Provided index '%d' out of bounds [%d, %d]", index, 0, segments.length));
-			segments[index] = genContent(length, seed++);
-		}
-	}
-	
-	private byte[] genIdBytes(UUID id) {
-		byte[] idBytes = new byte[16];
-		MessageBytesUtil.writeUUID(idBytes, 0, id);
-		return idBytes;
-	}
-	
-	private byte[][] readMessageParts(byte[] bufferBytes, IncomingEventHeader header) {
-		Objects.requireNonNull(bufferBytes);
-		assertTrue(header.isValid(bufferBytes));
-		
-		byte[][] segments = new byte[header.getSegmentCount()][];
-		
-		for (int segmentIndex = 0; segmentIndex < header.getSegmentCount(); segmentIndex++) {
-			int segmentMetaData = header.getSegmentMetaData(bufferBytes, segmentIndex);
-			int segmentOffset = EventHeader.getSegmentOffset(segmentMetaData);
-			int segmentLength = EventHeader.getSegmentLength(segmentMetaData);
-			
-			if (segmentOffset + segmentLength > bufferBytes.length) {
-				fail(String.format("The segment length exceeded the remaining buffer size (%d > %d)", segmentLength, bufferBytes.length - segmentOffset));
-			}
-			byte[] segment = new byte[segmentLength];
-			System.arraycopy(bufferBytes, segmentOffset, segment, 0, segmentLength);
-			segments[segmentIndex] = segment;
-		}
-		
-		return segments;
 	}
 	
 	@Test
@@ -131,11 +83,13 @@ public class TestZmqReliableRouterSocketMessenger {
 		
 		byte[] content = genContent(256);
 		byte[] expectedIdBytes = genIdBytes(UUID.fromString("abababab-abab-abab-abab-abababababab"));
-		MessageBytesUtil.writeLong(_nackSeqFrame, 0, -1);
+		byte[] headerFrame = makeMsgHeader(-1, content);
+		
+		MessageBytesUtil.writeLong(_headerFrame, 0, -1);
 		
 		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.then(fakeRecv(expectedIdBytes))
-			.then(fakeRecv(_nackSeqFrame))
+			.then(fakeRecv(headerFrame))
 			.then(fakeRecv(content));
 		
 		when(_zmqSocket.hasReceiveMore())
@@ -160,11 +114,11 @@ public class TestZmqReliableRouterSocketMessenger {
 		for (int i = 0; i < 3; i++) {
 			contentSegments[i] = genContent(32, i);
 		}
-		MessageBytesUtil.writeLong(_nackSeqFrame, 0, -1);
+		byte[] headerFrame = makeMsgHeader(-1, contentSegments);
 		
 		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.then(fakeRecv(expectedIdBytes))
-			.then(fakeRecv(_nackSeqFrame))
+			.then(fakeRecv(headerFrame))
 			.then(fakeRecv(contentSegments[0]))
 			.then(fakeRecv(contentSegments[1]))
 			.then(fakeRecv(contentSegments[2]));
@@ -202,7 +156,7 @@ public class TestZmqReliableRouterSocketMessenger {
 	
 	@Test
 	public void recvFailureOnFirstSegment() {
-		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
+		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.thenThrow(new ZMQException("Random error", 4));
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(false);
@@ -216,7 +170,7 @@ public class TestZmqReliableRouterSocketMessenger {
 	public void recvFailureOnSubsequentSegment() {
 		byte[] expectedIdBytes = genIdBytes(UUID.fromString("abababab-abab-abab-abab-abababababab"));
 		
-		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
+		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.then(fakeRecv(expectedIdBytes))
 			.thenThrow(new ZMQException("Random error", 4));
 		when(_zmqSocket.hasReceiveMore())
@@ -229,24 +183,29 @@ public class TestZmqReliableRouterSocketMessenger {
 	}
 	
 	@Test
-	public void recvMessageTooLargeFirstSegment() {
-		byte[] content1 = genContent(EVENT_BUFFER_LENGTH * 2);
-		byte[] content2 = genIdBytes(UUID.fromString("abababab-abab-abab-abab-abababababab"));
+	public void recvLargeMessage() {
+		byte[] expectedIdBytes = genIdBytes(UUID.fromString("abababab-abab-abab-abab-abababababab"));
 		
-		when(_zmqSocket.recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt()))
-			.then(fakeRecv(content1));
-		when(_zmqSocket.recv(anyInt()))
-			.thenReturn(content2);
+		byte[][] contents = new byte[2][];
+		genSegmentData(EVENT_BUFFER_LENGTH * 2, 0, contents, 0, 1);		
+		byte[] header = makeMsgHeader(-1, contents);
+		
+		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
+			.then(fakeRecv(expectedIdBytes))
+			.then(fakeRecv(header))
+			.then(fakeRecv(contents[0]))
+			.then(fakeRecv(contents[1]));
 		when(_zmqSocket.hasReceiveMore())
+			.thenReturn(true)
+			.thenReturn(true)
 			.thenReturn(true)
 			.thenReturn(false);
 		
 		assertTrue(_messenger.recv(_buffer, _defaultHeader, false));
 		
-		verify(_zmqSocket).recv(argThat(matchesLength(new byte[EVENT_BUFFER_LENGTH])), anyInt(), anyInt(), anyInt());
-		verify(_zmqSocket).recv();
+		verify(_zmqSocket, times(4)).recv(any(byte[].class), anyInt(), anyInt(), anyInt());
 		
-		assertFalse(_defaultHeader.isValid(_buffer));
+		assertTrue(_defaultHeader.isValid(_buffer));
 	}
 	
 	@Test
@@ -271,7 +230,9 @@ public class TestZmqReliableRouterSocketMessenger {
 	
 	@Test
 	public void sendSegmentLengthZero() {
-		OutgoingEventHeader header = new OutgoingEventHeader(0, 3);
+		OutgoingEventHeader header = new OutgoingEventHeader(0, 4);
+		
+		byte[] expectedIdBytes = genIdBytes(UUID.fromString("abababab-abab-abab-abab-abababababab"));
 		
 		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.thenReturn(true)
@@ -279,7 +240,7 @@ public class TestZmqReliableRouterSocketMessenger {
 			.thenReturn(true);
 		
 		// write the segments out
-		writeMessage(new byte[][] { new byte[0], new byte[0], new byte[0] }, _buffer, header);
+		writeMessage(new byte[][] { expectedIdBytes, new byte[0], new byte[0], new byte[0] }, _buffer, header);
 		
 		assertTrue(_messenger.send(_buffer, header, false));
 	}
@@ -323,7 +284,7 @@ public class TestZmqReliableRouterSocketMessenger {
 		OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, sentSegmentCount + 1);
 		
 		// send some reliable messages
-		ArgumentCaptor<byte[]> eBytesCaptor = ArgumentCaptor.forClass(byte[].class);
+		ByteArrayCaptor eBytesCaptor = new ByteArrayCaptor();
 		ArgumentCaptor<Integer> eOffsetCaptor = ArgumentCaptor.forClass(Integer.class);
 		ArgumentCaptor<Integer> eLengthCaptor = ArgumentCaptor.forClass(Integer.class);
 		
@@ -334,9 +295,11 @@ public class TestZmqReliableRouterSocketMessenger {
 		for (int i = 0; i < returnList.length; i++) {
 			returnList[i] = true;
 		}
-		when(_zmqSocket.send(eBytesCaptor.capture(), 
+		when(_zmqSocket.send(argThat(eBytesCaptor), 
 				eOffsetCaptor.capture(), eLengthCaptor.capture(), anyInt()))
 				.thenReturn(true, returnList);
+		
+		final int segmentSize = 32;
 		
 		byte[][][] messages = new byte[reliableMsgCount][][];
 		byte[][][] expectedFrames = new byte[reliableMsgCount - nackSeq][][];
@@ -351,7 +314,7 @@ public class TestZmqReliableRouterSocketMessenger {
 			}
 			
 			// generate data for segments (excl. first which is ID)
-			genSegmentData(32, 9 * i, messages[i], segmentIndices);
+			genSegmentData(segmentSize, 9 * i, messages[i], segmentIndices);
 			
 			// send reliable messgae
 			writeMessage(messages[i], _buffer, sendHeader);
@@ -368,8 +331,7 @@ public class TestZmqReliableRouterSocketMessenger {
 					byte[] frame;
 					if (j == 1) {
 						// seq frame
-						frame = new byte[8];
-						MessageBytesUtil.writeLong(frame, 0, i);
+						frame = makeMsgHeader(i, sentSegmentCount * segmentSize);
 					} else {
 						int length = messages[i][frameIndex].length;
 						frame = new byte[length];
@@ -382,11 +344,12 @@ public class TestZmqReliableRouterSocketMessenger {
 		}
 		
 		// recv a NACK
-		MessageBytesUtil.writeLong(_nackSeqFrame, 0, nackSeq);
+		byte[] headerFrame = makeMsgHeader(nackSeq, 32);
+		MessageBytesUtil.writeLong(_headerFrame, 0, nackSeq);
 		IncomingEventHeader recvHeader = new IncomingEventHeader(0, 2);
 		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.then(fakeRecv(idBytes))
-			.then(fakeRecv(_nackSeqFrame))
+			.then(fakeRecv(headerFrame))
 			.then(fakeRecv(new byte[32]));
 		when(_zmqSocket.hasReceiveMore())
 			.thenReturn(true)
@@ -456,10 +419,10 @@ public class TestZmqReliableRouterSocketMessenger {
 		assertTrue(_messenger.send(_buffer, header, false));
 		assertFalse(header.isPartiallySent(_buffer));
 		
-		ArgumentCaptor<byte[]> eBytesCaptor = ArgumentCaptor.forClass(byte[].class);
+		ByteArrayCaptor eBytesCaptor = new ByteArrayCaptor();
 		ArgumentCaptor<Integer> eOffsetCaptor = ArgumentCaptor.forClass(Integer.class);
 		ArgumentCaptor<Integer> eLengthCaptor = ArgumentCaptor.forClass(Integer.class);
-		verify(_zmqSocket, times(3)).send(eBytesCaptor.capture(), eOffsetCaptor.capture(), eLengthCaptor.capture(), anyInt());
+		verify(_zmqSocket, times(3)).send(argThat(eBytesCaptor), eOffsetCaptor.capture(), eLengthCaptor.capture(), anyInt());
 		
 		List<byte[]> eventParts = eBytesCaptor.getAllValues();
 		List<Integer> offsets = eOffsetCaptor.getAllValues();
@@ -474,9 +437,9 @@ public class TestZmqReliableRouterSocketMessenger {
 		assertRangeEqual(expectedIdBytes, actualIdBytes, actualIdOffset, actualIdLength);
 		
 		// seq frame
-		MessageBytesUtil.writeLong(_nackSeqFrame, 0, isReliable? 0 : -1);
+		byte[] expectedHeader = makeMsgHeader(isReliable? 0 : -1, content);
 		byte[] seqBytes = eventParts.get(1);
-		assertRangeEqual(_nackSeqFrame, seqBytes, 0, 8);
+		assertRangeEqual(expectedHeader, seqBytes, 0, 8);
 		
 		// contents
 		byte[] messageBytes = eventParts.get(2);
@@ -516,14 +479,14 @@ public class TestZmqReliableRouterSocketMessenger {
 		List<Integer> lengths = eLengthCaptor.getAllValues();
 		assertEquals(5, eventParts.size());
 		
-		MessageBytesUtil.writeLong(_nackSeqFrame, 0, isReliable? 0 : -1);
+		byte[] expectedHeader = makeMsgHeader(isReliable? 0 : -1, contents[1], contents[2], contents[3]);		
 		int contentIndex = 0;
 		for (int i = 0; i < 5; i++) {
 			if (i == 1) {
 				// check Seq frame
-				assertEquals(8, (int) lengths.get(i));
+				assertEquals(12, (int) lengths.get(i));
 				assertEquals(0, (int) offsets.get(i));
-				assertRangeEqual(_nackSeqFrame, eventParts.get(i), 0, 8);
+				assertRangeEqual(expectedHeader, eventParts.get(i), 0, 12);
 			} else {
 				int actualLength = (int)lengths.get(i);
 				assertEquals(contents[contentIndex].length, actualLength);
@@ -535,41 +498,5 @@ public class TestZmqReliableRouterSocketMessenger {
 			}
 		}
 	}
-	
-	/**
-	 * Writes the given segments into the provided buffer with the correct protocol
-	 * format.
-	 * @param segments the segments to write
-	 * @param outgoingBuffer the buffer to write into
-	 * @param header the processing header to use for writing
-	 * @return the segment offsets in the outgoing buffer (saves having to use header to extract this data)
-	 */
-	public static int[] writeMessage(byte[][] segments, byte[] outgoingBuffer, OutgoingEventHeader header) {
-		int[] offsets = new int[segments.length];
-		Objects.requireNonNull(outgoingBuffer);
-		
-		if (segments.length > header.getSegmentCount())
-			fail(String.format("Too many segments for the given header (%d > %d)", segments.length, header.getSegmentCount()));
-		else if (segments.length < header.getSegmentCount())
-			fail(String.format("Not enough segments for the given header (%d < %d)", segments.length, header.getSegmentCount()));
-		
-		int contentCursor = header.getEventOffset();
-		for (int segmentIndex = 0; segmentIndex < segments.length; segmentIndex++) {
-			byte[] segment = segments[segmentIndex];
-			if (segment.length > outgoingBuffer.length - contentCursor)
-				fail(String.format("Test failure: allocated buffer too small for segment length " +
-						"(segIndex = %d, remainingBuffer = %d, bufferSize = %d)", 
-						segmentIndex, 
-						outgoingBuffer.length - contentCursor, 
-						outgoingBuffer.length));
-			header.setSegmentMetaData(outgoingBuffer, segmentIndex, contentCursor, segment.length);
-			offsets[segmentIndex] = contentCursor;
-			System.arraycopy(segment, 0, outgoingBuffer, contentCursor, segment.length);
-			contentCursor += segment.length;
-		}
-		header.setIsValid(outgoingBuffer, true);
-		return offsets;
-	}
-
 	
 }

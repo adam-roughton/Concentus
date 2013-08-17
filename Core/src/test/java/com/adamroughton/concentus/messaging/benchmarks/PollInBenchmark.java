@@ -23,6 +23,7 @@ import org.zeromq.ZMQ.Context;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.DefaultClock;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.zmq.HackSocketPollInSet;
 import com.adamroughton.concentus.messaging.zmq.SocketPollInSet;
@@ -37,7 +38,7 @@ public class PollInBenchmark extends MessagingBenchmarkBase {
 	private final int _startPort;
 	private ZMQ.Socket[] _recvSockets;
 	private ZmqSocketSetMessenger _pollSetMessenger;
-	private byte[] _recvBuffer;
+	private ArrayBackedResizingBuffer _recvBuffer;
 	private IncomingEventHeader _header;
 	private SocketPollSet _socketPollSet;
 	
@@ -70,7 +71,7 @@ public class PollInBenchmark extends MessagingBenchmarkBase {
 			_socketPollSet = new SocketPollInSet(context, messengers);			
 		}
 		_pollSetMessenger = new ZmqSocketSetMessenger(_socketPollSet);
-		_recvBuffer = new byte[512];
+		_recvBuffer = new ArrayBackedResizingBuffer(512);
 		_header = new IncomingEventHeader(0, 1);
 	}
 
@@ -121,7 +122,7 @@ public class PollInBenchmark extends MessagingBenchmarkBase {
 		long val = 0;
 		while (recvCount < messageCount) {
 			if (_pollSetMessenger.recv(_recvBuffer, _header, isBlockingRecv)) {
-				val ^= _recvBuffer[4];
+				val ^= _recvBuffer.readByte(4);
 				recvCount++;
 			}
 		}
@@ -134,7 +135,7 @@ public class PollInBenchmark extends MessagingBenchmarkBase {
 		long val = 0;
 		while (recvCount < messageCount) {
 			if (_socketPollSet.getMessenger((int) (seq++ % socketCount)).recv(_recvBuffer, _header, isBlockingRecv)) {
-				val ^= _recvBuffer[4];
+				val ^= _recvBuffer.readByte(4);
 				recvCount++;
 			}
 		}

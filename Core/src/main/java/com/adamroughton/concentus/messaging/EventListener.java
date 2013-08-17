@@ -23,18 +23,18 @@ import com.adamroughton.concentus.disruptor.EventQueuePublisher;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 
-public final class EventListener implements Runnable {
+public final class EventListener<TBuffer extends ResizingBuffer> implements Runnable {
 	
 	private final IncomingEventHeader _header;
-	private final EventQueuePublisher<byte[]> _recvQueuePublisher;
+	private final EventQueuePublisher<TBuffer> _recvQueuePublisher;
 	private final FatalExceptionCallback _exCallback;
-	private final Mutex<Messenger> _messengerMutex;
+	private final Mutex<Messenger<TBuffer>> _messengerMutex;
 	
 	public EventListener(
 			String name,
 			IncomingEventHeader header,
-			Mutex<Messenger> messengerMutex,
-			EventQueue<byte[]> recvQueue, 
+			Mutex<Messenger<TBuffer>> messengerMutex,
+			EventQueue<TBuffer> recvQueue, 
 			FatalExceptionCallback exCallback) {		
 		_header = Objects.requireNonNull(header);
 		_messengerMutex = Objects.requireNonNull(messengerMutex);
@@ -46,11 +46,11 @@ public final class EventListener implements Runnable {
 	public void run() {	
 		try {
 			try {	
-				_messengerMutex.runAsOwner(new OwnerDelegate<Messenger>() {
+				_messengerMutex.runAsOwner(new OwnerDelegate<Messenger<TBuffer>>() {
 
 					@Override
-					public void asOwner(Messenger messenger) {
-						byte[] incomingBuffer;
+					public void asOwner(Messenger<TBuffer> messenger) {
+						TBuffer incomingBuffer;
 						while (!Thread.interrupted()) {
 							incomingBuffer = _recvQueuePublisher.next();
 							if (messenger.recv(incomingBuffer, _header, true)) {
@@ -67,7 +67,7 @@ public final class EventListener implements Runnable {
 			_exCallback.signalFatalException(t);
 		} finally {
 			if (_recvQueuePublisher.hasUnpublished()) {
-				byte[] unpublished = _recvQueuePublisher.getUnpublished();
+				ResizingBuffer unpublished = _recvQueuePublisher.getUnpublished();
 				_header.setIsValid(unpublished, false);
 				_recvQueuePublisher.publish();
 			}

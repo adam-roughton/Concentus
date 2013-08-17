@@ -25,7 +25,7 @@ import java.util.concurrent.locks.ReentrantLock;
 
 import com.adamroughton.concentus.util.Mutex;
 
-public final class MessengerMutex<TMessenger extends Messenger> implements Mutex<Messenger> {
+public final class MessengerMutex<TBuffer extends ResizingBuffer, TMessenger extends Messenger<TBuffer>> implements Mutex<Messenger<TBuffer>> {
 	
 	private final TMessenger _messenger;
 	
@@ -45,7 +45,17 @@ public final class MessengerMutex<TMessenger extends Messenger> implements Mutex
 	 * 
 	 * @param delegate the delegate to execute
 	 */
-	public void runAsOwner(OwnerDelegate<Messenger> delegate) {
+	public void runAsOwner(final OwnerDelegate<Messenger<TBuffer>> delegate) {
+		directRunAsOwner(new OwnerDelegate<TMessenger>() {
+
+			@Override
+			public void asOwner(TMessenger messenger) {
+				delegate.asOwner(messenger);
+			}
+		});
+	}
+	
+	public void directRunAsOwner(OwnerDelegate<TMessenger> delegate) {
 		try {
 			if (!takeOwnership()) {
 				throw new IllegalStateException(String.format("The messenger is already in use by thread %s", 
@@ -56,6 +66,7 @@ public final class MessengerMutex<TMessenger extends Messenger> implements Mutex
 			releaseOwnership();
 		}
 	}
+	
 	
 	public boolean isOwned() {
 		_lock.lock();
@@ -125,27 +136,33 @@ public final class MessengerMutex<TMessenger extends Messenger> implements Mutex
 		}
 	}
 	
-	public static <TMessenger extends Messenger> MultiMessengerMutex<TMessenger> createMultiMessengerMutex(
-			MultiMessengerFactory<TMessenger> factory, 
-			Collection<MessengerMutex<TMessenger>> messengerMutexes) {
+	public static <TBuffer extends ResizingBuffer, 
+				TSetMessenger extends Messenger<TBuffer>,
+				TBaseMessenger extends Messenger<TBuffer>> 
+		MultiMessengerMutex<TBuffer, TSetMessenger, TBaseMessenger> createMultiMessengerMutex(
+			MultiMessengerFactory<TBuffer, TSetMessenger, TBaseMessenger> factory, 
+			Collection<MessengerMutex<TBuffer, TBaseMessenger>> messengerMutexes) {
 		return new MultiMessengerMutex<>(factory, messengerMutexes);
 	}
 	
-	public interface MultiMessengerFactory<TMessenger extends Messenger> {
-		Messenger create(Collection<TMessenger> messengers);
+	public interface MultiMessengerFactory<TBuffer extends ResizingBuffer, TSetMessenger extends Messenger<TBuffer>, TBaseMessenger extends Messenger<TBuffer>> {
+		TSetMessenger create(Collection<TBaseMessenger> messengers);
 	}
 	
-	public static class MultiMessengerMutex<TMessenger extends Messenger> implements Mutex<Messenger> {
-		private final MultiMessengerFactory<TMessenger> _factory;
-		private final ArrayList<MessengerMutex<TMessenger>> _tokens;
+	public static class MultiMessengerMutex<TBuffer extends ResizingBuffer, 
+			TSetMessenger extends Messenger<TBuffer>,
+			TBaseMessenger extends Messenger<TBuffer>> implements Mutex<TSetMessenger> {
+		private final MultiMessengerFactory<TBuffer, TSetMessenger, TBaseMessenger> _factory;
+		private final ArrayList<MessengerMutex<TBuffer, TBaseMessenger>> _tokens;
 		
-		public MultiMessengerMutex(MultiMessengerFactory<TMessenger> factory, Collection<MessengerMutex<TMessenger>> messengerMutexes) {
+		public MultiMessengerMutex(MultiMessengerFactory<TBuffer, TSetMessenger, TBaseMessenger> factory, 
+				Collection<MessengerMutex<TBuffer, TBaseMessenger>> messengerMutexes) {
 			_factory = Objects.requireNonNull(factory);
 			_tokens = new ArrayList<>(messengerMutexes);
 		}
 		
-		public void runAsOwner(OwnerDelegate<Messenger> delegate) {
-			final ArrayList<TMessenger> messengers = new ArrayList<>(_tokens.size());
+		public void runAsOwner(OwnerDelegate<TSetMessenger> delegate) {
+			final ArrayList<TBaseMessenger> messengers = new ArrayList<>(_tokens.size());
 			boolean[] ownedSockets = new boolean[_tokens.size()];
 			try {
 				for (int i = 0; i < _tokens.size(); i++) {

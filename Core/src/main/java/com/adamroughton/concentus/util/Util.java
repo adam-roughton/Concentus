@@ -122,7 +122,7 @@ public class Util {
 		MessageBytesUtil.writeInt(buffer, offset, eventType.getId());
 	}
 	
-	public static EventFactory<byte[]> msgBufferFactory(final int msgBufferSize) {
+	public static EventFactory<byte[]> byteArrayEventFactory(final int msgBufferSize) {
 		return new EventFactory<byte[]>() {
 			public byte[] newInstance() {
 				return new byte[msgBufferSize];

@@ -15,20 +15,18 @@
  */
 package com.adamroughton.concentus.messaging.events;
 
-import java.nio.ByteBuffer;
+import static com.adamroughton.concentus.messaging.ResizingBuffer.*;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 
-public class ClientUpdateEvent extends ByteArrayBackedEvent {
+public final class ClientUpdateEvent extends BufferBackedObject {
 
-	private static final int CLIENT_ID_OFFSET = 0;
-	private static final int UPDATE_ID_OFFSET = 8;
-	private static final int SIM_TIME_OFFSET = 16;
-	private static final int HIGHEST_INPUT_ACTION_ID_OFFSET = 24;
-	private static final int UPDATE_BUFFER_LENGTH_OFFSET = 32;
-	private static final int UPDATE_BUFFER_OFFSET = 36;
-	
-	private static final int BASE_SIZE = UPDATE_BUFFER_OFFSET;
+	private final Field clientIdField = super.getBaseField().then(LONG_SIZE);
+	private final Field updateIdField = clientIdField.then(LONG_SIZE);
+	private final Field simTimeField = updateIdField.then(LONG_SIZE);
+	private final Field highestInputActionIdField = simTimeField.then(LONG_SIZE);
+	private final Field updateField = highestInputActionIdField.thenVariableLength()
+			.resolveOffsets();
 	
 	// 2 bytes for last client action Id, 2 bytes for preceding 16 updates (flag based)
 	
@@ -36,86 +34,40 @@ public class ClientUpdateEvent extends ByteArrayBackedEvent {
 		super(EventType.CLIENT_UPDATE.getId());
 	}
 	
-	public final long getClientId() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET));
+	public long getClientId() {
+		return getBuffer().readLong(clientIdField.offset);
 	}
 
 	public final void setClientId(long clientId) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CLIENT_ID_OFFSET), clientId);
+		getBuffer().writeLong(clientIdField.offset, clientId);
 	}
 	
 	public final long getUpdateId() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET));
+		return getBuffer().readLong(updateIdField.offset);
 	}
 
 	public final void setUpdateId(long updateId) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET), updateId);
+		getBuffer().writeLong(updateIdField.offset, updateId);
 	}
 
 	public final long getSimTime() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(SIM_TIME_OFFSET));
+		return getBuffer().readLong(simTimeField.offset);
 	}
 
 	public final void setSimTime(long simTime) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(SIM_TIME_OFFSET), simTime);
+		getBuffer().writeLong(simTimeField.offset, simTime);
 	}
 	
 	public final long getHighestInputActionId() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(HIGHEST_INPUT_ACTION_ID_OFFSET));
+		return getBuffer().readLong(highestInputActionIdField.offset);
 	}
 	
 	public final void setHighestInputActionId(long inputActionId) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(HIGHEST_INPUT_ACTION_ID_OFFSET), inputActionId);
+		getBuffer().writeLong(highestInputActionIdField.offset, inputActionId);
 	}
 	
-	public final ByteBuffer getUpdateBuffer() {
-		byte[] backingArray = getBackingArray();
-		int offset = getOffset(UPDATE_BUFFER_OFFSET);
-		return ByteBuffer.wrap(backingArray, offset, backingArray.length - offset);
-	}
-	
-	public final int getUpdateOffset() {
-		return getOffset(UPDATE_BUFFER_OFFSET);
-	}
-	
-	/**
-	 * Gets the number of bytes stored in the update buffer. This should only be called
-	 * on events that have had {@link ClientUpdateEvent#setUsedLength(ByteBuffer)} or {@link ClientUpdateEvent#setUsedLength(int)}
-	 * invoked.
-	 * @return the number of bytes stored in the update buffer
-	 */
-	public final int getByteCountInBuffer() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(UPDATE_BUFFER_LENGTH_OFFSET));
-	}
-	
-	public final int getMaxUpdateBufferLength() {
-		return getBackingArray().length - getOffset(UPDATE_BUFFER_OFFSET);
-	}
-	
-	public final int copyFromUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
-		int updateLength = getByteCountInBuffer();
-		int copyLength = length < updateLength? length : updateLength;
-		System.arraycopy(getBackingArray(), getOffset(UPDATE_BUFFER_OFFSET), exBuffer, 0, 
-				copyLength);
-		return copyLength;
-	}
-	
-	public final int copyToUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
-		int maxLength = getMaxUpdateBufferLength();
-		int copyLength = length < maxLength? length : maxLength;
-		System.arraycopy(exBuffer, offset, getBackingArray(), getOffset(UPDATE_BUFFER_OFFSET), 
-				copyLength);
-		return copyLength;
-	}
-	
-	public final void setUsedLength(final ByteBuffer updateBuffer) {
-		int usedLength = getUsedLength(getOffset(UPDATE_BUFFER_OFFSET), updateBuffer);
-		setUsedLength(usedLength);
-	}
-	
-	public final void setUsedLength(int length) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(UPDATE_BUFFER_LENGTH_OFFSET), length);
-		setEventSize(BASE_SIZE + length);
+	public ResizingBuffer getUpdateSlice() {
+		return getBuffer().slice(updateField.offset);
 	}
 	
 }

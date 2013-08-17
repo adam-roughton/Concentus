@@ -17,10 +17,31 @@ package com.adamroughton.concentus.messaging.zmq;
 
 import java.io.Closeable;
 
+import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.disruptor.EventQueueFactory;
+import com.adamroughton.concentus.messaging.BufferFactory;
+import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.util.Mutex;
 
-public interface SocketManager extends Closeable {
+public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable {
+	
+	/**
+	 * Gets a factory for creating {@link ResizingBuffer} instances that this {@link SocketManager}
+	 * is compatible with.
+	 * @return a factory for creating {@linkplain ResizingBuffer} instances
+	 */
+	BufferFactory<TBuffer> getBufferFactory();
+	
+	/**
+	 * Creates a new factory for creating {@link EventQueue} instances that are filled with 
+	 * {@link ResizingBuffer} instances that this {@link SocketManager} is compatible with.
+	 * @param eventQueueFactory the event queue factory that will be used for creating the
+	 * underlying EventQueue for each message queue
+	 * @return a factory for creating message queues
+	 */
+	MessageQueueFactory<TBuffer> newMessageQueueFactory(EventQueueFactory eventQueueFactory);
 	
 	/**
 	 * Creates a new managed socket. The socket is not opened until
@@ -65,9 +86,9 @@ public interface SocketManager extends Closeable {
 	 */
 	void updateSettings(final int socketId, final SocketSettings socketSettings);
 	
-	Mutex<Messenger> getSocketMutex(int socketId);
+	Mutex<Messenger<TBuffer>> getSocketMutex(int socketId);
 	
-	Mutex<Messenger> createPollInSet(int... socketIds);
+	Mutex<Messenger<TBuffer>> createPollInSet(int... socketIds);
 	
 	int connectSocket(final int socketId, final String address);
 	

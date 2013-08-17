@@ -15,68 +15,39 @@
  */
 package com.adamroughton.concentus.messaging.events;
 
-import java.nio.ByteBuffer;
+import static com.adamroughton.concentus.messaging.ResizingBuffer.*;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 
-public class StateUpdateEvent extends ByteArrayBackedEvent {
+public class StateUpdateEvent extends BufferBackedObject {
 
-	private static final int UPDATE_ID_OFFSET = 0;
-	private static final int SIM_TIME_OFFSET = 8;
-	private static final int UPDATE_BUFFER_LENGTH_OFFSET = 16;
-	private static final int UPDATE_BUFFER_OFFSET = 20;
-	private static final int BASE_SIZE = UPDATE_BUFFER_OFFSET;
+	private final Field updateIdField = super.getBaseField().then(LONG_SIZE);
+	private final Field simTimeField = updateIdField.then(LONG_SIZE);
+	private final Field updateContentField = simTimeField.thenVariableLength()
+			.resolveOffsets();
 	
 	public StateUpdateEvent() {
 		super(EventType.STATE_UPDATE.getId());
 	}
 	
-	public final long getUpdateId() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET));
+	public long getUpdateId() {
+		return getBuffer().readLong(updateIdField.offset);
 	}
 
-	public final void setUpdateId(long updateId) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(UPDATE_ID_OFFSET), updateId);
+	public void setUpdateId(long updateId) {
+		getBuffer().writeLong(updateIdField.offset, updateId);
 	}
 
-	public final long getSimTime() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(SIM_TIME_OFFSET));
+	public long getSimTime() {
+		return getBuffer().readLong(simTimeField.offset);
 	}
 
-	public final void setSimTime(long simTime) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(SIM_TIME_OFFSET), simTime);
+	public void setSimTime(long simTime) {
+		getBuffer().writeLong(simTimeField.offset, simTime);
 	}
 	
-	public final int getByteCountInBuffer() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(UPDATE_BUFFER_LENGTH_OFFSET));
-	}
-	
-	public final int getMaxUpdateBufferLength() {
-		return getBackingArray().length - getOffset(UPDATE_BUFFER_OFFSET);
-	}
-	
-	public final ByteBuffer getUpdateBuffer() {
-		byte[] backingArray = getBackingArray();
-		int offset = getOffset(UPDATE_BUFFER_OFFSET);
-		return ByteBuffer.wrap(backingArray, offset, backingArray.length - offset);
-	}
-	
-	public final int copyUpdateBytes(final byte[] exBuffer, final int offset, final int length) {
-		int updateLength = getByteCountInBuffer();
-		int copyLength = length < updateLength? length : updateLength;
-		System.arraycopy(getBackingArray(), getOffset(UPDATE_BUFFER_OFFSET), exBuffer, offset, 
-				copyLength);
-		return copyLength;
-	}
-	
-	public final void setUsedLength(final ByteBuffer updateBuffer) {
-		int usedLength = getUsedLength(getOffset(UPDATE_BUFFER_OFFSET), updateBuffer);
-		setUsedLength(usedLength);
-	}
-	
-	public final void setUsedLength(int length) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(UPDATE_BUFFER_LENGTH_OFFSET), length);
-		setEventSize(BASE_SIZE + length);
+	public ResizingBuffer getContentSlice() {
+		return getBuffer().slice(updateContentField.offset);
 	}
 	
 }

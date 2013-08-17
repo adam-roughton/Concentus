@@ -41,7 +41,7 @@ import com.lmax.disruptor.Sequence;
  * @author Adam Roughton
  *
  */
-public final class SendRecvMessengerReactor implements EventProcessor {
+public final class SendRecvMessengerReactor<TBuffer extends ResizingBuffer> implements EventProcessor {
 	
 	/**
 	 * The threshold for yielding the thread after running the send and recv loop
@@ -52,20 +52,20 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 	private final AtomicBoolean _running = new AtomicBoolean(false);
 	private volatile Thread _processorThread = null;
 	
-	private final Mutex<Messenger> _messengerMutex;
+	private final Mutex<Messenger<TBuffer>> _messengerMutex;
 	private final OutgoingEventHeader _sendHeader;
 	private final IncomingEventHeader _recvHeader;
-	private final EventQueuePublisher<byte[]> _recvQueuePublisher;
-	private final EventQueueReader<byte[]> _sendQueueReader;
+	private final EventQueuePublisher<TBuffer> _recvQueuePublisher;
+	private final EventQueueReader<TBuffer> _sendQueueReader;
 	private final FatalExceptionCallback _exCallback;
 	
 	public SendRecvMessengerReactor(
 			String name,
-			Mutex<Messenger> messengerMutex,
+			Mutex<Messenger<TBuffer>> messengerMutex,
 			OutgoingEventHeader sendHeader,
 			IncomingEventHeader recvHeader,
-			EventQueue<byte[]> recvQueue,
-			EventQueue<byte[]> sendQueue,
+			EventQueue<TBuffer> recvQueue,
+			EventQueue<TBuffer> sendQueue,
 			FatalExceptionCallback exCallback) {
 		_messengerMutex = Objects.requireNonNull(messengerMutex);
 		_sendHeader = Objects.requireNonNull(sendHeader);
@@ -77,10 +77,10 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 	
 	@Override
 	public void run() {
-		_messengerMutex.runAsOwner(new OwnerDelegate<Messenger>() {
+		_messengerMutex.runAsOwner(new OwnerDelegate<Messenger<TBuffer>>() {
 			
 			@Override
-			public void asOwner(Messenger messenger) {
+			public void asOwner(Messenger<TBuffer> messenger) {
 				if (!_running.compareAndSet(false, true)) {
 					throw new IllegalStateException(String.format("The %s can only be started once.", 
 							DeadlineBasedEventProcessor.class.getName()));
@@ -94,14 +94,14 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 						try {
 							boolean wasActivity = false;	
 							
-							byte[] recvBuffer = _recvQueuePublisher.next();
+							TBuffer recvBuffer = _recvQueuePublisher.next();
 							if (recvBuffer != null && messenger.recv(recvBuffer, _recvHeader, false)) {
 								if (_recvQueuePublisher.publish()) {
 									wasActivity = true;
 								}
 							}
 							
-							byte[] sendBuffer = _sendQueueReader.get();
+							TBuffer sendBuffer = _sendQueueReader.get();
 							if (sendBuffer != null && messenger.send(sendBuffer, _sendHeader, false)) {
 								_sendQueueReader.advance();
 								wasActivity = true;
@@ -124,7 +124,7 @@ public final class SendRecvMessengerReactor implements EventProcessor {
 					_exCallback.signalFatalException(e);
 				} finally {
 					if (_recvQueuePublisher.hasUnpublished()) {
-						byte[] unpublishedEvent = _recvQueuePublisher.getUnpublished();
+						ResizingBuffer unpublishedEvent = _recvQueuePublisher.getUnpublished();
 						_recvHeader.setIsValid(unpublishedEvent, false);
 						_recvQueuePublisher.publish();
 					}

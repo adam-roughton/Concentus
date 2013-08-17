@@ -16,13 +16,13 @@
 package com.adamroughton.concentus.messaging.patterns;
 
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.events.ByteArrayBackedEvent;
+import com.adamroughton.concentus.messaging.events.BufferBackedObject;
 
-public interface EventReader<TRecvHeader extends IncomingEventHeader, TEvent extends ByteArrayBackedEvent> {
+public interface EventReader<TRecvHeader extends IncomingEventHeader, TEvent extends BufferBackedObject> {
 
 	/**
 	 * Reads the content of an event using the given
-	 * {@link ByteArrayBackedEvent} instance.
+	 * {@link BufferBackedObject} instance.
 	 * @param header the header of the event
 	 * @param event the event to read from
 	 */

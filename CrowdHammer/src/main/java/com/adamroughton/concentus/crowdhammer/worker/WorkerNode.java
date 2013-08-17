@@ -26,6 +26,7 @@ import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.ConcentusWorkerNode;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.metric.MetricContext;
 
 public class WorkerNode implements ConcentusWorkerNode<CrowdHammerConfiguration, CrowdHammerServiceState> {
@@ -57,11 +58,11 @@ public class WorkerNode implements ConcentusWorkerNode<CrowdHammerConfiguration,
 	}
 	
 	@Override
-	public WorkerService createService(Map<String, String> commandLineOptions,
-			ConcentusHandle<? extends CrowdHammerConfiguration> handle,
+	public <TBuffer extends ResizingBuffer> WorkerService<TBuffer> createService(Map<String, String> commandLineOptions,
+			ConcentusHandle<? extends CrowdHammerConfiguration, TBuffer> handle,
 			MetricContext metricContext) {
 		int maxClientCount = Integer.parseInt(commandLineOptions.get(MAX_CLIENT_COUNT_OPTION));
-		return new WorkerService(handle, maxClientCount, metricContext);
+		return new WorkerService<>(handle, maxClientCount, metricContext);
 	}
 
 	@Override

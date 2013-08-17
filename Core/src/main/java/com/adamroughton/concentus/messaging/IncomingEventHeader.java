@@ -53,28 +53,28 @@ public class IncomingEventHeader extends EventHeader {
 		return super.getAdditionalOffset() + ADDITIONAL_LENGTH;
 	}
 
-	public final boolean connectionInvalid(byte[] event) {
+	public final boolean connectionInvalid(ResizingBuffer event) {
 		return getFlag(event, _connectionInvalidFlagOffset);
 	}
 	
-	public final void setConnectionInvalid(byte[] event, boolean connectionInvalid) {
+	public final void setConnectionInvalid(ResizingBuffer event, boolean connectionInvalid) {
 		setFlag(event, _connectionInvalidFlagOffset, connectionInvalid);
 	}
 	
-	public final int getSocketId(byte[] event) {
-		return MessageBytesUtil.readInt(event, _socketIdOffset);
+	public final int getSocketId(ResizingBuffer event) {
+		return event.readInt(_socketIdOffset);
 	}
 	
-	public final void setSocketId(byte[] event, int socketId) {
-		MessageBytesUtil.writeInt(event, _socketIdOffset, socketId);
+	public final void setSocketId(ResizingBuffer event, int socketId) {
+		event.writeInt(_socketIdOffset, socketId);
 	}
 	
-	public final long getRecvTime(byte[] event) {
-		return MessageBytesUtil.readLong(event, _recvTimeOffset);
+	public final long getRecvTime(ResizingBuffer event) {
+		return event.readLong(_recvTimeOffset);
 	}
 	
-	public final void setRecvTime(byte[] event, long recvTime) {
-		MessageBytesUtil.writeLong(event, _recvTimeOffset, recvTime);
+	public final void setRecvTime(ResizingBuffer event, long recvTime) {
+		event.writeLong(_recvTimeOffset, recvTime);
 	}
 	
 }

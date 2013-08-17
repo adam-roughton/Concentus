@@ -38,6 +38,7 @@ import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.cluster.worker.ClusterStateValue;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerContainer;
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.metric.LogMetricContext;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.NullMetricContext;
@@ -61,7 +62,7 @@ public class ConcentusExecutableOperations {
 		MetricContext metricContext = new LogMetricContext(Constants.METRIC_TICK, metricBufferMillis, clock);
 		metricContext.start();
 		
-		ConcentusHandle<TConfig> concentusHandle = ConcentusHandleFactory.createHandle(clock, 
+		ConcentusHandle<TConfig, ArrayBackedResizingBuffer> concentusHandle = ConcentusHandleFactory.createHandle(clock, 
 				config, zooKeeperAddress, nodeAddress, metricContext, traceMessengers, traceQueues);
 		
 		ClusterListener<TClusterState> concentusWorkerService = workerNode.createService(commandLineArgs, concentusHandle, metricContext);
@@ -100,7 +101,7 @@ public class ConcentusExecutableOperations {
 		
 		MetricContext metricContext = new NullMetricContext();
 		
-		ConcentusHandle<TConfig> concentusHandle = ConcentusHandleFactory.createHandle(clock, 
+		ConcentusHandle<TConfig, ArrayBackedResizingBuffer> concentusHandle = ConcentusHandleFactory.createHandle(clock, 
 				config, zooKeeperAddress, nodeAddress, metricContext, traceMessengers, traceQueues);
 		ClusterCoordinatorHandle coordinatorClusterHandle = new ClusterCoordinatorHandle(
 				concentusHandle.getZooKeeperAddress(), 
@@ -183,7 +184,7 @@ public class ConcentusExecutableOperations {
 	}
 	
 	public interface FactoryDelegate<TProcess, TConfig extends Configuration> {
-		TProcess create(ConcentusHandle<? extends TConfig> concentusHandle);
+		TProcess create(ConcentusHandle<? extends TConfig, ?> concentusHandle);
 	}
 	
 }

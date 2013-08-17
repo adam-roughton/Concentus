@@ -14,13 +14,12 @@
  * limitations under the License.
  */
 package com.adamroughton.concentus.messaging.events;
+import static com.adamroughton.concentus.messaging.ResizingBuffer.*;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
-
-public class ClientConnectEvent extends ByteArrayBackedEvent {
+public final class ClientConnectEvent extends BufferBackedObject {
 	
-	private static final int CALLBACK_BITS_OFFSET = 0;
-	private static final int EVENT_SIZE = 8;
+	private final Field callbackBitsField = super.getBaseField().then(LONG_SIZE)
+			.resolveOffsets();
 	
 	/**
 	 * Brushing over security details for now
@@ -28,7 +27,12 @@ public class ClientConnectEvent extends ByteArrayBackedEvent {
 	//private static final int AUTH_TOKEN_OFFSET = 0;
 
 	public ClientConnectEvent() {
-		super(EventType.CLIENT_CONNECT.getId(), EVENT_SIZE);
+		super(EventType.CLIENT_CONNECT.getId());
+	}
+	
+	@Override
+	protected Field getBaseField() {
+		return callbackBitsField;
 	}
 	
 	/**
@@ -36,7 +40,7 @@ public class ClientConnectEvent extends ByteArrayBackedEvent {
 	 * @return the bits stored in the callback bits field
 	 */
 	public final long getCallbackBits() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(CALLBACK_BITS_OFFSET));
+		return getBuffer().readLong(callbackBitsField.offset);
 	}
 	
 	/**
@@ -48,6 +52,6 @@ public class ClientConnectEvent extends ByteArrayBackedEvent {
 	 * same bits are reused for subsequent requests.
 	 */
 	public final void setCallbackBits(long callbackBits) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(CALLBACK_BITS_OFFSET), callbackBits);
+		getBuffer().writeLong(callbackBitsField.offset, callbackBits);
 	}
 }

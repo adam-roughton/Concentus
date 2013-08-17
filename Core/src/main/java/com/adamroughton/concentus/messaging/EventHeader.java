@@ -65,35 +65,35 @@ public abstract class EventHeader {
 		return 1;
 	}
 	
-	protected final boolean getFlag(byte[] event, int flagIndex) {
-		return MessageBytesUtil.readFlag(event, 0, _flagFieldLength, flagIndex);
+	protected final boolean getFlag(ResizingBuffer event, int flagIndex) {
+		return event.readFlag(0, _flagFieldLength, flagIndex);
 	}
 	
-	protected final void setFlag(byte[] event, int flagIndex, boolean isRaised) {
-		MessageBytesUtil.writeFlag(event, 0, _flagFieldLength, flagIndex, isRaised);
+	protected final void setFlag(ResizingBuffer event, int flagIndex, boolean isRaised) {
+		event.writeFlag(0, _flagFieldLength, flagIndex, isRaised);
 	}
 	
 	public final int getSegmentCount() {
 		return _segmentCount;
 	}
 	
-	public final boolean isValid(byte[] event) {
+	public final boolean isValid(ResizingBuffer event) {
 		return getFlag(event, 0);
 	}
 	
-	public final void setIsValid(byte[] event, boolean isValid) {
+	public final void setIsValid(ResizingBuffer event, boolean isValid) {
 		setFlag(event, 0, isValid);
 	}
 	
-	public final int getSegmentMetaData(byte[] event, int segmentIndex) {
-		return MessageBytesUtil.readInt(event, _segmentsStartOffset + segmentIndex * 4);
+	public final int getSegmentMetaData(ResizingBuffer event, int segmentIndex) {
+		return event.readInt(_segmentsStartOffset + segmentIndex * 4);
 	}
 	
-	public final void setSegmentMetaData(byte[] event, int segmentIndex, int segmentMetaData) {
-		MessageBytesUtil.writeInt(event, _segmentsStartOffset + segmentIndex * 4, segmentMetaData);
+	public final void setSegmentMetaData(ResizingBuffer event, int segmentIndex, int segmentMetaData) {
+		event.writeInt(_segmentsStartOffset + segmentIndex * 4, segmentMetaData);
 	}
 	
-	public final void setSegmentMetaData(byte[] event, int segmentIndex, int segmentOffset, int segmentLength) {
+	public final void setSegmentMetaData(ResizingBuffer event, int segmentIndex, int segmentOffset, int segmentLength) {
 		setSegmentMetaData(event, segmentIndex, createSegmentMetaData(segmentOffset, segmentLength));
 	}
 	
@@ -119,8 +119,8 @@ public abstract class EventHeader {
 		return _length;
 	}
 	
-	public final void reset(byte[] event) {
-		MessageBytesUtil.clear(event, _startOffset, _length);
+	public final void reset(ResizingBuffer event) {
+		event.clear(_startOffset, _length);
 	}
 	
 }

@@ -12,6 +12,7 @@ import com.adamroughton.concentus.ConcentusWorkerNode;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.metric.MetricContext;
 
 public class SparkProcessNode implements ConcentusWorkerNode<Configuration, ConcentusServiceState> {
@@ -39,11 +40,11 @@ public class SparkProcessNode implements ConcentusWorkerNode<Configuration, Conc
 	}
 
 	@Override
-	public ClusterListener<ConcentusServiceState> createService(
+	public <TBuffer extends ResizingBuffer> ClusterListener<ConcentusServiceState> createService(
 			Map<String, String> commandLineOptions,
-			ConcentusHandle<? extends Configuration> handle, 
+			ConcentusHandle<? extends Configuration, TBuffer> handle, 
 			MetricContext metricContext) {
-		return new CanonicalStateService(handle, metricContext);
+		return new CanonicalStateService<>(handle, metricContext);
 	}
 
 	@Override

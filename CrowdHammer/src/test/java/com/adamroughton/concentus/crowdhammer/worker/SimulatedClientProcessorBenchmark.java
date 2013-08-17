@@ -23,9 +23,12 @@ import uk.co.real_logic.intrinsics.StructuredArray;
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.DefaultClock;
+import com.adamroughton.concentus.disruptor.CollocatedBufferEventFactory;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueImpl;
 import com.adamroughton.concentus.disruptor.SingleProducerQueueStrategy;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBufferFactory;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.events.ClientUpdateEvent;
@@ -41,12 +44,12 @@ public class SimulatedClientProcessorBenchmark {
 
 	private Clock _clock;
 	private StructuredArray<Client> _clients;
-	private SimulatedClientProcessor _worker;
+	private SimulatedClientProcessor<ArrayBackedResizingBuffer> _worker;
 	private IncomingEventHeader _header;
-	private EventQueue<byte[]> _sendQueue;
+	private EventQueue<ArrayBackedResizingBuffer> _sendQueue;
 	private long _testStartSeq;
 	
-	private byte[] _recvBuffer;
+	private ArrayBackedResizingBuffer _recvBuffer;
 	
 	public void setUp() {
 		int clientCount = 50000;
@@ -63,24 +66,25 @@ public class SimulatedClientProcessorBenchmark {
 			}
 			
 		});
-		_recvBuffer = new byte[bufferSize];
+		_recvBuffer = new ArrayBackedResizingBuffer(bufferSize);
 		
-		_sendQueue = new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", Util.msgBufferFactory(bufferSize), 
+		_sendQueue = new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", 
+				new CollocatedBufferEventFactory<>(1, new ArrayBackedResizingBufferFactory(), Constants.DEFAULT_MSG_BUFFER_SIZE), 
 				1,
 				new YieldingWaitStrategy()), new NullMetricContext());
 		_sendQueue.addGatingSequences(new Sequence(Long.MAX_VALUE));
 		
 		_header = new IncomingEventHeader(0, 2);
 		
-		SendQueue<OutgoingEventHeader> clientSendQueue = new SendQueue<>("", new OutgoingEventHeader(0, 1), _sendQueue);
+		SendQueue<OutgoingEventHeader, ArrayBackedResizingBuffer> clientSendQueue = new SendQueue<>("", new OutgoingEventHeader(0, 1), _sendQueue);
 		
-		_worker = new SimulatedClientProcessor(_clock, _clients, clientCount, clientSendQueue, _header, 
+		_worker = new SimulatedClientProcessor<>(_clock, _clients, clientCount, clientSendQueue, _header, 
 				new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), _clock));
 		
 		NullMetricContext nullMetricContext = new NullMetricContext();
 		
 		ConnectResponseEvent connRes = new ConnectResponseEvent();
-		connRes.setBackingArray(_recvBuffer, 0);
+		connRes.attachToBuffer(_recvBuffer, 0);
 		for (int i = 0; i < _clients.getLength(); i++) {
 			Client client = _clients.get(i);
 			client.setHandlerId(0);
@@ -95,7 +99,7 @@ public class SimulatedClientProcessorBenchmark {
 			
 			client.onConnectResponse(connRes, nullMetricContext.newCountMetric("", "", false));
 		}
-		connRes.releaseBackingArray();
+		connRes.releaseBuffer();
 		
 		_testStartSeq = _sendQueue.getCursor();
 		_worker.onStart();
@@ -103,7 +107,7 @@ public class SimulatedClientProcessorBenchmark {
 	
 	public void timeWorker(int numUpdates, long spacingBetweenUpdates) throws Exception {
 		ClientUpdateEvent updateEvent = new ClientUpdateEvent();
-		updateEvent.setBackingArray(_recvBuffer, 0);
+		updateEvent.attachToBuffer(_recvBuffer, 0);
 		
 		long seq = 0;
 		for (int updateIndex = 0; updateIndex < numUpdates; updateIndex++) {
@@ -118,11 +122,10 @@ public class SimulatedClientProcessorBenchmark {
 				updateEvent.setUpdateId(updateIndex);
 				updateEvent.setSimTime(System.currentTimeMillis());
 				updateEvent.setHighestInputActionId(0);
-				updateEvent.setUsedLength(updateEvent.getMaxUpdateBufferLength());
 				_worker.onEvent(_recvBuffer, seq++, true);
 			}
 		}
-		updateEvent.releaseBackingArray();
+		updateEvent.releaseBuffer();
 	}
 	
 	public long eventSentCount() {

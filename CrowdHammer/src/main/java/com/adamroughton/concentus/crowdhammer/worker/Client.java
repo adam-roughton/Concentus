@@ -19,6 +19,7 @@ import java.util.Objects;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.events.ClientConnectEvent;
 import com.adamroughton.concentus.messaging.events.ClientInputEvent;
 import com.adamroughton.concentus.messaging.events.ClientUpdateEvent;
@@ -99,7 +100,7 @@ public final class Client {
 		return _clientId != -1;
 	}
 	
-	public void onActionDeadline(SendQueue<OutgoingEventHeader> clientSendQueue, CountMetric sentActionThroughputMetric, 
+	public <TBuffer extends ResizingBuffer> void onActionDeadline(SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue, CountMetric sentActionThroughputMetric, 
 			CountMetric droppedActionThroughputMetric) {
 		if (_clientId == -1) {
 			// if we are waiting to connect, do nothing with this client
@@ -112,18 +113,17 @@ public final class Client {
 		_lastActionTime = _clock.currentMillis();
 	}
 	
-	private void sendInputAction(SendQueue<OutgoingEventHeader> clientSendQueue, 
+	private <TBuffer extends ResizingBuffer> void sendInputAction(SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue, 
 			CountMetric sentActionThroughputMetric, CountMetric droppedActionThroughputMetric) {		
 		if (!clientSendQueue.trySend(EventPattern.asTask(_inputEvent, new EventWriter<OutgoingEventHeader, ClientInputEvent>() {
 
 			@Override
 			public void write(OutgoingEventHeader header, ClientInputEvent event) throws Exception {
-				header.setTargetSocketId(event.getBackingArray(), _handlerId);
+				header.setTargetSocketId(event.getBuffer(), _handlerId);
 				long sendTime = _clock.currentMillis();
 				long actionId = _inputIdToSentTimeLookup.add(sendTime);
 				event.setClientId(_clientId);
 				event.setClientActionId(actionId);
-				event.setUsedLength(event.getInputBuffer());
 			}
 			
 		}))) {
@@ -132,12 +132,12 @@ public final class Client {
 		sentActionThroughputMetric.push(1);
 	}
 	
-	private void connect(SendQueue<OutgoingEventHeader> clientSendQueue) {
+	private <TBuffer extends ResizingBuffer> void connect(SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue) {
 		clientSendQueue.send(EventPattern.asTask(_connectEvent, new EventWriter<OutgoingEventHeader, ClientConnectEvent>() {
 
 			@Override
 			public void write(OutgoingEventHeader header, ClientConnectEvent event) throws Exception {
-				header.setTargetSocketId(event.getBackingArray(), _handlerId);
+				header.setTargetSocketId(event.getBuffer(), _handlerId);
 				event.setCallbackBits(_index);
 			}
 			

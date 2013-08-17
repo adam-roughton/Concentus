@@ -20,21 +20,36 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.disruptor.EventQueueFactory;
+import com.adamroughton.concentus.messaging.BufferFactory;
+import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.TrackingMessengerDecorator;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.util.Mutex;
 
-public class TrackingSocketManagerDecorator implements SocketManager {
+public class TrackingSocketManagerDecorator<TBuffer extends ResizingBuffer> implements SocketManager<TBuffer> {
 
 	private final MetricContext _metricContext;
-	private final SocketManager _decoratedManager;
+	private final SocketManager<TBuffer> _decoratedManager;
 	private final Clock _clock;
 	
-	public TrackingSocketManagerDecorator(MetricContext metricContext, SocketManager decoratedManager, Clock clock) {
+	public TrackingSocketManagerDecorator(MetricContext metricContext, SocketManager<TBuffer> decoratedManager, Clock clock) {
 		_metricContext = Objects.requireNonNull(metricContext);
 		_decoratedManager = Objects.requireNonNull(decoratedManager);
 		_clock = Objects.requireNonNull(clock);
+	}
+	
+	@Override
+	public BufferFactory<TBuffer> getBufferFactory() {
+		return _decoratedManager.getBufferFactory();
+	}
+	
+	@Override
+	public MessageQueueFactory<TBuffer> newMessageQueueFactory(
+			EventQueueFactory eventQueueFactory) {
+		return _decoratedManager.newMessageQueueFactory(eventQueueFactory);
 	}
 	
 	@Override
@@ -63,25 +78,25 @@ public class TrackingSocketManagerDecorator implements SocketManager {
 	}
 
 	@Override
-	public Mutex<Messenger> getSocketMutex(int socketId) {
+	public Mutex<Messenger<TBuffer>> getSocketMutex(int socketId) {
 		return wrapMutex(_decoratedManager.getSocketMutex(socketId));
 	}
 
 	@Override
-	public Mutex<Messenger> createPollInSet(int... socketIds) {
+	public Mutex<Messenger<TBuffer>> createPollInSet(int... socketIds) {
 		return wrapMutex(_decoratedManager.createPollInSet(socketIds));
 	}
 	
-	private Mutex<Messenger> wrapMutex(final Mutex<Messenger> wrappedMutex) {
-		return new Mutex<Messenger>() {
+	private Mutex<Messenger<TBuffer>> wrapMutex(final Mutex<Messenger<TBuffer>> wrappedMutex) {
+		return new Mutex<Messenger<TBuffer>>() {
 
 			@Override
-			public void runAsOwner(final OwnerDelegate<Messenger> delegate) {
-				wrappedMutex.runAsOwner(new OwnerDelegate<Messenger>() {
+			public void runAsOwner(final OwnerDelegate<Messenger<TBuffer>> delegate) {
+				wrappedMutex.runAsOwner(new OwnerDelegate<Messenger<TBuffer>>() {
 
 					@Override
-					public void asOwner(Messenger messenger) {
-						TrackingMessengerDecorator trackingMessenger = new TrackingMessengerDecorator(_metricContext, messenger, _clock);
+					public void asOwner(Messenger<TBuffer> messenger) {
+						TrackingMessengerDecorator<TBuffer> trackingMessenger = new TrackingMessengerDecorator<>(_metricContext, messenger, _clock);
 						delegate.asOwner(trackingMessenger);
 					}
 					

@@ -59,15 +59,17 @@ public class TestEventHeader {
 		EventHeader header = new EventHeader(0, segmentCount, additionalLength, 0) {
 		};
 		int arrayLen = Util.nextPowerOf2(headerLength);
-		byte[] actual = new byte[arrayLen];
-		byte[] expected = new byte[arrayLen];
+		ArrayBackedResizingBuffer actualBuffer = new ArrayBackedResizingBuffer(arrayLen);
+		byte[] actual = actualBuffer.getBuffer();
+		ArrayBackedResizingBuffer expectedBuffer = new ArrayBackedResizingBuffer(arrayLen);
+		byte[] expected = expectedBuffer.getBuffer();
 		for (int i = 0; i < arrayLen; i++) {
 			actual[i] = expected[i] = 9;
 		}
 		for (int i = 0; i < headerLength; i++) {
 			expected[i] = 0;
 		}
-		header.reset(actual);
+		header.reset(actualBuffer);
 		assertArrayEquals(expected, actual);
 	}
 	

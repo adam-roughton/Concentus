@@ -17,9 +17,9 @@ package com.adamroughton.concentus.messaging;
 
 import java.util.Objects;
 
-public final class StubMessenger implements Messenger {
+public final class StubMessenger<TBuffer extends ResizingBuffer> implements Messenger<TBuffer> {
 
-	public static interface FakeRecvDelegate {
+	public static interface FakeRecvDelegate<TBuffer extends ResizingBuffer> {
 		
 		/**
 		 * Gives the delegate the option to fake the reception of a message into the event buffer.
@@ -32,10 +32,10 @@ public final class StubMessenger implements Messenger {
 		 * @param isBlocking
 		 * @return whether the caller should act as if a message was placed in the buffer
 		 */
-		boolean fakeRecv(int[] endPointIds, long recvSeq, byte[] eventBuffer, IncomingEventHeader header, boolean isBlocking);
+		boolean fakeRecv(int[] endPointIds, long recvSeq, TBuffer eventBuffer, IncomingEventHeader header, boolean isBlocking);
 	}
 	
-	public static interface FakeSendDelegate {
+	public static interface FakeSendDelegate<TBuffer extends ResizingBuffer> {
 		
 		/**
 		 * Gives the delegate the option to fake the sending of a message. If the callee returns
@@ -46,15 +46,15 @@ public final class StubMessenger implements Messenger {
 		 * @param isBlocking
 		 * @return whether the caller should act as if the message was sent
 		 */
-		boolean fakeSend(long sendSeq, byte[] eventBuffer, OutgoingEventHeader header, boolean isBlocking);
+		boolean fakeSend(long sendSeq, TBuffer eventBuffer, OutgoingEventHeader header, boolean isBlocking);
 	}
 	
 	private final String _name;
 	private final int[] _endPointIds;
 	private long _recvSeq = 0;
 	private long _sendSeq = 0;
-	private FakeRecvDelegate _fakeRecvDelegate;
-	private FakeSendDelegate _fakeSendDelegate;
+	private FakeRecvDelegate<TBuffer> _fakeRecvDelegate;
+	private FakeSendDelegate<TBuffer> _fakeSendDelegate;
 	
 	public StubMessenger(String name, int[] endPointIds) {
 		_name = Objects.requireNonNull(name);
@@ -63,12 +63,12 @@ public final class StubMessenger implements Messenger {
 		setFakeSendDelegate(null);
 	}
 
-	public void setFakeRecvDelegate(FakeRecvDelegate fakeRecvDelegate) {
+	public void setFakeRecvDelegate(FakeRecvDelegate<TBuffer> fakeRecvDelegate) {
 		if (fakeRecvDelegate == null) {
-			fakeRecvDelegate = new FakeRecvDelegate() {
+			fakeRecvDelegate = new FakeRecvDelegate<TBuffer>() {
 				
 				@Override
-				public boolean fakeRecv(int[] endPointIds, long recvSeq, byte[] eventBuffer,
+				public boolean fakeRecv(int[] endPointIds, long recvSeq, TBuffer eventBuffer,
 						IncomingEventHeader header, boolean isBlocking) {
 					return true;
 				}
@@ -77,12 +77,12 @@ public final class StubMessenger implements Messenger {
 		_fakeRecvDelegate = fakeRecvDelegate;
 	}
 	
-	public void setFakeSendDelegate(FakeSendDelegate fakeSendDelegate) {
+	public void setFakeSendDelegate(FakeSendDelegate<TBuffer> fakeSendDelegate) {
 		if (fakeSendDelegate == null) {
-			fakeSendDelegate = new FakeSendDelegate() {
+			fakeSendDelegate = new FakeSendDelegate<TBuffer>() {
 				
 				@Override
-				public boolean fakeSend(long sendSeq, byte[] eventBuffer,
+				public boolean fakeSend(long sendSeq, TBuffer eventBuffer,
 						OutgoingEventHeader header, boolean isBlocking) {
 					return true;
 				}
@@ -92,13 +92,13 @@ public final class StubMessenger implements Messenger {
 	}
 	
 	@Override
-	public boolean send(byte[] outgoingBuffer, OutgoingEventHeader header,
+	public boolean send(TBuffer outgoingBuffer, OutgoingEventHeader header,
 			boolean isBlocking) throws MessengerClosedException {
 		return _fakeSendDelegate.fakeSend(_sendSeq++, outgoingBuffer, header, isBlocking);
 	}
 
 	@Override
-	public boolean recv(byte[] eventBuffer, IncomingEventHeader header,
+	public boolean recv(TBuffer eventBuffer, IncomingEventHeader header,
 			boolean isBlocking) throws MessengerClosedException {
 		return _fakeRecvDelegate.fakeRecv(_endPointIds, _recvSeq++, eventBuffer, header, isBlocking);
 	}

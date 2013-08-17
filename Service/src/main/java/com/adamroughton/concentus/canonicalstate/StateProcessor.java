@@ -19,7 +19,6 @@ import it.unimi.dsi.fastutil.ints.Int2LongMap;
 import it.unimi.dsi.fastutil.ints.Int2LongOpenHashMap;
 import it.unimi.dsi.fastutil.ints.IntIterator;
 
-import java.nio.ByteBuffer;
 import java.util.Objects;
 
 import com.adamroughton.concentus.Clock;
@@ -27,6 +26,7 @@ import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.events.ClientHandlerEntry;
 import com.adamroughton.concentus.messaging.events.StateInputEvent;
 import com.adamroughton.concentus.messaging.events.StateUpdateEvent;
@@ -40,7 +40,7 @@ import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.MetricGroup;
 
-public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
+public class StateProcessor<TBuffer extends ResizingBuffer> implements DeadlineBasedEventHandler<TBuffer> {
 	
 	private final Clock _clock;
 	
@@ -50,7 +50,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 	
 	private final StateLogic _stateLogic;
 	private final IncomingEventHeader _subHeader;
-	private final SendQueue<OutgoingEventHeader> _pubSendQueue;
+	private final SendQueue<OutgoingEventHeader, TBuffer> _pubSendQueue;
 
 	private final Int2LongMap _clientHandlerEventTracker;
 	
@@ -71,7 +71,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 			Clock clock,
 			StateLogic stateLogic,
 			IncomingEventHeader subHeader,
-			SendQueue<OutgoingEventHeader> pubSendQueue,
+			SendQueue<OutgoingEventHeader, TBuffer> pubSendQueue,
 			MetricContext metricContext) {
 		_clock = Objects.requireNonNull(clock);
 		_stateLogic = Objects.requireNonNull(stateLogic);
@@ -87,7 +87,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 	}
 	
 	@Override
-	public void onEvent(byte[] event, long sequence, boolean isEndOfBatch)
+	public void onEvent(TBuffer event, long sequence, boolean isEndOfBatch)
 			throws Exception {
 		boolean wasValid = _subHeader.isValid(event);
 		if (wasValid) {
@@ -162,7 +162,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 		
 		if (!event.isHeartbeat()) {
 			// get input bytes
-			_stateLogic.collectInput(event.getInputBuffer());
+			_stateLogic.collectInput(event.getInputSlice());
 		}
 	}
 	
@@ -173,9 +173,7 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 			public void write(OutgoingEventHeader header, StateUpdateEvent event) {
 				event.setUpdateId(updateId);
 				event.setSimTime(simTime);
-				ByteBuffer updateBuffer = event.getUpdateBuffer();
-				_stateLogic.createUpdate(updateBuffer);
-				event.setUsedLength(updateBuffer);
+				_stateLogic.createUpdate(event.getContentSlice());
 			}
 			
 		}));
@@ -191,10 +189,9 @@ public class StateProcessor implements DeadlineBasedEventHandler<byte[]> {
 	
 				@Override
 				public void write(OutgoingEventHeader header, StateUpdateInfoEvent event) {
-					int maxEntries = event.getMaximumEntries();
 					int currEntryIndex = 0;
 					event.setUpdateId(updateId);
-					while (handlerIdIterator.hasNext() && currEntryIndex < maxEntries) {
+					while (handlerIdIterator.hasNext()) {
 						int handlerId = handlerIdIterator.nextInt();
 						long highestSequence = _clientHandlerEventTracker.get(handlerId);
 						ClientHandlerEntry entry = new ClientHandlerEntry(handlerId, highestSequence);

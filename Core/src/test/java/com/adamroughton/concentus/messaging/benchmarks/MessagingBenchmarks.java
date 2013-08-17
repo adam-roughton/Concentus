@@ -17,6 +17,7 @@ package com.adamroughton.concentus.messaging.benchmarks;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.DefaultClock;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.zmq.ZmqSocketMessenger;
@@ -43,7 +44,7 @@ public class MessagingBenchmarks {
 		@Param private int bufferSize;
 		
 		private OutgoingEventHeader _header;
-		private byte[] _sendBuffer;
+		private ArrayBackedResizingBuffer _sendBuffer;
 		private ZMQ.Socket _testSocket;
 		private ZmqSocketMessenger _messenger;
 
@@ -51,9 +52,9 @@ public class MessagingBenchmarks {
 		protected void setUp(ZMQ.Context context) throws Exception {			
 			super.setUp(context);
 			_header = new OutgoingEventHeader(0, msgSegmentCount);
-			_sendBuffer = new byte[bufferSize];
+			_sendBuffer = new ArrayBackedResizingBuffer(bufferSize);
 			// divide the buffer into equal (or close to equal) segment portions
-			int segmentSize = (_sendBuffer.length - _header.getEventOffset()) / msgSegmentCount;
+			int segmentSize = (bufferSize - _header.getEventOffset()) / msgSegmentCount;
 			int cursor = _header.getEventOffset();
 			for (int i = 0; i < msgSegmentCount; i++) {
 				_header.setSegmentMetaData(_sendBuffer, i, cursor, segmentSize);
@@ -108,7 +109,7 @@ public class MessagingBenchmarks {
 		@Macrobenchmark
 		public void timeDirectSend() {
 			for (int i = 0; i < msgCount; i++) {
-				_testSocket.send(_sendBuffer, 0);
+				_testSocket.send(_sendBuffer.getBuffer(), 0);
 			}
 		}
 		
@@ -146,7 +147,7 @@ public class MessagingBenchmarks {
 		@Param boolean recvDirect;
 		
 		private OutgoingEventHeader _header;
-		private byte[] _sendBuffer;
+		private ArrayBackedResizingBuffer _sendBuffer;
 		private ByteBuffer _zeroCopyBuffer;
 		private int _segmentSize;
 		private ZMQ.Socket _testSocket;
@@ -158,7 +159,7 @@ public class MessagingBenchmarks {
 		protected void setUp(ZMQ.Context context) throws Exception {		
 			super.setUp(context);
 			_header = new OutgoingEventHeader(0, msgSegmentCount);
-			_sendBuffer = new byte[Util.nextPowerOf2(msgSize + _header.getEventOffset())];
+			_sendBuffer = new ArrayBackedResizingBuffer(Util.nextPowerOf2(msgSize + _header.getEventOffset()));
 			_zeroCopyBuffer = ByteBuffer.allocateDirect(Util.nextPowerOf2(msgSize + _header.getEventOffset()));
 			
 			// divide the buffer into equal (or close to equal) segment portions
@@ -207,7 +208,7 @@ public class MessagingBenchmarks {
 					public void run() {
 						long recvCount = 0;
 						try {
-							byte[] recvBuffer = new byte[Util.nextPowerOf2(msgSize + header.getEventOffset())];
+							ArrayBackedResizingBuffer recvBuffer = new ArrayBackedResizingBuffer(Util.nextPowerOf2(msgSize + header.getEventOffset()));
 							while (runFlag.get() && recvCount < msgCount) {
 								if (messenger.recv(recvBuffer, header, isBlocking)){
 									recvCount++;
@@ -273,15 +274,16 @@ public class MessagingBenchmarks {
 			long seq = 0;
 			int flag = isBlocking? 0 : ZMQ.NOBLOCK;
 			boolean isSocketReady = false;
+			byte[] sendBufferBytes = _sendBuffer.getBuffer();
 			while(!_allRecv.get()) {
 				if (!isSocketReady) {
 					isSocketReady = true;// (_testSocket.getEvents() & ZMQ.Poller.POLLOUT) == ZMQ.Poller.POLLOUT;
 				} else {
 					boolean successful;
 					if (seq % msgSegmentCount < msgSegmentCount - 1) {
-						successful = _testSocket.send(_sendBuffer, 0, _segmentSize, ZMQ.SNDMORE | flag);
+						successful = _testSocket.send(sendBufferBytes, 0, _segmentSize, ZMQ.SNDMORE | flag);
 					} else {
-						successful = _testSocket.send(_sendBuffer, 0, _segmentSize, flag);
+						successful = _testSocket.send(sendBufferBytes, 0, _segmentSize, flag);
 					}	
 					if (successful) {
 						seq++;
@@ -369,7 +371,7 @@ public class MessagingBenchmarks {
 		@Param private boolean recvDirect;
 		
 		private OutgoingEventHeader _header;
-		private byte[] _sendBuffer;
+		private ArrayBackedResizingBuffer _sendBuffer;
 		private ZMQ.Socket[] _testSockets;
 		private ZmqSocketMessenger[] _messengers;
 		
@@ -379,7 +381,7 @@ public class MessagingBenchmarks {
 		protected void setUp(ZMQ.Context context) throws Exception {		
 			super.setUp(context);
 			_header = new OutgoingEventHeader(0, 2);
-			_sendBuffer = new byte[Util.nextPowerOf2(msgSize + _header.getEventOffset())];
+			_sendBuffer = new ArrayBackedResizingBuffer(Util.nextPowerOf2(msgSize + _header.getEventOffset()));
 			_header.setSegmentMetaData(_sendBuffer, 0, _header.getEventOffset(), msgSize);
 			_header.setIsValid(_sendBuffer, true);
 			
@@ -424,7 +426,7 @@ public class MessagingBenchmarks {
 					public void run() {
 						long recvCount = 0;
 						try {
-							byte[] recvBuffer = new byte[Util.nextPowerOf2(msgSize + header.getEventOffset())];
+							ArrayBackedResizingBuffer recvBuffer = new ArrayBackedResizingBuffer(Util.nextPowerOf2(msgSize + header.getEventOffset()));
 							while (runFlag.get() && recvCount < msgCount) {
 								if (messenger.recv(recvBuffer, header, isBlocking)){
 									recvCount++;
@@ -521,7 +523,7 @@ public class MessagingBenchmarks {
 		@Param private boolean recvDirect;
 		
 		private OutgoingEventHeader _header;
-		private byte[] _sendBuffer;
+		private ArrayBackedResizingBuffer _sendBuffer;
 		private ZMQ.Socket[] _testSockets;
 		private ZmqSocketMessenger[] _messengers;
 		
@@ -531,7 +533,7 @@ public class MessagingBenchmarks {
 		protected void setUp(ZMQ.Context context) throws Exception {		
 			super.setUp(context);
 			_header = new OutgoingEventHeader(0, 2);
-			_sendBuffer = new byte[Util.nextPowerOf2(msgSize + _header.getEventOffset())];
+			_sendBuffer = new ArrayBackedResizingBuffer(Util.nextPowerOf2(msgSize + _header.getEventOffset()));
 			_header.setSegmentMetaData(_sendBuffer, 0, _header.getEventOffset(), msgSize);
 			_header.setIsValid(_sendBuffer, true);
 			
@@ -577,7 +579,7 @@ public class MessagingBenchmarks {
 					public void run() {
 						long recvCount = 0;
 						try {
-							byte[] recvBuffer = new byte[Util.nextPowerOf2(msgSize + header.getEventOffset())];
+							ArrayBackedResizingBuffer recvBuffer = new ArrayBackedResizingBuffer(Util.nextPowerOf2(msgSize + header.getEventOffset()));
 							while (runFlag.get() && recvCount < msgCount) {
 								if (messenger.recv(recvBuffer, header, isBlocking)){
 									recvCount++;

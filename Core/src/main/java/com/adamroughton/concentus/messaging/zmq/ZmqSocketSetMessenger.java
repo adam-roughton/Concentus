@@ -19,11 +19,12 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.Set;
 
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 
-public class ZmqSocketSetMessenger implements Messenger {
+public class ZmqSocketSetMessenger implements Messenger<ArrayBackedResizingBuffer> {
 
 	private final SocketPollSet _pollSet;
 	private final String _name;
@@ -52,7 +53,7 @@ public class ZmqSocketSetMessenger implements Messenger {
 	}
 	
 	@Override
-	public boolean send(byte[] outgoingBuffer, OutgoingEventHeader header,
+	public boolean send(ArrayBackedResizingBuffer outgoingBuffer, OutgoingEventHeader header,
 			boolean isBlocking) {
 		if (!header.isValid(outgoingBuffer)) return true;
 		
@@ -65,7 +66,7 @@ public class ZmqSocketSetMessenger implements Messenger {
 	}
 
 	@Override
-	public boolean recv(byte[] eventBuffer, IncomingEventHeader header,
+	public boolean recv(ArrayBackedResizingBuffer eventBuffer, IncomingEventHeader header,
 			boolean isBlocking) {
 		ZmqSocketMessenger readyMessenger;
 		if (isBlocking) {

@@ -25,10 +25,12 @@ import uk.co.real_logic.intrinsics.ComponentFactory;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.InitialiseDelegate;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
 import com.esotericsoftware.minlog.Log;
 
@@ -42,7 +44,7 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 	private final Map<ZMQIdentity, ReliableSeqInfo> _reliableSeqLookup = new HashMap<>();
 	private final StructuredSlidingWindowMap<CachedMessage> _reliableMsgBuffer;
 	private final long _tryAgainMillis;	
-	private final byte[] _headerBytes = new byte[8];
+	private final byte[] _headerBytes = new byte[ResizingBuffer.LONG_SIZE + ResizingBuffer.INT_SIZE];
 	
 	public ZmqReliableRouterSocketMessenger(int socketId, String name, ZMQ.Socket socket, Clock clock, 
 			long tryAgainMillis, int reliableBufferSize, final int msgLength) {
@@ -71,7 +73,7 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 	}
 	
 	@Override
-	public boolean send(byte[] outgoingBuffer, 
+	public boolean send(ArrayBackedResizingBuffer outgoingBuffer, 
 			OutgoingEventHeader header,
 			boolean isBlocking) {
 		// only send if the event is valid
@@ -82,14 +84,15 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 		if (segmentCount < 2)
 			throw new RuntimeException("The minimum number of frames for a ROUTER socket is 2");
 		
+		int bytesInBuffer = outgoingBuffer.getContentSize();
 		int lastSegmentMetaData = header.getSegmentMetaData(outgoingBuffer, segmentCount - 1);
 		int lastSegmentOffset = EventHeader.getSegmentOffset(lastSegmentMetaData);
 		int lastSegmentLength = EventHeader.getSegmentLength(lastSegmentMetaData);
 		int requiredLength = lastSegmentOffset + lastSegmentLength;
-		if (requiredLength > outgoingBuffer.length) {
+		if (requiredLength > bytesInBuffer) {
 			header.setSentTime(outgoingBuffer, -1);
 			throw new RuntimeException(String.format("The buffer length is less than the content length (%d < %d)", 
-					outgoingBuffer.length, requiredLength));
+					bytesInBuffer, requiredLength));
 		}
 		
 		int segmentIndex;
@@ -99,7 +102,7 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 			segmentIndex = 0;
 		}
 		
-		segmentIndex = sendWithReliableFrame(false, 0, segmentCount, segmentIndex, outgoingBuffer, header, isBlocking);
+		segmentIndex = sendWithReliableFrame(false, 0, bytesInBuffer, segmentCount, segmentIndex, outgoingBuffer, header, isBlocking);
 		
 		if (segmentIndex == 0) {
 			return false;
@@ -117,9 +120,10 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 	private int sendWithReliableFrame(
 			boolean isResend,
 			long seq, 
+			int bytesInBuffer,
 			int segmentCount,
 			int startSegmentIndex,
-			byte[] outgoingBuffer, 
+			ArrayBackedResizingBuffer outgoingBuffer, 
 			OutgoingEventHeader header,
 			boolean isBlocking) {
 		boolean isSending = true;
@@ -133,16 +137,14 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 					isSending = false;
 				}
 			} else if (segmentIndex == 1) {
-				// send reliable header
-				boolean wasSuccessful;
-				if (isResend) {
-					byte[] seqFrame = new byte[8];
-					MessageBytesUtil.writeLong(seqFrame, 0, seq);
-					wasSuccessful = ZmqSocketOperations.doSend(_socket, seqFrame, 0, seqFrame.length, (isBlocking? 0 : ZMQ.NOBLOCK) | ZMQ.SNDMORE);
-				} else {
-					wasSuccessful = sendHeader(getIdentity(outgoingBuffer, header), outgoingBuffer, header, isBlocking);
+				// send header
+				if (!isResend) {
+					seq = assignSeq(getIdentity(outgoingBuffer, header), outgoingBuffer, header);
 				}
-				if (wasSuccessful) {	
+				// get the msg size leaving out the identity frame which is not sent
+				int firstContentFrameMetaData = header.getSegmentMetaData(outgoingBuffer, 1);
+				int contentOffset = EventHeader.getSegmentOffset(firstContentFrameMetaData);
+				if (sendHeader(seq, bytesInBuffer - contentOffset, outgoingBuffer, header, isBlocking)) {	
 					segmentIndex = 2;
 				} else {
 					isSending = false;
@@ -156,14 +158,14 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 		return segmentIndex;
 	}
 	
-	private static ZMQIdentity getIdentity(byte[] messageBuffer, EventHeader header) {
+	private static ZMQIdentity getIdentity(ArrayBackedResizingBuffer messageBuffer, EventHeader header) {
 		int segmentMetaData = header.getSegmentMetaData(messageBuffer, 0);
 		int offset = EventHeader.getSegmentOffset(segmentMetaData);
 		int length = EventHeader.getSegmentLength(segmentMetaData);
-		return new ZMQIdentity(messageBuffer, offset, length);
+		return new ZMQIdentity(messageBuffer.getBuffer(), offset, length);
 	}
 	
-	private boolean sendHeader(ZMQIdentity identity, byte[] outgoingBuffer, OutgoingEventHeader eventHeader, boolean isBlocking) {
+	private long assignSeq(ZMQIdentity identity, ArrayBackedResizingBuffer outgoingBuffer, OutgoingEventHeader eventHeader) {
 		long seqToWrite;
 		
 		ReliableSeqInfo reliableSeqInfo;
@@ -178,7 +180,7 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 				
 			_reliableMsgBuffer.advanceTo(reliableSeqInfo.reliableSeq);
 			CachedMessage msgCache = _reliableMsgBuffer.get(reliableSeqInfo.reliableSeq);
-			System.arraycopy(outgoingBuffer, 0, msgCache.messageBuffer, 0, outgoingBuffer.length);
+			outgoingBuffer.copyTo(msgCache.messageBuffer);
 			
 			// clear any processing flags from the buffered event
 			eventHeader.setIsPartiallySent(msgCache.messageBuffer, false); 
@@ -195,12 +197,17 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 				seqToWrite = -1;
 			}
 		}
-		MessageBytesUtil.writeLong(_headerBytes, 0, seqToWrite);
+		return seqToWrite;
+	}
+	
+	private boolean sendHeader(long seq, int msgSize, ArrayBackedResizingBuffer outgoingBuffer, OutgoingEventHeader eventHeader, boolean isBlocking) {
+		MessageBytesUtil.writeLong(_headerBytes, 0, seq);
+		MessageBytesUtil.writeInt(_headerBytes, ResizingBuffer.LONG_SIZE, msgSize);
 		return ZmqSocketOperations.doSend(_socket, _headerBytes, 0, _headerBytes.length, (isBlocking? 0 : ZMQ.NOBLOCK) | ZMQ.SNDMORE);
 	}
 			
 	@Override
-	public boolean recv(byte[] eventBuffer, IncomingEventHeader header,
+	public boolean recv(ArrayBackedResizingBuffer eventBuffer, IncomingEventHeader header,
 			boolean isBlocking) {
 		int cursor = header.getEventOffset();
 		int expectedSegmentCount = header.getSegmentCount() + 1;
@@ -211,18 +218,25 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 		
 		boolean couldBeNackMsg = false;
 		do {
-			if (segmentIndex > expectedSegmentCount || cursor >= eventBuffer.length) {
+			if (segmentIndex > expectedSegmentCount) {
 				isValid = false;
 			}
 			
 			if (isValid) {
 				if (segmentIndex == 1) {
-					if (processNackFrame(getIdentity(eventBuffer, header), isBlocking) == -1) {
+					if (processHeaderFrame(eventBuffer, header, cursor, getIdentity(eventBuffer, header), isBlocking) == -1) {
 						isValid = false;	
 					}
 					segmentIndex++;
 				} else {
-					int recvdAmount = ZmqSocketOperations.doRecv(_socket, eventBuffer, cursor, eventBuffer.length - cursor, isBlocking);
+					byte[] msgBufferByteArray;
+					if (segmentIndex == 0) {
+						// maximum 0MQ identity is 255 bytes, so ensure enough space just in case
+						msgBufferByteArray = eventBuffer.allocateForWriting(255);
+					} else {
+						msgBufferByteArray = eventBuffer.getBuffer();
+					}
+					int recvdAmount = ZmqSocketOperations.doRecv(_socket, msgBufferByteArray, cursor, msgBufferByteArray.length, isBlocking);
 					if (segmentIndex == 0 && recvdAmount == 0) {
 						// no message ready
 						return false;
@@ -253,7 +267,7 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 		return true;
 	}
 	
-	public int processNackFrame(ZMQIdentity identity, boolean isBlocking) {	
+	public int processHeaderFrame(ArrayBackedResizingBuffer incomingBuffer, IncomingEventHeader eventHeader, int contentStartOffset, ZMQIdentity identity, boolean isBlocking) {	
 		ReliableSeqInfo reliableSeqInfo;
 		if (_reliableSeqLookup.containsKey(identity)) {
 			reliableSeqInfo = _reliableSeqLookup.get(identity);
@@ -273,6 +287,8 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 			return -1;
 		} else {
 			long nackSeq = MessageBytesUtil.readLong(_headerBytes, 0);
+			int msgSize = MessageBytesUtil.readInt(_headerBytes, ResizingBuffer.LONG_SIZE);
+			incomingBuffer.preallocate(contentStartOffset, msgSize + contentStartOffset);
 			
 			if (nackSeq == -1) {
 				reliableSeqInfo.lastRecvNack = -1;	
@@ -294,8 +310,9 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 						for (long seq = nackSeq; seq <= _reliableMsgBuffer.getHeadIndex(); seq++) {
 							CachedMessage cachedMsg = _reliableMsgBuffer.get(seq);
 							int segmentCount = cachedMsg.eventHeader.getSegmentCount();
+							int cachedBytesInBuffer = cachedMsg.messageBuffer.getContentSize();
 							
-							if (sendWithReliableFrame(true, seq, segmentCount, 0, cachedMsg.messageBuffer, cachedMsg.eventHeader, false) != segmentCount -1) {
+							if (sendWithReliableFrame(true, seq, cachedBytesInBuffer, segmentCount, 0, cachedMsg.messageBuffer, cachedMsg.eventHeader, false) != segmentCount -1) {
 								throw new RuntimeException("Sending on ROUTER socket not expected to fail");
 							}
 						}
@@ -386,15 +403,15 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 	}
 	
 	private static class CachedMessage {
-		public final byte[] messageBuffer;
+		public final ArrayBackedResizingBuffer messageBuffer;
 		public OutgoingEventHeader eventHeader = null;
 		
 		public CachedMessage(int bufferSize) {
-			messageBuffer = new byte[bufferSize];
+			messageBuffer = new ArrayBackedResizingBuffer(bufferSize);
 		}
 		
 		public void reset() {
-			MessageBytesUtil.clear(messageBuffer, 0, messageBuffer.length);
+			messageBuffer.reset();
 			eventHeader = null;
 		}
 	}

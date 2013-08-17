@@ -21,10 +21,12 @@ import org.apache.commons.cli.Option;
 
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 
 public interface CrowdHammerServiceFactory {
 
-	CrowdHammerService create(ConcentusHandle<CrowdHammerConfiguration> concentusHandle, Map<String, String> commandLineOptions);
+	<TBuffer extends ResizingBuffer> CrowdHammerService create(ConcentusHandle<CrowdHammerConfiguration, TBuffer> 
+			concentusHandle, Map<String, String> commandLineOptions);
 	
 	Iterable<Option> getCommandLineOptions();
 	

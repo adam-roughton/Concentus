@@ -30,6 +30,7 @@ import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.util.Util;
 
@@ -121,9 +122,9 @@ public class CrowdHammerHostNode implements ConcentusWorkerNode<CrowdHammerConfi
 	}
 
 	@Override
-	public ClusterListener<CrowdHammerServiceState> createService(
+	public <TBuffer extends ResizingBuffer> ClusterListener<CrowdHammerServiceState> createService(
 			Map<String, String> commandLineOptions,
-			ConcentusHandle<? extends CrowdHammerConfiguration> handle,
+			ConcentusHandle<? extends CrowdHammerConfiguration, TBuffer> handle,
 			MetricContext metricContext) {
 		return new ConcentusServiceAdapter(handle, _adaptedNode, commandLineOptions, metricContext);
 	}

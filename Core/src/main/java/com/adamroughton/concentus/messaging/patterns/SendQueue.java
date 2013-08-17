@@ -20,16 +20,17 @@ import java.util.Objects;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueuePublisher;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 
-public class SendQueue<TSendHeader extends OutgoingEventHeader> {
+public class SendQueue<TSendHeader extends OutgoingEventHeader, TBuffer extends ResizingBuffer> {
 
 	private final TSendHeader _header;
-	private final EventQueuePublisher<byte[]> _sendQueuePublisher;
+	private final EventQueuePublisher<TBuffer> _sendQueuePublisher;
 	
 	public SendQueue(
 			String name,
 			TSendHeader header, 
-			EventQueue<byte[]> sendQueue) {
+			EventQueue<TBuffer> sendQueue) {
 		_header = Objects.requireNonNull(header);
 		_sendQueuePublisher = sendQueue.createPublisher(name, false);
 	}
@@ -46,7 +47,7 @@ public class SendQueue<TSendHeader extends OutgoingEventHeader> {
 	 * {@code false} otherwise
 	 */
 	public final boolean trySend(SendTask<TSendHeader> task) {
-		byte[] outgoingBuffer = _sendQueuePublisher.next();
+		ResizingBuffer outgoingBuffer = _sendQueuePublisher.next();
 		if (outgoingBuffer == null) return false;
 		
 		boolean wasSuccessful;

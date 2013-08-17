@@ -1,13 +1,13 @@
 package com.adamroughton.concentus.model;
 
-public interface Effect<TData> {
+public interface Effect {
 	
 	long getStartTime();
 	
 	int getVariableId();
 	
-	TData getData();
-	
 	int getEffectTypeId();
+	
+	byte[] getData();
 	
 }

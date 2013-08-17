@@ -17,77 +17,66 @@ package com.adamroughton.concentus.messaging.events;
 
 import java.util.UUID;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 
-public final class MetricEvent extends ByteArrayBackedEvent {
+import static com.adamroughton.concentus.messaging.ResizingBuffer.*;
 
-	private static final int SOURCE_ID_OFFSET = 0;
-	private static final int METRIC_ID_OFFSET = 16;
-	private static final int METRIC_TYPE_OFFSET = 20;
-	private static final int METRIC_BUCKET_ID_OFFSET = 24;
-	private static final int BUCKET_DURATION_OFFSET = 32;
-	private static final int METRIC_VALUE_LENGTH_OFFSET = 40;
-	private static final int METRIC_VALUE_OFFSET = 48;
+public final class MetricEvent extends BufferBackedObject {
+
+	private final Field sourceIdField = super.getBaseField().then(UUID_SIZE);
+	private final Field metricIdField = sourceIdField.then(INT_SIZE);
+	private final Field metricTypeField = metricIdField.then(INT_SIZE);
+	private final Field metricBucketIdField = metricTypeField.then(LONG_SIZE);
+	private final Field bucketDurationField = metricBucketIdField.then(LONG_SIZE);
+	private final Field metricValueField = bucketDurationField.thenVariableLength()
+			.resolveOffsets();
 	
 	public MetricEvent() {
 		super(EventType.METRIC.getId());
 	}
 	
 	public UUID getSourceId() {
-		return MessageBytesUtil.readUUID(getBackingArray(), getOffset(SOURCE_ID_OFFSET));
+		return getBuffer().readUUID(sourceIdField.offset);
 	}
 	
 	public void setSourceId(UUID sourceId) {
-		MessageBytesUtil.writeUUID(getBackingArray(), getOffset(SOURCE_ID_OFFSET), sourceId);
+		getBuffer().writeUUID(sourceIdField.offset, sourceId);
 	}
 	
 	public int getMetricId() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(METRIC_ID_OFFSET));
+		return getBuffer().readInt(metricIdField.offset);
 	}
 	
 	public void setMetricId(int metricId) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(METRIC_ID_OFFSET), metricId);
+		getBuffer().writeInt(metricIdField.offset, metricId);
 	}
 	
 	public int getMetricType() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(METRIC_TYPE_OFFSET));
+		return getBuffer().readInt(metricTypeField.offset);
 	}
 	
 	public void setMetricType(int metricType) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(METRIC_TYPE_OFFSET), metricType);
+		getBuffer().writeInt(metricTypeField.offset, metricType);
 	}
 	
 	public long getMetricBucketId() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(METRIC_BUCKET_ID_OFFSET));
+		return getBuffer().readLong(metricBucketIdField.offset);
 	}
 	
 	public void setMetricBucketId(long metricBucketId) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(METRIC_BUCKET_ID_OFFSET), metricBucketId);
+		getBuffer().writeLong(metricBucketIdField.offset, metricBucketId);
 	}
 
 	public long getBucketDuration() {
-		return MessageBytesUtil.readLong(getBackingArray(), getOffset(BUCKET_DURATION_OFFSET));
+		return getBuffer().readLong(bucketDurationField.offset);
 	}
 	
 	public void setBucketDuration(long durationInMs) {
-		MessageBytesUtil.writeLong(getBackingArray(), getOffset(BUCKET_DURATION_OFFSET), durationInMs);
+		getBuffer().writeLong(bucketDurationField.offset, durationInMs);
 	}
 	
-	public int getMetricValueLength() {
-		return MessageBytesUtil.readInt(getBackingArray(), getOffset(METRIC_VALUE_LENGTH_OFFSET));
-	}
-	
-	public void setMetricValueLength(int length) {
-		MessageBytesUtil.writeInt(getBackingArray(), getOffset(METRIC_VALUE_LENGTH_OFFSET), length);
-		setEventSize(METRIC_VALUE_OFFSET + length);
-	}
-	
-	public int getMetricValueOffset() {
-		return getOffset(METRIC_VALUE_OFFSET);
-	}
-	
-	public int getAvailableMetricBufferLength() {
-		return getBackingArray().length - getOffset(METRIC_VALUE_OFFSET);
+	public ResizingBuffer getMetricValueSlice() {
+		return getBuffer().slice(metricValueField.offset);
 	}
 	
 }

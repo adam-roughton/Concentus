@@ -42,15 +42,16 @@ import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.concentus.crowdhammer.config.StubCrowdHammerConfiguration;
-import com.adamroughton.concentus.disruptor.MetricTrackingEventQueueFactory;
 import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.messaging.ArrayBackedResizingBufferFactory;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.StubMessenger;
 import com.adamroughton.concentus.messaging.StubMessenger.FakeRecvDelegate;
 import com.adamroughton.concentus.messaging.StubMessenger.FakeSendDelegate;
-import com.adamroughton.concentus.messaging.events.ByteArrayBackedEvent;
+import com.adamroughton.concentus.messaging.events.BufferBackedObject;
 import com.adamroughton.concentus.messaging.events.ClientUpdateEvent;
 import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
@@ -73,7 +74,7 @@ public class WorkerPerfTest {
 	private Thread _clientHandlerThread;
 	private AtomicBoolean _testStartFlag = new AtomicBoolean(false);
 	private CountDownLatch _endLatch;
-	private WorkerService _worker;
+	private WorkerService<ArrayBackedResizingBuffer> _worker;
 	private ClusterWorkerHandle _clusterHandle;
 	private CyclicBarrier _testThreadBarrier;
 	
@@ -85,7 +86,7 @@ public class WorkerPerfTest {
 		_endLatch = new CountDownLatch(1);
 		
 		final AtomicBoolean sendConnectionResponses = new AtomicBoolean(false);
-		final FakeRecvDelegate clientRecvDelegate = new FakeRecvDelegate() {
+		final FakeRecvDelegate<ArrayBackedResizingBuffer> clientRecvDelegate = new FakeRecvDelegate<ArrayBackedResizingBuffer>() {
 			
 			ConnectResponseEvent _connectResEvent = new ConnectResponseEvent();
 			ClientUpdateEvent _updateEvent = new ClientUpdateEvent();
@@ -98,7 +99,7 @@ public class WorkerPerfTest {
 			long initSeq = 0;
 			
 			@Override
-			public boolean fakeRecv(int[] endPointIds, long recvSeq, byte[] eventBuffer,
+			public boolean fakeRecv(int[] endPointIds, long recvSeq, ArrayBackedResizingBuffer eventBuffer,
 					IncomingEventHeader header, boolean isBlocking) {
 				long now = System.currentTimeMillis();
 				if (_testStartFlag.get() && now - lastUpdateTime > updateTickMillis) {
@@ -120,21 +121,20 @@ public class WorkerPerfTest {
 					int clientId = (int) (seq % clientCount);
 					
 					int cursor = _header.getEventOffset();
-					ByteArrayBackedEvent event;
+					BufferBackedObject event;
 					if (seq < clientCount) {
 						event = _connectResEvent;
-						_connectResEvent.setBackingArray(eventBuffer, cursor);
+						_connectResEvent.attachToBuffer(eventBuffer, cursor);
 						_connectResEvent.setCallbackBits(clientId);
 						_connectResEvent.setClientId(clientId);
 						_connectResEvent.setResponseCode(ConnectResponseEvent.RES_OK);
 					} else if (_testStartFlag.get() && remainingClientsToUpdate > 0) {
 						event = _updateEvent;
-						_updateEvent.setBackingArray(eventBuffer, cursor);
+						_updateEvent.attachToBuffer(eventBuffer, cursor);
 						_updateEvent.setClientId(clientId);
 						_updateEvent.setSimTime(System.currentTimeMillis());
 						_updateEvent.setUpdateId((seq - clientCount) / clientCount);
 						_updateEvent.setHighestInputActionId((seq - clientCount) / clientCount * 10);
-						_updateEvent.setUsedLength(100);
 						remainingClientsToUpdate--;
 					} else {
 						initSeq++;
@@ -145,20 +145,20 @@ public class WorkerPerfTest {
 					_header.setSocketId(eventBuffer, endPointIds[0]);
 					_header.setRecvTime(eventBuffer, System.currentTimeMillis());
 					_header.setSocketId(eventBuffer, 0);
-					event.writeEventTypeId();
-					_header.setSegmentMetaData(eventBuffer, 0, cursor, event.getEventSize());
+					event.writeTypeId();
+					_header.setSegmentMetaData(eventBuffer, 0, cursor, event.getBuffer().getContentSize());
 					return true;
 				}
 			}
 		};
 		
-		final FakeSendDelegate clientSendDelegate = new FakeSendDelegate() {
+		final FakeSendDelegate<ArrayBackedResizingBuffer> clientSendDelegate = new FakeSendDelegate<ArrayBackedResizingBuffer>() {
 
 			long _messageCount = 0;
 			boolean hasSentSignal = false;
 			
 			@Override
-			public boolean fakeSend(long sendSeq, byte[] eventBuffer,
+			public boolean fakeSend(long sendSeq, ArrayBackedResizingBuffer eventBuffer,
 					OutgoingEventHeader header, boolean isBlocking) {
 				if (++_messageCount >= clientCount && !hasSentSignal) {
 					sendConnectionResponses.set(true);
@@ -172,14 +172,16 @@ public class WorkerPerfTest {
 		final LogMetricContext metricContext = new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), new DefaultClock());
 		metricContext.start();
 		
-		ConcentusHandle<CrowdHammerConfiguration> concentusHandle = new ConcentusHandle<CrowdHammerConfiguration>(new InstanceFactory<SocketManager>() {
+		ConcentusHandle<? extends CrowdHammerConfiguration, ArrayBackedResizingBuffer> concentusHandle = new ConcentusHandle<>(new InstanceFactory<SocketManager<ArrayBackedResizingBuffer>>() {
 
 			@Override
-			public SocketManager newInstance() {
-				SocketManager socketManager = new StubSocketManager(new StubMessengerConfigurator() {
+			public SocketManager<ArrayBackedResizingBuffer> newInstance() {
+				SocketManager<ArrayBackedResizingBuffer> socketManager = new StubSocketManager<ArrayBackedResizingBuffer>(
+						new ArrayBackedResizingBufferFactory(),
+						new StubMessengerConfigurator<ArrayBackedResizingBuffer>() {
 					
 					@Override
-					public void onStubMessengerCreation(int socketId, StubMessenger messenger,
+					public void onStubMessengerCreation(int socketId, StubMessenger<ArrayBackedResizingBuffer> messenger,
 							int socketType, SocketSettings settings) {
 						if (socketType == ZMQ.DEALER) {
 							messenger.setFakeRecvDelegate(clientRecvDelegate);
@@ -187,11 +189,11 @@ public class WorkerPerfTest {
 						}
 					}
 				});
-				return new TrackingSocketManagerDecorator(metricContext, socketManager, new DefaultClock());
+				return new TrackingSocketManagerDecorator<>(metricContext, socketManager, new DefaultClock());
 			}
 			
 		}, new StandardEventQueueFactory(metricContext), new DefaultClock(), new StubCrowdHammerConfiguration(30), InetAddress.getLoopbackAddress(), "127.0.0.1:50000");
-		_worker = new WorkerService(concentusHandle, 100000, metricContext);
+		_worker = new WorkerService<>(concentusHandle, 100000, metricContext);
 		
 		_clusterHandle = new ClusterWorkerHandle() {
 			

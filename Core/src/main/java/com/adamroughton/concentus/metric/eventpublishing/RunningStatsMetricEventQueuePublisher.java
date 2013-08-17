@@ -1,17 +1,18 @@
 package com.adamroughton.concentus.metric.eventpublishing;
 
 import com.adamroughton.concentus.disruptor.EventQueue;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.metric.MetricMetaData;
 import com.adamroughton.concentus.metric.MetricPublisher;
 import com.adamroughton.concentus.metric.MetricType;
 import com.adamroughton.concentus.util.RunningStats;
 
-final class RunningStatsMetricEventQueuePublisher extends MetricEventQueuePublisherBase implements MetricPublisher<RunningStats> {
+final class RunningStatsMetricEventQueuePublisher<TBuffer extends ResizingBuffer> 
+		extends MetricEventQueuePublisherBase<TBuffer> implements MetricPublisher<RunningStats> {
 
 	public RunningStatsMetricEventQueuePublisher(String metricName, MetricType metricType,
-			EventQueue<byte[]> pubQueue, OutgoingEventHeader pubEventHeader) {
+			EventQueue<TBuffer> pubQueue, OutgoingEventHeader pubEventHeader) {
 		super(metricName, metricType, pubQueue, pubEventHeader);
 	}
 
@@ -21,8 +22,8 @@ final class RunningStatsMetricEventQueuePublisher extends MetricEventQueuePublis
 		publishEvent(bucketId, metricMetaData, new MetricValueWriterDelegate() {
 			
 			@Override
-			public int write(byte[] buffer, int offset) {
-				return MessageBytesUtil.writeRunningStats(buffer, offset, metricValue);
+			public void write(ResizingBuffer buffer) {
+				buffer.writeRunningStats(0, metricValue);
 			}
 		});
 	}

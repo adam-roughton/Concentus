@@ -24,6 +24,7 @@ import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.events.ClientUpdateEvent;
 import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
 import com.adamroughton.concentus.messaging.events.EventType;
@@ -38,7 +39,7 @@ import com.lmax.disruptor.LifecycleAware;
 
 import uk.co.real_logic.intrinsics.StructuredArray;
 
-public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[]>, LifecycleAware {
+public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements DeadlineBasedEventHandler<TBuffer>, LifecycleAware {
 
 	private final Long2LongMap _clientsIndex;
 	private final StructuredArray<Client> _clients;
@@ -46,7 +47,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	
 	private volatile boolean _isSendingInput = false;
 	
-	private final SendQueue<OutgoingEventHeader> _clientSendQueue;
+	private final SendQueue<OutgoingEventHeader, TBuffer> _clientSendQueue;
 	private final IncomingEventHeader _recvHeader;
 	
 	private final ConnectResponseEvent _connectRes = new ConnectResponseEvent();
@@ -71,7 +72,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 			Clock clock,
 			StructuredArray<Client> clients,
 			long activeClientCount,
-			SendQueue<OutgoingEventHeader> clientSendQueue,
+			SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue,
 			IncomingEventHeader recvHeader,
 			MetricContext metricContext) {
 		_clients = Objects.requireNonNull(clients);
@@ -107,7 +108,7 @@ public class SimulatedClientProcessor implements DeadlineBasedEventHandler<byte[
 	}
 	
 	@Override
-	public void onEvent(byte[] event, long sequence, boolean isEndOfBatch)
+	public void onEvent(TBuffer event, long sequence, boolean isEndOfBatch)
 			throws Exception {
 		if (!_recvHeader.isValid(event)) return;
 		if (_recvHeader.connectionInvalid(event)) {

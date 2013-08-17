@@ -29,7 +29,7 @@ import java.sql.SQLException;
 import java.util.Objects;
 
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.events.EventType;
 import com.adamroughton.concentus.messaging.events.MetricMetaDataEvent;
 import com.adamroughton.concentus.messaging.events.MetricMetaDataRequestEvent;
@@ -43,7 +43,7 @@ import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.LifecycleAware;
 
-public class MetricTestRunProcessor implements EventHandler<byte[]>, LifecycleAware, Closeable {
+public class MetricTestRunProcessor<TBuffer extends ResizingBuffer> implements EventHandler<TBuffer>, LifecycleAware, Closeable {
 
 
 	
@@ -83,7 +83,7 @@ public class MetricTestRunProcessor implements EventHandler<byte[]>, LifecycleAw
 	}
 	
 	@Override
-	public void onEvent(byte[] eventBytes, long sequence, boolean endOfBatch)
+	public void onEvent(TBuffer eventBytes, long sequence, boolean endOfBatch)
 			throws Exception {
 		if (!_subHeader.isValid(eventBytes)) return;
 		
@@ -117,7 +117,7 @@ public class MetricTestRunProcessor implements EventHandler<byte[]>, LifecycleAw
 	}
 	
 	private void processMetric(MetricEvent event) {
-		int eventTypeId = event.getEventTypeId();
+		int eventTypeId = event.getTypeId();
 		StringBuilder logBuilder = new StringBuilder();
 		logBuilder.append(String.format("StatsMetric (%d:%d): bucketId: %d, ",
 				event.getSourceId(),
@@ -125,10 +125,10 @@ public class MetricTestRunProcessor implements EventHandler<byte[]>, LifecycleAw
 				event.getMetricBucketId()));
 		
 		if (eventTypeId == MetricType.STATS.getId()) {
-			RunningStats stats = MessageBytesUtil.readRunningStats(event.getBackingArray(), event.getMetricValueOffset());
+			RunningStats stats = event.getBuffer().readRunningStats(0);
 			logBuilder.append(Util.statsToString("value", stats));
 		} else if (eventTypeId == MetricType.COUNT.getId() || eventTypeId == MetricType.THROUGHPUT.getId()) {
-			logBuilder.append(MessageBytesUtil.readInt(event.getBackingArray(), event.getMetricValueOffset()));
+			logBuilder.append(event.getBuffer().readInt(0));
 		} else {
 			Log.warn(String.format("Unknown metric type %d", eventTypeId));
 		}

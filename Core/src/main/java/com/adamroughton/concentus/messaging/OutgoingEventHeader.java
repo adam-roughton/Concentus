@@ -58,44 +58,44 @@ public class OutgoingEventHeader extends EventHeader {
 		return super.getAdditionalOffset() + ADDITIONAL_LENGTH;
 	}
 
-	public final boolean isPartiallySent(byte[] event) {
+	public final boolean isPartiallySent(ResizingBuffer event) {
 		return getFlag(event, _isPartiallySentFlagIndex);
 	}
 	
-	public final void setIsPartiallySent(byte[] event, boolean isPartiallySent) {
+	public final void setIsPartiallySent(ResizingBuffer event, boolean isPartiallySent) {
 		setFlag(event, _isPartiallySentFlagIndex, isPartiallySent);
 	}
 	
-	public final boolean isReliable(byte[] event) {
+	public final boolean isReliable(ResizingBuffer event) {
 		return getFlag(event, _isReliableFlagIndex);
 	}
 	
-	public final void setIsReliable(byte[] event, boolean isReliable) {
+	public final void setIsReliable(ResizingBuffer event, boolean isReliable) {
 		setFlag(event, _isReliableFlagIndex, isReliable);
 	}
 	
-	public final int getNextSegmentToSend(byte[] event) {
-		return MessageBytesUtil.readInt(event, _nextSegmentOffset);
+	public final int getNextSegmentToSend(ResizingBuffer event) {
+		return event.readInt(_nextSegmentOffset);
 	}
 	
-	public final void setNextSegmentToSend(byte[] event, int segmentIndex) {
-		MessageBytesUtil.writeInt(event, _nextSegmentOffset, segmentIndex);
+	public final void setNextSegmentToSend(ResizingBuffer event, int segmentIndex) {
+		event.writeInt(_nextSegmentOffset, segmentIndex);
 	}
 	
-	public final int getTargetSocketId(byte[] event) {
-		return MessageBytesUtil.readInt(event, _targetSocketIdOffset);
+	public final int getTargetSocketId(ResizingBuffer event) {
+		return event.readInt(_targetSocketIdOffset);
 	}
 	
-	public final void setTargetSocketId(byte[] event, int socketId) {
-		MessageBytesUtil.writeInt(event, _targetSocketIdOffset, socketId);
+	public final void setTargetSocketId(ResizingBuffer event, int socketId) {
+		event.writeInt(_targetSocketIdOffset, socketId);
 	}
 	
-	public final long getSentTime(byte[] event) {
-		return MessageBytesUtil.readLong(event, _sentTimeOffset);
+	public final long getSentTime(ResizingBuffer event) {
+		return event.readLong(_sentTimeOffset);
 	}
 	
-	public final void setSentTime(byte[] event, long sentTime) {
-		MessageBytesUtil.writeLong(event, _sentTimeOffset, sentTime);
+	public final void setSentTime(ResizingBuffer event, long sentTime) {
+		event.writeLong(_sentTimeOffset, sentTime);
 	}
 	
 }
