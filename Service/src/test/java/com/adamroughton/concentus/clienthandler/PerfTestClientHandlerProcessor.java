@@ -124,7 +124,8 @@ public class PerfTestClientHandlerProcessor {
 			}
 		});
 		
-		final IncomingEventHeader recvHeader = new IncomingEventHeader(0, 2);
+		final IncomingEventHeader routerRecvHeader = new IncomingEventHeader(0, 2);
+		final IncomingEventHeader subRecvHeader = new IncomingEventHeader(0, 1);
 		final OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, 2);
 		final DrivableClock testClock = new DrivableClock();
 		
@@ -183,7 +184,8 @@ public class PerfTestClientHandlerProcessor {
 		final int routerSocketId = 0;
 		final int subSocketId = 1;
 		
-		final ClientHandlerProcessor<ArrayBackedResizingBuffer> clientHandler = new ClientHandlerProcessor<>(testClock, 0, routerSocketId, subSocketId, routerSendQueue, pubSendQueue, recvHeader,
+		final ClientHandlerProcessor<ArrayBackedResizingBuffer> clientHandler = new ClientHandlerProcessor<>(testClock, 0, routerSocketId, 
+				subSocketId, routerSendQueue, pubSendQueue, routerRecvHeader, subRecvHeader,
 				new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), testClock));
 		final ArrayBackedResizingBuffer buffer = new ArrayBackedResizingBuffer(512);
 		
@@ -199,7 +201,7 @@ public class PerfTestClientHandlerProcessor {
 				for (int seq = 0; seq < clientCount; seq++) {
 					final int clientId = seq;
 					try {
-						fakeRecv(buffer, recvHeader, clientId, routerSocketId, connEvent, new EventWriter<OutgoingEventHeader, ClientConnectEvent>() {
+						fakeRecv(buffer, routerRecvHeader, clientId, routerSocketId, connEvent, new EventWriter<OutgoingEventHeader, ClientConnectEvent>() {
 	
 							@Override
 							public void write(OutgoingEventHeader header,
@@ -246,7 +248,7 @@ public class PerfTestClientHandlerProcessor {
 						final int updateLength = 250;
 						final long updateId = nextUpdateId++;
 						
-						fakeRecv(buffer, recvHeader, EventType.STATE_UPDATE.getId(), subSocketId, updateEvent, new EventWriter<OutgoingEventHeader, StateUpdateEvent>() {
+						fakeRecv(buffer, routerRecvHeader, EventType.STATE_UPDATE.getId(), subSocketId, updateEvent, new EventWriter<OutgoingEventHeader, StateUpdateEvent>() {
 
 							@Override
 							public void write(OutgoingEventHeader header,
@@ -258,7 +260,7 @@ public class PerfTestClientHandlerProcessor {
 						});
 						clientHandler.onEvent(buffer, seq++, true);
 						
-						fakeRecv(buffer, recvHeader, EventType.STATE_INFO.getId(), subSocketId, infoEvent, new EventWriter<OutgoingEventHeader, StateUpdateInfoEvent>() {
+						fakeRecv(buffer, routerRecvHeader, EventType.STATE_INFO.getId(), subSocketId, infoEvent, new EventWriter<OutgoingEventHeader, StateUpdateInfoEvent>() {
 
 							@Override
 							public void write(OutgoingEventHeader header,
@@ -278,7 +280,7 @@ public class PerfTestClientHandlerProcessor {
 					} 
 					
 					// recv input event
-					fakeRecv(buffer, recvHeader, clientId, routerSocketId, inputEvent, new EventWriter<OutgoingEventHeader, ClientInputEvent>() {
+					fakeRecv(buffer, routerRecvHeader, clientId, routerSocketId, inputEvent, new EventWriter<OutgoingEventHeader, ClientInputEvent>() {
 
 						@Override
 						public void write(OutgoingEventHeader header,

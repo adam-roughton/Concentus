@@ -108,7 +108,8 @@ class UpdateHandler {
 		return _updateBuffer.containsIndex(updateId) && _updateToInputSeqMap.containsIndex(updateId);
 	}
 	
-	public <TBuffer extends ResizingBuffer> void sendUpdates(final long updateId, final Iterable<ClientProxy> clients, final SendQueue<OutgoingEventHeader, TBuffer> updateQueue) {
+	public <TBuffer extends ResizingBuffer> void sendUpdates(final long updateId, 
+			final Iterable<ClientProxy> clients, final SendQueue<OutgoingEventHeader, TBuffer> updateQueue) {
 		Clock clock = _metricContext.getClock();
 		long broadcastStartTime = clock.nanoTime();
 		long nanosWaitingForSend = 0;
@@ -126,7 +127,8 @@ class UpdateHandler {
 					nanosGettingHighestActionId += clock.nanoTime() - lookupStart;
 					
 					long sendStartTime = clock.nanoTime();
-					if (!updateQueue.trySend(RouterPattern.asUnreliableTask(client.getSocketId(), _clientUpdateEvent, new EventWriter<OutgoingEventHeader, ClientUpdateEvent>() {
+					if (!updateQueue.trySend(RouterPattern.asUnreliableTask(client.getSocketId(), _clientUpdateEvent, 
+							new EventWriter<OutgoingEventHeader, ClientUpdateEvent>() {
 		
 						@Override
 						public void write(OutgoingEventHeader header,

@@ -131,7 +131,6 @@ public class TestZmqSocketMessenger {
 		assertFalse(_messenger.recv(_buffer, _defaultHeader, false));
 		
 		verify(_zmqSocket).recv(any(byte[].class), anyInt(), anyInt(), anyInt());
-		verifyNoMoreInteractions(_zmqSocket);
 	}
 	
 	@Test

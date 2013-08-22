@@ -70,8 +70,9 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 	private final EventQueue<TBuffer> _outQueue;
 	private ProcessingPipeline<TBuffer> _pipeline;
 	
-	private final OutgoingEventHeader _outgoingHeader; // both router and pub can share the same header
-	private final IncomingEventHeader _incomingHeader; // both router and sub can share the same header
+	private final OutgoingEventHeader _outgoingHeader; // both router and pub can share the same outgoing header
+	private final IncomingEventHeader _routerRecvHeader;
+	private final IncomingEventHeader _subRecvHeader;
 	
 	private EventListener<TBuffer> _subListener;
 	private SendRecvMessengerReactor<TBuffer> _routerReactor;
@@ -113,7 +114,8 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 				MSG_BUFFER_ENTRY_LENGTH, 
 				new YieldingWaitStrategy());
 		_outgoingHeader = new OutgoingEventHeader(0, 2);
-		_incomingHeader = new IncomingEventHeader(0, 2);
+		_routerRecvHeader = new IncomingEventHeader(0, 2);
+		_subRecvHeader = new IncomingEventHeader(0, 1);
 		
 		/*
 		 * Configure sockets
@@ -189,7 +191,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 				"routerReactor",
 				routerSocketPackageMutex, 
 				_outgoingHeader, 
-				_incomingHeader,
+				_routerRecvHeader,
 				_recvQueue,
 				_routerSendQueue, 
 				_concentusHandle);
@@ -198,7 +200,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 		Mutex<Messenger<TBuffer>> subSocketPackageMutex = _socketManager.getSocketMutex(_subSocketId);
 		_subListener = new EventListener<>(
 				"updateListener",
-				_incomingHeader,
+				_subRecvHeader,
 				subSocketPackageMutex, 
 				_recvQueue, 
 				_concentusHandle);
@@ -215,7 +217,8 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 				_subSocketId,
 				routerSendQueue, 
 				pubSendQueue, 
-				_incomingHeader,
+				_routerRecvHeader,
+				_subRecvHeader,
 				_metricContext);
 		_publisher = MessagingUtil.asSocketOwner("publisher", _outQueue, new Publisher<TBuffer>(_outgoingHeader), pubSocketPackageMutex);
 		

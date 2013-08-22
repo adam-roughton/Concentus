@@ -51,10 +51,11 @@ public class TestEventHeader {
 	}
 	
 	private void doTestResetHeader(int headerLength) {
-		if (headerLength < 5) 
-			throw new IllegalArgumentException("The header must be at least 5 bytes for flags and first section meta data.");
-		int segmentCount = (headerLength - 1) / 4;
-		int additionalLength = (headerLength - 1) % 4;
+		if (headerLength < 9) 
+			throw new IllegalArgumentException("The header must be at least 9 bytes for flags and first section meta data.");
+		
+		int segmentCount = (headerLength - 5) / 4;
+		int additionalLength = (headerLength - 5) % 4;
 		
 		EventHeader header = new EventHeader(0, segmentCount, additionalLength, 0) {
 		};
@@ -75,42 +76,42 @@ public class TestEventHeader {
 	
 	@Test
 	public void testResetHeaderIntPlus1Bytes() {
-		doTestResetHeader(5);
-	}
-	
-	@Test
-	public void testResetHeaderLongMinus1Bytes() {
-		doTestResetHeader(7);
-	}
-	
-	@Test
-	public void testResetHeaderLongBytes() {
-		doTestResetHeader(8);
-	}
-
-	@Test
-	public void testResetHeaderLongPlus1Bytes() {
 		doTestResetHeader(9);
 	}
 	
 	@Test
-	public void testResetHeaderIntPlusLongMinus1Bytes() {
+	public void testResetHeaderLongMinus1Bytes() {
 		doTestResetHeader(11);
 	}
 	
 	@Test
-	public void testResetHeaderIntPlusLongBytes() {
+	public void testResetHeaderLongBytes() {
 		doTestResetHeader(12);
 	}
-	
+
 	@Test
-	public void testResetHeaderIntPlusLongPlus1Bytes() {
+	public void testResetHeaderLongPlus1Bytes() {
 		doTestResetHeader(13);
 	}
 	
 	@Test
+	public void testResetHeaderIntPlusLongMinus1Bytes() {
+		doTestResetHeader(15);
+	}
+	
+	@Test
+	public void testResetHeaderIntPlusLongBytes() {
+		doTestResetHeader(16);
+	}
+	
+	@Test
+	public void testResetHeaderIntPlusLongPlus1Bytes() {
+		doTestResetHeader(17);
+	}
+	
+	@Test
 	public void testResetHeader12LongBytes() {
-		doTestResetHeader(96);
+		doTestResetHeader(100);
 	}
 	
 	// negative segment length

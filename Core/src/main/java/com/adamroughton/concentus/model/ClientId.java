@@ -17,6 +17,8 @@ package com.adamroughton.concentus.model;
 
 public final class ClientId {
 	
+	private static final long CLIENT_ID_NAMESPACE_MASK = (0xFFFFL << 48);
+	
 	private final int _namespaceId;
 	private final long _clientId;
 
@@ -66,5 +68,22 @@ public final class ClientId {
 		return true;
 	}
 	
+	public long toBits() {
+		return toBits(this);
+	}
+	
+	public static ClientId fromBits(long clientIdBits) {
+		int namespaceId = (int)((clientIdBits & CLIENT_ID_NAMESPACE_MASK) >>> 48);
+		long clientId = clientIdBits & (~CLIENT_ID_NAMESPACE_MASK);
+		return new ClientId(namespaceId, clientId);
+	}
+	
+	public static long toBits(ClientId clientId) {
+		long clientIdBits = clientId.getNamespaceId();
+		clientIdBits <<= 48;
+		clientIdBits &= CLIENT_ID_NAMESPACE_MASK;
+		clientIdBits |= (clientId.getClientId() & (~CLIENT_ID_NAMESPACE_MASK));
+		return clientIdBits;
+	}
 	
 }

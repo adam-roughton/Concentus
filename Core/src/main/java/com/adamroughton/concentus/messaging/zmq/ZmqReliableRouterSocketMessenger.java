@@ -216,7 +216,7 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 		boolean isValid = true;
 		long recvTime = -1;
 		
-		boolean couldBeNackMsg = false;
+		boolean isNackMsg = true;
 		do {
 			if (segmentIndex > expectedSegmentCount) {
 				isValid = false;
@@ -242,11 +242,9 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 						return false;
 					} else if (recvdAmount == -1) {
 						isValid = false;
-					} else if (eventSegmentIndex == 1 && recvdAmount == 0) {
-						// NACK msgs have 0 content
-						couldBeNackMsg = true;
 					} else {
-						if (eventSegmentIndex > 1) couldBeNackMsg = false;
+						// NACK msgs have 0 content
+						if (eventSegmentIndex > 0) isNackMsg = false;
 						
 						if (recvTime == -1) recvTime = _clock.currentMillis();
 						header.setSegmentMetaData(eventBuffer, eventSegmentIndex, cursor, recvdAmount);					
@@ -261,7 +259,7 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 			}
 		} while (_socket.hasReceiveMore());
 		
-		header.setIsValid(eventBuffer, isValid && !couldBeNackMsg);
+		header.setIsValid(eventBuffer, isValid && !isNackMsg);
 		header.setSocketId(eventBuffer, _socketId);
 		header.setRecvTime(eventBuffer, recvTime);
 		return true;
@@ -353,55 +351,6 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 		return _name;
 	}
 
-	private static class ZMQIdentity {
-		
-		public final byte[] buffer;
-		public final int offset;
-		public final int length;
-		
-		public ZMQIdentity(byte[] identityBytes) {
-			this(identityBytes, 0, identityBytes.length);
-		}
-		
-		public ZMQIdentity(byte[] buffer, int offset, int length) {
-			this.buffer = Objects.requireNonNull(buffer);
-			this.offset = offset;
-			this.length = length;
-		}
-
-		@Override
-		public int hashCode() {
-			int result = 1;
-			for (int i = offset; i < offset + length; i++) {
-				result = result * 31 * buffer[i];
-			}
-			return result;
-		}
-		
-		public ZMQIdentity copyWithNewArray() {
-			byte[] identityBytes = new byte[length];
-			System.arraycopy(buffer, offset, identityBytes, 0, length);
-			return new ZMQIdentity(identityBytes);
-		}
-
-		@Override
-		public boolean equals(Object obj) {
-			if (obj instanceof ZMQIdentity) {
-				ZMQIdentity that = (ZMQIdentity) obj;
-				if (this.length != that.length)
-					return false;
-				for (int i = 0; i < this.length; i++) {
-					if (this.buffer[this.offset + i] != that.buffer[that.offset + i])
-						return false;
-				}
-				return true;
-			} else {
-				return false;
-			}
-		}
-		
-	}
-	
 	private static class CachedMessage {
 		public final ArrayBackedResizingBuffer messageBuffer;
 		public OutgoingEventHeader eventHeader = null;

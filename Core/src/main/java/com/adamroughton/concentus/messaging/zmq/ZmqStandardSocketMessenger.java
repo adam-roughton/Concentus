@@ -34,14 +34,22 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 	private final String _name;
 	private final ZMQ.Socket _socket;
 	private final Clock _clock;
+	private final int _socketType;
 	
-	private final byte[] _headerBytes = new byte[ResizingBuffer.INT_SIZE];
+	private final byte[] _headerBytes;
 	
 	public ZmqStandardSocketMessenger(int socketId, String name, ZMQ.Socket socket, Clock clock) {
 		_socketId = socketId;
 		_name = Objects.requireNonNull(name);
 		_socket = Objects.requireNonNull(socket);
 		_clock = Objects.requireNonNull(clock);
+		
+		_socketType = socket.getType();
+		if (_socketType == ZMQ.PUB || _socketType == ZMQ.SUB) {
+			_headerBytes = new byte[ResizingBuffer.INT_SIZE * 2];
+		} else {
+			_headerBytes = new byte[ResizingBuffer.INT_SIZE];
+		}
 	}
 	
 	@Override
@@ -72,8 +80,9 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 		}
 		
 		if (startSegmentIndex == 0) {
-			if (!sendHeader(bufferContentSize - header.getEventOffset(), isBlocking))
+			if (!sendHeader(bufferContentSize - header.getEventOffset(), outgoingBuffer, header, isBlocking))
 				return false;
+			startSegmentIndex = _socketType == ZMQ.PUB? 1 : 0; // the first frame is the subId which we have put in the header
 		}
 		
 		int lastSegmentIndex = segmentCount - 1;
@@ -88,8 +97,21 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 		return true;
 	}
 		
-	public boolean sendHeader(int msgSize, boolean isBlocking) {
-		MessageBytesUtil.writeInt(_headerBytes, 0, msgSize);
+	public boolean sendHeader(int msgSize, ArrayBackedResizingBuffer eventBuffer, 
+			OutgoingEventHeader header, boolean isBlocking) {
+		// bit hacky for now, but if the socket is a pub socket put the first Int bytes (event type) first for
+		// subscription filtering
+		int cursor = 0;
+		if (_socketType == ZMQ.PUB) {
+			int eventTypeSegmentMetaData = header.getSegmentMetaData(eventBuffer, 0);
+			int eventTypeOffset = EventHeader.getSegmentOffset(eventTypeSegmentMetaData);
+			int eventTypeId = eventBuffer.readInt(eventTypeOffset);
+			
+			MessageBytesUtil.writeInt(_headerBytes, cursor, eventTypeId);
+			cursor += ResizingBuffer.INT_SIZE;
+		}
+		
+		MessageBytesUtil.writeInt(_headerBytes, cursor, msgSize);
 		return ZmqSocketOperations.doSend(_socket, _headerBytes, 0, _headerBytes.length, (isBlocking? 0 : ZMQ.NOBLOCK) | ZMQ.SNDMORE);
 	}
 	
@@ -103,6 +125,7 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 		int segmentIndex = 0;
 		boolean isValid = true;
 		long recvTime = -1;
+		int lastCursor = -1;
 		
 		do {
 			if (segmentIndex > expectedSegmentCount) {
@@ -128,7 +151,8 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 						isValid = false;
 					} else {
 						if (recvTime == -1) recvTime = _clock.currentMillis();
-						header.setSegmentMetaData(eventBuffer, eventSegmentIndex, cursor, recvdAmount);					
+						header.setSegmentMetaData(eventBuffer, eventSegmentIndex, cursor, recvdAmount);	
+						lastCursor = cursor;
 						cursor += recvdAmount;
 						segmentIndex++;
 						eventSegmentIndex++;
@@ -140,6 +164,12 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 			}
 		} while (_socket.hasReceiveMore());
 		
+		boolean isMessagingEvent = false;
+		if (isValid) {
+			int eventId = eventBuffer.readInt(lastCursor);
+			if (eventId < 0) isMessagingEvent = true;
+		}
+		header.setIsMessagingEvent(eventBuffer, isMessagingEvent);
 		header.setIsValid(eventBuffer, isValid);
 		header.setSocketId(eventBuffer, _socketId);
 		header.setRecvTime(eventBuffer, recvTime);
@@ -158,7 +188,15 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 					"but instead found %d bytes.", _headerBytes.length, headerSize));
 			return -1;
 		} else {
-			int msgSize = MessageBytesUtil.readInt(_headerBytes, 0);
+			int cursor = 0;
+			if (_socketType == ZMQ.SUB) {
+				// if sub socket, ignore the event type ID
+				// bytes as they have already served their purpose
+				// for subscription filtering
+				cursor += ResizingBuffer.INT_SIZE;
+			}
+			
+			int msgSize = MessageBytesUtil.readInt(_headerBytes, cursor);
 			incomingBuffer.allocateForWriting(msgSize + eventHeader.getEventOffset());
 			
 			return headerSize;

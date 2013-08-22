@@ -59,7 +59,8 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	private final SendQueue<OutgoingEventHeader, TBuffer> _routerSendQueue;
 	
 	private final UpdateHandler _updateHandler;
-	private final IncomingEventHeader _incomingQueueHeader;
+	private final IncomingEventHeader _routerRecvHeader;
+	private final IncomingEventHeader _subRecvHeader;
 	
 	private long _inputId = 0;
 	private long _nextClientId = 0;
@@ -103,7 +104,8 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 			int subSocketId,
 			SendQueue<OutgoingEventHeader, TBuffer> routerSendQueue,
 			SendQueue<OutgoingEventHeader, TBuffer> pubSendQueue,
-			IncomingEventHeader incomingQueueHeader,
+			IncomingEventHeader routerRecvHeader,
+			IncomingEventHeader subRecvHeader,
 			MetricContext metricContext) {
 		_clock = Objects.requireNonNull(clock);
 		_clientHandlerId = clientHandlerId;
@@ -113,7 +115,8 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 		_routerSendQueue = Objects.requireNonNull(routerSendQueue);
 		_pubSendQueue = Objects.requireNonNull(pubSendQueue);
 		
-		_incomingQueueHeader = incomingQueueHeader;
+		_routerRecvHeader = routerRecvHeader;
+		_subRecvHeader = subRecvHeader;
 		
 		_metricContext = Objects.requireNonNull(metricContext);
 		_metrics = new MetricGroup();
@@ -144,19 +147,16 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	@Override
 	public void onEvent(TBuffer eventBuffer, long sequence, boolean isEndOfBatch)
 			throws Exception {
-		if (!_incomingQueueHeader.isValid(eventBuffer)) {
+		if (!EventHeader.isValid(eventBuffer, 0)) {
 			return;
-		}
-		
+		}		
 		_incomingThroughputMetric.push(1);
 		
-		int recvSocketId = _incomingQueueHeader.getSocketId(eventBuffer);
-		int eventTypeId = EventPattern.getEventType(eventBuffer, _incomingQueueHeader);
-		
-		if (recvSocketId == _routerSocketId) {
-			final byte[] clientSocketId = RouterPattern.getSocketId(eventBuffer, _incomingQueueHeader);
+		if (_routerRecvHeader.hasMyHeader(eventBuffer) && _routerRecvHeader.getSocketId(eventBuffer) == _routerSocketId) {
+			int eventTypeId = EventPattern.getEventType(eventBuffer, _routerRecvHeader);
+			final byte[] clientSocketId = RouterPattern.getSocketId(eventBuffer, _routerRecvHeader);
 			if (eventTypeId == CLIENT_CONNECT.getId()) {
-				EventPattern.readContent(eventBuffer, _incomingQueueHeader, _clientConnectEvent, new EventReader<IncomingEventHeader, ClientConnectEvent>() {
+				EventPattern.readContent(eventBuffer, _routerRecvHeader, _clientConnectEvent, new EventReader<IncomingEventHeader, ClientConnectEvent>() {
 
 					@Override
 					public void read(IncomingEventHeader header, ClientConnectEvent event) {
@@ -165,7 +165,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 					
 				});				
 			} else if (eventTypeId == CLIENT_INPUT.getId()) {
-				EventPattern.readContent(eventBuffer, _incomingQueueHeader, _clientInputEvent, new EventReader<IncomingEventHeader, ClientInputEvent>() {
+				EventPattern.readContent(eventBuffer, _routerRecvHeader, _clientInputEvent, new EventReader<IncomingEventHeader, ClientInputEvent>() {
 
 					@Override
 					public void read(IncomingEventHeader header, ClientInputEvent event) {
@@ -175,15 +175,16 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 			} else {
 				Log.warn(String.format("Unknown event type %d received on the router socket.", eventTypeId));
 			}
-		} else if (recvSocketId == _subSocketId) {
+		} else if (_subRecvHeader.hasMyHeader(eventBuffer) && _subRecvHeader.getSocketId(eventBuffer) == _subSocketId) {
+			int eventTypeId = EventPattern.getEventType(eventBuffer, _subRecvHeader);
 			if (eventTypeId == STATE_UPDATE.getId()) {
-				EventPattern.readContent(eventBuffer, _incomingQueueHeader, _stateUpdateEvent, new EventReader<IncomingEventHeader, StateUpdateEvent>() {
+				EventPattern.readContent(eventBuffer, _subRecvHeader, _stateUpdateEvent, new EventReader<IncomingEventHeader, StateUpdateEvent>() {
 
 					@Override
 					public void read(IncomingEventHeader header, StateUpdateEvent event) {
 						long updateId = event.getUpdateId();
-						int contentIndex = _incomingQueueHeader.getSegmentCount() - 1;
-						int contentMetaData = _incomingQueueHeader.getSegmentMetaData(event.getBuffer(), contentIndex);
+						int contentIndex = _subRecvHeader.getSegmentCount() - 1;
+						int contentMetaData = _subRecvHeader.getSegmentMetaData(event.getBuffer(), contentIndex);
 						int contentOffset = EventHeader.getSegmentOffset(contentMetaData);
 						int contentLength = EventHeader.getSegmentLength(contentMetaData);
 						_updateHandler.addUpdate(updateId, event.getBuffer(), contentOffset, contentLength);
@@ -195,7 +196,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 					
 				});				
 			} else if (eventTypeId == STATE_INFO.getId()) {
-				EventPattern.readContent(eventBuffer, _incomingQueueHeader, _updateInfoEvent, new EventReader<IncomingEventHeader, StateUpdateInfoEvent>() {
+				EventPattern.readContent(eventBuffer, _subRecvHeader, _updateInfoEvent, new EventReader<IncomingEventHeader, StateUpdateInfoEvent>() {
 
 					@Override
 					public void read(IncomingEventHeader header, StateUpdateInfoEvent event) {
@@ -207,7 +208,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 				Log.warn(String.format("Unknown event type %d received on the sub socket.", eventTypeId));
 			}
 		} else {
-			Log.warn(String.format("Unknown socket ID: %d", recvSocketId));
+			Log.warn(String.format("Unknown header ID: %d", EventHeader.getHeaderId(eventBuffer, 0)));
 		}
 	}
 	
@@ -276,13 +277,11 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	}
 	
 	private void onClientInput(final byte[] clientSocketId, final ClientInputEvent inputEvent) {
-		//TODO 
-		final ClientProxy client = _clientLookup.get(inputEvent.getClientId().getClientId());
-		if (client == null) {
-			Log.warn(String.format("Unknown client ID %d", inputEvent.getClientId().getClientId()));
-		} else {
+		//TODO
+		try {
+			final ClientProxy client = _clientLookup.get(inputEvent.getClientId().getClientId());
 			_pubSendQueue.send(PubSubPattern.asTask(_stateInputEvent, new EventWriter<OutgoingEventHeader, StateInputEvent>() {
-	
+				
 				@Override
 				public void write(OutgoingEventHeader header, StateInputEvent event) {
 					long handlerInputId = _inputId++;
@@ -296,6 +295,10 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 			}));
 			_nextHeartbeat = _clock.currentMillis() + Constants.METRIC_TICK;
 			_inputActionThroughputMetric.push(1);
+		} catch (ArrayIndexOutOfBoundsException eNotFound) {
+			Log.warn(String.format("Unknown client ID %d", inputEvent.getClientId().getClientId()));
+			Log.warn(String.format("Router Header: %d, Sub Header: %d", _routerRecvHeader.getHeaderId(), _subRecvHeader.getHeaderId()));
+			Log.warn(inputEvent.getBuffer().toString());
 		}
 	}
 	

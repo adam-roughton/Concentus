@@ -27,6 +27,8 @@ import com.adamroughton.concentus.util.Mutex;
 
 public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable {
 	
+	public final int DEALER_SET = 101;
+	
 	/**
 	 * Gets a factory for creating {@link ResizingBuffer} instances that this {@link SocketManager}
 	 * is compatible with.

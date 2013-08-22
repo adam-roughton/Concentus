@@ -242,21 +242,13 @@ public final class MessageBytesUtil {
 		writeLong(array, offset + 8, lsb);
 	}
 	
-	private static final long CLIENT_ID_NAMESPACE_MASK = (0xFFFFL << 48);
-	
 	public static ClientId readClientId(byte[] array, long offset) {
 		long clientIdBits = readLong(array, offset);
-		int namespaceId = (int)((clientIdBits & CLIENT_ID_NAMESPACE_MASK) >>> 48);
-		long clientId = clientIdBits & (~CLIENT_ID_NAMESPACE_MASK);
-		return new ClientId(namespaceId, clientId);
+		return ClientId.fromBits(clientIdBits);
 	}
 	
 	public static void writeClientId(byte[] array, long offset, final ClientId clientId) {
-		long clientIdBits = clientId.getNamespaceId();
-		clientIdBits <<= 48;
-		clientIdBits &= CLIENT_ID_NAMESPACE_MASK;
-		clientIdBits |= (clientId.getClientId() & (~CLIENT_ID_NAMESPACE_MASK));
-		writeLong(array, offset, clientIdBits);
+		writeLong(array, offset, clientId.toBits());
 	}
 	
 	public static RunningStats readRunningStats(byte[] array, long offset) {

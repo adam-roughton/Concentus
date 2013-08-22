@@ -16,6 +16,7 @@
 package com.adamroughton.concentus.messaging.events;
 
 public enum EventType {
+	CONNECT(-1, ConnectEvent.class),
 	NULL(0, null),
 	CLIENT_INPUT(1, ClientInputEvent.class),
 	ACTION_RECEIPT(2, ActionReceiptEvent.class),

@@ -383,7 +383,24 @@ public class TestZmqReliableRouterSocketMessenger {
 		}
 	}
 	
-
+	@Test
+	public void nackMsg() {
+		OutgoingEventHeader header = new OutgoingEventHeader(0, 2);
+		byte[] idBytes = genIdBytes(UUID.fromString("abababab-abab-abab-abab-abababababab"));
+		long sentReliableSeq = sendSingleSegment(idBytes, header, true);
+		
+		// recv a NACK
+		byte[] headerFrame = makeMsgHeader(sentReliableSeq, 32);
+		IncomingEventHeader recvHeader = new IncomingEventHeader(0, 2);
+		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
+			.then(fakeRecv(idBytes))
+			.then(fakeRecv(headerFrame));
+		when(_zmqSocket.hasReceiveMore())
+			.thenReturn(true)
+			.thenReturn(false);
+		assertTrue(_messenger.recv(_buffer, recvHeader, false));
+		assertFalse(recvHeader.isValid(_buffer));
+	}
 	
 	public void nackNoCorrespondingClient() {
 		
@@ -401,7 +418,11 @@ public class TestZmqReliableRouterSocketMessenger {
 	
 	private void sendSingleSegment(boolean isReliable) {
 		OutgoingEventHeader header = new OutgoingEventHeader(0, 2);
-		
+		byte[] expectedIdBytes = genIdBytes(UUID.fromString("abababab-abab-abab-abab-abababababab"));
+		sendSingleSegment(expectedIdBytes, header, isReliable);	
+	}
+	
+	private long sendSingleSegment(byte[] idBytes, OutgoingEventHeader header, boolean isReliable) {
 		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.thenReturn(true)
 			.thenReturn(true)
@@ -448,6 +469,8 @@ public class TestZmqReliableRouterSocketMessenger {
 		int actualContentLength = (int) lengths.get(2);
 		assertEquals(segmentLength, actualContentLength);
 		assertRangeEqual(content, messageBytes, actualContentOffset, actualContentLength);	
+		
+		return 0;
 	}
 	
 	private void sendMultipleSegments(boolean isReliable) {

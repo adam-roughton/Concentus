@@ -98,7 +98,7 @@ public class CanonicalStateService<TBuffer extends ResizingBuffer> implements Co
 				new YieldingWaitStrategy());
 		
 		_pubHeader = new OutgoingEventHeader(0, 2);
-		_subHeader = new IncomingEventHeader(0, 2);
+		_subHeader = new IncomingEventHeader(0, 1);
 		
 		_stateLogic = new StateLogic() {
 
@@ -116,7 +116,7 @@ public class CanonicalStateService<TBuffer extends ResizingBuffer> implements Co
 
 			@Override
 			public void createUpdate(ResizingBuffer updateBuffer) {
-				updateBuffer.writeInt(i, 0);
+				updateBuffer.writeInt(0, i);
 			}
 			
 		};

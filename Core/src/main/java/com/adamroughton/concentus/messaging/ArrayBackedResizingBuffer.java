@@ -328,5 +328,24 @@ public final class ArrayBackedResizingBuffer implements ResizingBuffer {
 		MessageBytesUtil.writeRunningStats(ensureSize(offset, RUNNING_STATS_SIZE), offset, value);
 		return RUNNING_STATS_SIZE;
 	}
+
+	@Override
+	public String toString() {
+		StringBuilder sb = new StringBuilder();
+		sb.append("[");
+		boolean isFirst = true;
+		for (byte b : getBuffer()) {
+			if (isFirst) {
+				isFirst = false;
+			} else {
+				sb.append(", ");
+			}
+			sb.append(b);
+		}
+		sb.append("]");
+		return sb.toString();
+	}
+	
+	
 	
 }

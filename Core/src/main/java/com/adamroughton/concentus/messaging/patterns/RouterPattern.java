@@ -104,7 +104,7 @@ public class RouterPattern {
 	private static void doCopySocketId(ResizingBuffer incomingBuffer, int socketIdSegmentMetaData, byte[] dest, int destOffset, int maxLengthToCopy) {
 		int socketIdOffset = EventHeader.getSegmentOffset(socketIdSegmentMetaData);
 		int socketIdLength = EventHeader.getSegmentLength(socketIdSegmentMetaData);
-		incomingBuffer.copyTo(dest, socketIdOffset, destOffset, Math.min(maxLengthToCopy, socketIdLength));
+		incomingBuffer.copyTo(dest, destOffset, socketIdOffset, Math.min(maxLengthToCopy, socketIdLength));
 	}
 	
 }

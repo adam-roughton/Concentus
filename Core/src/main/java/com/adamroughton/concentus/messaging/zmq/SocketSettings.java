@@ -29,11 +29,12 @@ public final class SocketSettings {
 	private final long _hwm;
 	private final byte[][] _subscriptions;
 	private final boolean _supportReliable;
+	private final String _recvPairAddress;
 	private final int _reliableBufferLength;
 	private final long _reliableTryAgainMillis;
 	
 	public static SocketSettings create() {
-		return new SocketSettings(new String[0], new int[0], -1, new byte[0][], false, 0, 0);
+		return new SocketSettings(new String[0], new int[0], -1, new byte[0][], false, null, 0, 0);
 	}
 	
 	private SocketSettings(
@@ -42,6 +43,7 @@ public final class SocketSettings {
 			long hwm, 
 			byte[][] subscriptions,
 			boolean supportReliable,
+			String recvPairAddress,
 			int reliableBufferLength,
 			long reliableTryAgainMillis) {
 		_inprocNamesToBindTo = inprocNamesToBindTo;
@@ -49,6 +51,7 @@ public final class SocketSettings {
 		_hwm = hwm;
 		_subscriptions = subscriptions;
 		_supportReliable = supportReliable;
+		_recvPairAddress = recvPairAddress;
 		_reliableBufferLength = reliableBufferLength;
 		_reliableTryAgainMillis = reliableTryAgainMillis;
 	}
@@ -58,7 +61,8 @@ public final class SocketSettings {
 		int[] portsToBindTo = new int[_portsToBindTo.length + 1];
 		System.arraycopy(_portsToBindTo, 0, portsToBindTo, 0, _portsToBindTo.length);
 		portsToBindTo[_portsToBindTo.length] = port;
-		return new SocketSettings(_inprocNamesToBindTo, portsToBindTo, _hwm, _subscriptions, _supportReliable, _reliableBufferLength, _reliableTryAgainMillis);
+		return new SocketSettings(_inprocNamesToBindTo, portsToBindTo, _hwm, _subscriptions, 
+				_supportReliable, _recvPairAddress, _reliableBufferLength, _reliableTryAgainMillis);
 	}
 	
 	/**
@@ -74,13 +78,15 @@ public final class SocketSettings {
 		String[] inprocNamesToBindTo = new String[_inprocNamesToBindTo.length + 1];
 		System.arraycopy(_inprocNamesToBindTo, 0, inprocNamesToBindTo, 0, _inprocNamesToBindTo.length);
 		inprocNamesToBindTo[_inprocNamesToBindTo.length] = name;
-		return new SocketSettings(inprocNamesToBindTo, _portsToBindTo, _hwm, _subscriptions, _supportReliable, _reliableBufferLength, _reliableTryAgainMillis);
+		return new SocketSettings(inprocNamesToBindTo, _portsToBindTo, _hwm, _subscriptions, 
+				_supportReliable, _recvPairAddress, _reliableBufferLength, _reliableTryAgainMillis);
 	}
 	
 	public SocketSettings setHWM(int hwm) {
 		if (hwm < 0)
 			throw new IllegalArgumentException("The HWM must be 0 or greater.");
-		return new SocketSettings(_inprocNamesToBindTo, _portsToBindTo, hwm, _subscriptions, _supportReliable, _reliableBufferLength, _reliableTryAgainMillis);
+		return new SocketSettings(_inprocNamesToBindTo, _portsToBindTo, hwm, _subscriptions, 
+				_supportReliable, _recvPairAddress, _reliableBufferLength, _reliableTryAgainMillis);
 	}
 	
 	/**
@@ -91,7 +97,13 @@ public final class SocketSettings {
 	 * @return
 	 */
 	public SocketSettings setSupportReliable(boolean supportReliable) {
-		return new SocketSettings(_inprocNamesToBindTo, _portsToBindTo, _hwm, _subscriptions, supportReliable, _reliableBufferLength, _reliableTryAgainMillis);
+		return new SocketSettings(_inprocNamesToBindTo, _portsToBindTo, _hwm, _subscriptions, 
+				supportReliable, _recvPairAddress, _reliableBufferLength, _reliableTryAgainMillis);
+	}
+	
+	public SocketSettings setRecvPairAddress(String recvPairAddress) {
+		return new SocketSettings(_inprocNamesToBindTo, _portsToBindTo, _hwm, _subscriptions, 
+				_supportReliable, recvPairAddress, _reliableBufferLength, _reliableTryAgainMillis);
 	}
 	
 	/**
@@ -100,7 +112,8 @@ public final class SocketSettings {
 	 * @return
 	 */
 	public SocketSettings setReliableBufferLength(int reliableBufferLength) {
-		return new SocketSettings(_inprocNamesToBindTo, _portsToBindTo, _hwm, _subscriptions, true, reliableBufferLength, _reliableTryAgainMillis);
+		return new SocketSettings(_inprocNamesToBindTo, _portsToBindTo, _hwm, _subscriptions, 
+				true, _recvPairAddress, reliableBufferLength, _reliableTryAgainMillis);
 	}
 	
 	/**
@@ -109,7 +122,8 @@ public final class SocketSettings {
 	 * @return
 	 */
 	public SocketSettings setReliableTryAgainMillis(int reliableTryAgainMillis) {
-		return new SocketSettings(_inprocNamesToBindTo, _portsToBindTo, _hwm, _subscriptions, true, _reliableBufferLength, reliableTryAgainMillis);
+		return new SocketSettings(_inprocNamesToBindTo, _portsToBindTo, _hwm, _subscriptions, 
+				true, _recvPairAddress, _reliableBufferLength, reliableTryAgainMillis);
 	}
 	
 	public SocketSettings subscribeTo(EventType eventType) {
@@ -138,7 +152,8 @@ public final class SocketSettings {
 			}
 			subscriptions[i] = Arrays.copyOf(sub, sub.length);
 		}
-		return new SocketSettings(_inprocNamesToBindTo, _portsToBindTo, _hwm, subscriptions, _supportReliable, _reliableBufferLength, _reliableTryAgainMillis);
+		return new SocketSettings(_inprocNamesToBindTo, _portsToBindTo, _hwm, subscriptions, 
+				_supportReliable, _recvPairAddress, _reliableBufferLength, _reliableTryAgainMillis);
 	}
 	
 	public String[] getInprocNamesToBindTo() {
@@ -168,6 +183,10 @@ public final class SocketSettings {
 	
 	public boolean supportReliable() {
 		return _supportReliable;
+	}
+	
+	public String getRecvPairAddress() {
+		return _recvPairAddress;
 	}
 	
 	public int getReliableBufferLength() {

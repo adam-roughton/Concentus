@@ -307,5 +307,10 @@ public final class ResizingBufferSlice implements ResizingBuffer {
 	public int writeRunningStats(long offset, RunningStats value) {
 		return updateSize(offset, _decoratedBuffer.writeRunningStats(getAbsOffset(offset), value));
 	}
+
+	@Override
+	public String toString() {
+		return String.format("Slice [%d - ] of %s", _offset, _decoratedBuffer.toString());
+	}
 	
 }

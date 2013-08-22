@@ -101,8 +101,8 @@ public class EventPattern {
 	}
 	
 	public static EventHeader validate(EventHeader header, int expectedSegmentCount) throws IllegalArgumentException {
-		if (header.getSegmentCount() != expectedSegmentCount) {
-			throw new IllegalArgumentException(String.format("This pattern only supports events with %d segments (header had %d).", 
+		if (header.getSegmentCount() < expectedSegmentCount) {
+			throw new IllegalArgumentException(String.format("This pattern only supports events with at least %d segments (header had %d).", 
 					expectedSegmentCount, header.getSegmentCount()));
 		}
 		return header;
