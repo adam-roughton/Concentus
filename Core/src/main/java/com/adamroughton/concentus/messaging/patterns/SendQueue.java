@@ -19,6 +19,8 @@ import java.util.Objects;
 
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueuePublisher;
+import com.adamroughton.concentus.messaging.EventHeader;
+import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.ResizingBuffer;
 
@@ -39,6 +41,14 @@ public class SendQueue<TSendHeader extends OutgoingEventHeader, TBuffer extends 
 		while (!trySend(task));
 	}
 	
+	public final void send(ResizingBuffer src, IncomingEventHeader headerOrigin) {
+		send(src, 0, src.getContentSize(), headerOrigin);
+	}
+	
+	public final void send(ResizingBuffer src, int offset, int length, IncomingEventHeader headerOrigin) {
+		while (!trySend(src, offset, length, headerOrigin));
+	}
+	
 	/**
 	 * Sends the task if there is space, failing if the call
 	 * would block.
@@ -54,6 +64,42 @@ public class SendQueue<TSendHeader extends OutgoingEventHeader, TBuffer extends 
 		try {
 			_header.reset(outgoingBuffer);
 			task.write(outgoingBuffer, _header);
+		} finally {
+			wasSuccessful = _sendQueuePublisher.publish();
+		}
+		return wasSuccessful;
+	}
+	
+	public final boolean trySend(ResizingBuffer src, IncomingEventHeader headerOrigin) {
+		return trySend(src, 0, src.getContentSize(), headerOrigin);
+	}
+	
+	public final boolean trySend(ResizingBuffer src, int offset, int length, IncomingEventHeader headerOrigin) {
+		ResizingBuffer outgoingBuffer = _sendQueuePublisher.next();
+		if (outgoingBuffer == null) return false;
+		
+		boolean wasSuccessful;
+		try {
+			_header.reset(outgoingBuffer);
+			
+			if (headerOrigin.getSegmentCount() != _header.getSegmentCount())
+				throw new IllegalArgumentException(String.format("The send header and origin header must " +
+						"have matching segment counts (expected %d, was %d)", 
+						_header.getSegmentCount(), headerOrigin.getSegmentCount()));
+			_header.setIsValid(outgoingBuffer, headerOrigin.isValid(src));
+			_header.setIsMessagingEvent(outgoingBuffer, headerOrigin.isMessagingEvent(src));
+			
+			int cursor = _header.getEventOffset();
+			for (int i = 0; i < _header.getSegmentCount(); i++) {
+				int segmentMetaData = headerOrigin.getSegmentMetaData(src, i);
+				int segmentOffset = EventHeader.getSegmentOffset(segmentMetaData);
+				int segmentLength = EventHeader.getSegmentLength(segmentMetaData);
+				
+				src.copyTo(outgoingBuffer, segmentOffset, cursor, segmentLength);
+				_header.setSegmentMetaData(outgoingBuffer, i, cursor, segmentLength);
+				
+				cursor += segmentLength;
+			}
 		} finally {
 			wasSuccessful = _sendQueuePublisher.publish();
 		}

@@ -23,28 +23,36 @@ import java.util.logging.Logger;
 
 import org.zeromq.ZMQ;
 
+import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService;
 import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
+//import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.concentus.disruptor.EventQueue;
+import com.adamroughton.concentus.messaging.EventHeader;
+import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.MessageQueueFactory;
+import com.adamroughton.concentus.messaging.MessagingUtil;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
+import com.adamroughton.concentus.messaging.Publisher;
 import com.adamroughton.concentus.messaging.ResizingBuffer;
-import com.adamroughton.concentus.messaging.SendRecvMessengerReactor;
+//import com.adamroughton.concentus.messaging.SendRecvMessengerReactor;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
+import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
+import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 import uk.co.real_logic.intrinsics.ComponentFactory;
@@ -77,8 +85,14 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 	private int _clientCountForTest;
 	private SimulatedClientProcessor<TBuffer> _clientProcessor;
 	
-	private SendRecvMessengerReactor<TBuffer> _clientSocketReactor;
-	private int[] _handlerIds;
+	private int _routerSocketId;
+	private int _dealerSetSocketId;
+	
+	private EventListener<TBuffer> _routerListener;
+	private EventProcessor _dealerSetPublisher;
+	
+	//private SendRecvMessengerReactor<TBuffer> _clientSocketReactor;
+	//private int[] _handlerIds;
 	
 	public WorkerService(final ConcentusHandle<? extends CrowdHammerConfiguration, TBuffer> concentusHandle, int maxClientCount, MetricContext metricContext) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
@@ -93,8 +107,8 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 				return new Client(index++, _concentusHandle.getClock());
 			}
 		});
-		_clientSendHeader = new OutgoingEventHeader(0, 1);
-		_clientRecvHeader = new IncomingEventHeader(0, 1);
+		_clientSendHeader = new OutgoingEventHeader(0, 2);
+		_clientRecvHeader = new IncomingEventHeader(0, 2);
 	}
 
 	@Override
@@ -127,6 +141,17 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 	
 	private void initTest(ClusterWorkerHandle cluster) throws Exception {
 		_socketManager = _concentusHandle.newSocketManager();
+		
+		int routerRecvPort = ConfigurationUtil.getPort(_concentusHandle.getConfig(), SERVICE_TYPE, "routerRecv");
+		SocketSettings routerSocketSettings = SocketSettings.create()
+				.bindToPort(routerRecvPort);
+		_routerSocketId = _socketManager.create(ZMQ.ROUTER, routerSocketSettings, "client_recv");
+		
+		SocketSettings dealerSetSettings = SocketSettings.create()
+				.setRecvPairAddress(String.format("tcp://%s:%d",
+						_concentusHandle.getNetworkAddress().getHostAddress(),
+						routerRecvPort));
+		_dealerSetSocketId = _socketManager.create(SocketManager.DEALER_SET, dealerSetSettings, "client_send");
 		
 		// request client allocation
 		byte[] reqBytes = new byte[4];
@@ -168,22 +193,68 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 	}
 	
 	private void startSUT(ClusterWorkerHandle cluster) throws Exception {
-		String[] clientHandlerConnStrings = cluster.getAllServices(ClientHandlerService.SERVICE_TYPE);
+		final String[] clientHandlerConnStrings = cluster.getAllServices(ClientHandlerService.SERVICE_TYPE);
 		int clientHandlerPort = _concentusHandle.getConfig().getServices().get(ClientHandlerService.SERVICE_TYPE).getPorts().get("input");
+		
+//		/*
+//		 * connect client socket to all client handlers
+//		 */
+//		_handlerIds = new int[clientHandlerConnStrings.length];
+//		for (int clientHandlerIndex = 0; clientHandlerIndex < clientHandlerConnStrings.length; clientHandlerIndex++) {
+//			String connString = String.format("%s:%d", 
+//					clientHandlerConnStrings[clientHandlerIndex],
+//					clientHandlerPort);
+//			SocketSettings socketSettings = SocketSettings.create().setSupportReliable(true);
+//			int handlerSocketId = _socketManager.create(ZMQ.DEALER, socketSettings, "clientHandler" + clientHandlerIndex + " (" + connString + ")");
+//			_socketManager.connectSocket(handlerSocketId, connString);
+//			_handlerIds[clientHandlerIndex] = handlerSocketId;
+//		}
 		
 		/*
 		 * connect client socket to all client handlers
 		 */
-		_handlerIds = new int[clientHandlerConnStrings.length];
 		for (int clientHandlerIndex = 0; clientHandlerIndex < clientHandlerConnStrings.length; clientHandlerIndex++) {
 			String connString = String.format("%s:%d", 
 					clientHandlerConnStrings[clientHandlerIndex],
 					clientHandlerPort);
-			SocketSettings socketSettings = SocketSettings.create().setSupportReliable(true);
-			int handlerSocketId = _socketManager.create(ZMQ.DEALER, socketSettings, "clientHandler" + clientHandlerIndex + " (" + connString + ")");
-			_socketManager.connectSocket(handlerSocketId, connString);
-			_handlerIds[clientHandlerIndex] = handlerSocketId;
+			_socketManager.connectSocket(_dealerSetSocketId, connString);
 		}
+		
+		// process connect events & collect identities
+		final byte[][] handlerIds = new byte[clientHandlerConnStrings.length][];
+		Mutex<Messenger<TBuffer>> routerSocketMutex = _socketManager.getSocketMutex(_routerSocketId);
+		final Mutex<Messenger<TBuffer>> dealerSetMutex = _socketManager.getSocketMutex(_dealerSetSocketId);
+		final TBuffer tmpBuffer = _socketManager.getBufferFactory().newInstance(128);
+		routerSocketMutex.runAsOwner(new OwnerDelegate<Messenger<TBuffer>>() {
+
+			@Override
+			public void asOwner(final Messenger<TBuffer> routerSocketMessenger) {
+				dealerSetMutex.runAsOwner(new OwnerDelegate<Messenger<TBuffer>>() {
+
+					@Override
+					public void asOwner(Messenger<TBuffer> dealerSetMessenger) {
+						Clock clock = _concentusHandle.getClock();
+						long startTime = clock.nanoTime();
+						int i = 0;
+						while (i < clientHandlerConnStrings.length && clock.nanoTime() - startTime < TimeUnit.SECONDS.toNanos(60)) {
+							routerSocketMessenger.recv(tmpBuffer, _clientRecvHeader, true);
+							if (EventHeader.isValid(tmpBuffer, 0)) {
+								int identitySegmentMetaData = _clientRecvHeader.getSegmentMetaData(tmpBuffer, 0);
+								int identityOffset = EventHeader.getSegmentOffset(identitySegmentMetaData);
+								int identityLength = EventHeader.getSegmentLength(identitySegmentMetaData);
+								
+								handlerIds[i++] = tmpBuffer.readBytes(identityOffset, identityLength);
+								
+								dealerSetMessenger.send(tmpBuffer, _clientSendHeader, true);
+							}
+						}
+						if (i < clientHandlerConnStrings.length) {
+							throw new RuntimeException("Timed out waiting for client handlers to respond to connection requests");
+						}
+					}
+				});
+			}
+		});
 		
 		/*
 		 * assign client handler to each client and prepare clients
@@ -192,34 +263,60 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 		for (long clientIndex = 0; clientIndex < _clients.getLength(); clientIndex++) {
 			Client client = _clients.get(clientIndex);
 			if (clientIndex < _clientCountForTest) {
-				client.setHandlerId(_handlerIds[nextHandlerIndex++ % _handlerIds.length]);
+				client.setHandlerId(handlerIds[nextHandlerIndex++ % handlerIds.length]);
+				//client.setHandlerId(_handlerIds[nextHandlerIndex++ % _handlerIds.length]);
 				client.setIsActive(true);
 			} else {
 				client.setIsActive(false);
 			}
 		}
 		
-		Mutex<Messenger<TBuffer>> clientHandlerSet = _socketManager.createPollInSet(_handlerIds);
+//		Mutex<Messenger<TBuffer>> clientHandlerSet = _socketManager.createPollInSet(_handlerIds);
+//		
+//		// infrastructure for client socket
+//		_clientSocketReactor = new SendRecvMessengerReactor<>(
+//				"clientSocketReactor",
+//				clientHandlerSet, 
+//				_clientSendHeader, 
+//				_clientRecvHeader,
+//				_clientRecvQueue,
+//				_clientSendQueue, 
+//				_concentusHandle);
+//
+//		// event processing infrastructure
+//		SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue = new SendQueue<>("clientProcessor", _clientSendHeader, _clientSendQueue);
+//		_clientProcessor = new SimulatedClientProcessor<>(_concentusHandle.getClock(), _clients, _clientCountForTest, clientSendQueue, _clientRecvHeader, _metricContext);
+//		
+//		_pipeline = ProcessingPipeline.<TBuffer>startCyclicPipeline(_clientSendQueue, _concentusHandle.getClock())
+//				.then(_clientSocketReactor)
+//				.thenConnector(_clientRecvQueue)
+//				.then(_clientRecvQueue.createEventProcessor("clientProcessor", _clientProcessor, _concentusHandle.getClock(), _concentusHandle))
+//				.completeCycle(_executor);
 		
 		// infrastructure for client socket
-		_clientSocketReactor = new SendRecvMessengerReactor<>(
-				"clientSocketReactor",
-				clientHandlerSet, 
-				_clientSendHeader, 
+		_routerListener = new EventListener<>(
+				"routerListener",
 				_clientRecvHeader,
+				routerSocketMutex, 
 				_clientRecvQueue,
-				_clientSendQueue, 
 				_concentusHandle);
+		
+		_dealerSetPublisher = MessagingUtil.asSocketOwner(
+				"dealerSetPub", 
+				_clientSendQueue, 
+				new Publisher<TBuffer>(_clientSendHeader), 
+				dealerSetMutex);
 
 		// event processing infrastructure
 		SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue = new SendQueue<>("clientProcessor", _clientSendHeader, _clientSendQueue);
 		_clientProcessor = new SimulatedClientProcessor<>(_concentusHandle.getClock(), _clients, _clientCountForTest, clientSendQueue, _clientRecvHeader, _metricContext);
 		
-		_pipeline = ProcessingPipeline.<TBuffer>startCyclicPipeline(_clientSendQueue, _concentusHandle.getClock())
-				.then(_clientSocketReactor)
+		_pipeline = ProcessingPipeline.<TBuffer>build(_routerListener, _concentusHandle.getClock())
 				.thenConnector(_clientRecvQueue)
 				.then(_clientRecvQueue.createEventProcessor("clientProcessor", _clientProcessor, _concentusHandle.getClock(), _concentusHandle))
-				.completeCycle(_executor);
+				.thenConnector(_clientSendQueue)
+				.then(_dealerSetPublisher)
+				.createPipeline(_executor);
 	}
 	
 	private void executeTest(ClusterWorkerHandle cluster) throws Exception {
@@ -233,7 +330,6 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 	private void teardown(ClusterWorkerHandle cluster) throws Exception {		
 		_pipeline.halt(60, TimeUnit.SECONDS);
 		_socketManager.close();
-		_handlerIds = null;
 		
 		Client client;
 		for (int i = 0; i < _clients.getLength(); i++) {

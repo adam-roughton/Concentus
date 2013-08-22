@@ -127,8 +127,8 @@ public abstract class EventHeader {
 		return getFlag(event, 1);
 	}
 	
-	public final void setIsMessagingEvent(ResizingBuffer event, boolean isValid) {
-		setFlag(event, 1, isValid);
+	public final void setIsMessagingEvent(ResizingBuffer event, boolean isMessagingEvent) {
+		setFlag(event, 1, isMessagingEvent);
 	}
 	
 	public final int getSegmentMetaData(ResizingBuffer event, int segmentIndex) {

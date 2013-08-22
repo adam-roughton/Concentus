@@ -26,6 +26,7 @@ services:
   CrowdHammerWorker:
     ports:
       pub: 12000
+      routerRecv: 12001
     messageBufferSizes:
       routerRecv: 1048576
       routerSend: 1048576

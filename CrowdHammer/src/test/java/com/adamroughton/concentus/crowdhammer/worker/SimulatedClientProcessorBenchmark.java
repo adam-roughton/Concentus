@@ -76,7 +76,7 @@ public class SimulatedClientProcessorBenchmark {
 		
 		_header = new IncomingEventHeader(0, 2);
 		
-		SendQueue<OutgoingEventHeader, ArrayBackedResizingBuffer> clientSendQueue = new SendQueue<>("", new OutgoingEventHeader(0, 1), _sendQueue);
+		SendQueue<OutgoingEventHeader, ArrayBackedResizingBuffer> clientSendQueue = new SendQueue<>("", new OutgoingEventHeader(0, 2), _sendQueue);
 		
 		_worker = new SimulatedClientProcessor<>(_clock, _clients, clientCount, clientSendQueue, _header, 
 				new LogMetricContext(Constants.METRIC_TICK, TimeUnit.SECONDS.toMillis(Constants.METRIC_BUFFER_SECONDS), _clock));
@@ -87,7 +87,7 @@ public class SimulatedClientProcessorBenchmark {
 		connRes.attachToBuffer(_recvBuffer, 0);
 		for (int i = 0; i < _clients.getLength(); i++) {
 			Client client = _clients.get(i);
-			client.setHandlerId(0);
+			client.setHandlerId(new byte[0]);
 			client.setIsActive(true);
 			
 			// generate connect request

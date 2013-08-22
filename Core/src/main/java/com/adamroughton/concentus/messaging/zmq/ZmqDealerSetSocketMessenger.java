@@ -80,7 +80,8 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 		ZMQIdentity identity = new ZMQIdentity(outgoingBuffer.getBuffer(), identityOffset, identityLength);
 		
 		if (header.isMessagingEvent(outgoingBuffer)) {
-			int eventOffset = header.getSegmentMetaData(outgoingBuffer, 1);
+			int eventSegmentMetaData = header.getSegmentMetaData(outgoingBuffer, 1);
+			int eventOffset = EventHeader.getSegmentOffset(eventSegmentMetaData);
 			_recvConnectEvent.attachToBuffer(outgoingBuffer, eventOffset);
 			if (_recvConnectEvent.isConnect()) {
 				return newConnection(identity.copyWithNewArray(), _recvConnectEvent);				
@@ -115,12 +116,12 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 			}
 			
 			if (startSegmentIndex == 1) {
-				if (!sendHeader(socket, bufferContentSize - header.getEventOffset(), outgoingBuffer, header, isBlocking))
+				if (!sendHeader(socket, bufferContentSize - header.getEventOffset(), outgoingBuffer, header, false))
 					return false;
 			}
 			
 			int lastSegmentIndex = segmentCount - 1;
-			int currentSegmentIndex = ZmqSocketOperations.sendSegments(socket, outgoingBuffer, header, startSegmentIndex, lastSegmentIndex, isBlocking);
+			int currentSegmentIndex = ZmqSocketOperations.sendSegments(socket, outgoingBuffer, header, startSegmentIndex, lastSegmentIndex, false);
 			if (currentSegmentIndex != lastSegmentIndex) {
 				header.setSentTime(outgoingBuffer, -1);
 				header.setNextSegmentToSend(outgoingBuffer, currentSegmentIndex);
@@ -153,6 +154,7 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 			// pair the other party with this one
 			ArrayBackedResizingBuffer tmpBuffer = new ArrayBackedResizingBuffer(128);
 			_sendConnectEvent.attachToBuffer(tmpBuffer, 0);
+			_sendConnectEvent.writeTypeId();
 			_sendConnectEvent.setIsConnect(true);
 			_sendConnectEvent.setAddress(_recvRouterAddress);
 			_sendConnectEvent.releaseBuffer();

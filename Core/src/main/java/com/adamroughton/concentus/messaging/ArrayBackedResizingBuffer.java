@@ -270,11 +270,11 @@ public final class ArrayBackedResizingBuffer implements ResizingBuffer {
 	}
 	
 	public int writeByteSegment(long offset, byte[] src, int srcOffset, int srcLength) {
-		return MessageBytesUtil.writeBytes(ensureSize(offset, srcLength), offset, src, srcOffset, srcLength);
+		return MessageBytesUtil.writeBytes(ensureSize(offset, srcLength + 4), offset, src, srcOffset, srcLength);
 	}
 	
 	public int writeByteSegment(long offset, byte[] src) {
-		return MessageBytesUtil.writeBytes(ensureSize(offset, src.length), offset, src, 0, src.length);
+		return MessageBytesUtil.writeBytes(ensureSize(offset, src.length + 4), offset, src, 0, src.length);
 	}
 	
 	public String read8BitCharString(long offset) {
@@ -299,7 +299,7 @@ public final class ArrayBackedResizingBuffer implements ResizingBuffer {
 	
 	public int writeString(long offset, String value, Charset charset) {
 		byte[] stringBytes = value.getBytes(charset);
-		return MessageBytesUtil.writeBytes(ensureSize(offset, stringBytes.length), offset, stringBytes);
+		return MessageBytesUtil.writeBytes(ensureSize(offset, stringBytes.length + 4), offset, stringBytes);
 	}
 	
 	public UUID readUUID(long offset) {

@@ -24,8 +24,9 @@ import com.adamroughton.concentus.messaging.events.ClientConnectEvent;
 import com.adamroughton.concentus.messaging.events.ClientInputEvent;
 import com.adamroughton.concentus.messaging.events.ClientUpdateEvent;
 import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
-import com.adamroughton.concentus.messaging.patterns.EventPattern;
+//import com.adamroughton.concentus.messaging.patterns.EventPattern;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
+import com.adamroughton.concentus.messaging.patterns.RouterPattern;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.StatsMetric;
@@ -58,7 +59,8 @@ public final class Client {
 	//private long _lastClientUpdateId = -1;
 	
 	private long _clientId = -1;
-	private int _handlerId = -1;
+	private byte[] _handlerId = new byte[0];
+	//private int _handlerId = -1;
 	
 	private boolean _isActive = false;
 	private boolean _isConnecting = false;
@@ -76,11 +78,19 @@ public final class Client {
 		_isActive = isActive;
 	}
 	
-	public int getHandlerId() {
+//	public int getHandlerId() {
+//		return _handlerId;
+//	}
+//	
+//	public void setHandlerId(int handlerId) {
+//		_handlerId = handlerId;
+//	}
+	
+	public byte[] getHandlerId() {
 		return _handlerId;
 	}
 	
-	public void setHandlerId(int handlerId) {
+	public void setHandlerId(byte[] handlerId) {
 		_handlerId = handlerId;
 	}
 	
@@ -115,11 +125,11 @@ public final class Client {
 	
 	private <TBuffer extends ResizingBuffer> void sendInputAction(SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue, 
 			CountMetric sentActionThroughputMetric, CountMetric droppedActionThroughputMetric) {		
-		if (!clientSendQueue.trySend(EventPattern.asTask(_inputEvent, new EventWriter<OutgoingEventHeader, ClientInputEvent>() {
+		if (!clientSendQueue.trySend(RouterPattern.asTask(_handlerId, false, _inputEvent, new EventWriter<OutgoingEventHeader, ClientInputEvent>() {
 
 			@Override
 			public void write(OutgoingEventHeader header, ClientInputEvent event) throws Exception {
-				header.setTargetSocketId(event.getBuffer(), _handlerId);
+				//header.setTargetSocketId(event.getBuffer(), _handlerId);
 				long sendTime = _clock.currentMillis();
 				long actionId = _inputIdToSentTimeLookup.add(sendTime);
 				event.setClientId(_clientId);
@@ -133,11 +143,11 @@ public final class Client {
 	}
 	
 	private <TBuffer extends ResizingBuffer> void connect(SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue) {
-		clientSendQueue.send(EventPattern.asTask(_connectEvent, new EventWriter<OutgoingEventHeader, ClientConnectEvent>() {
+		clientSendQueue.send(RouterPattern.asTask(_handlerId, false, _connectEvent, new EventWriter<OutgoingEventHeader, ClientConnectEvent>() {
 
 			@Override
 			public void write(OutgoingEventHeader header, ClientConnectEvent event) throws Exception {
-				header.setTargetSocketId(event.getBuffer(), _handlerId);
+				//header.setTargetSocketId(event.getBuffer(), _handlerId);
 				event.setCallbackBits(_index);
 			}
 			

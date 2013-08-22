@@ -150,9 +150,15 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 		if (!EventHeader.isValid(eventBuffer, 0)) {
 			return;
 		}		
+		
 		_incomingThroughputMetric.push(1);
 		
 		if (_routerRecvHeader.hasMyHeader(eventBuffer) && _routerRecvHeader.getSocketId(eventBuffer) == _routerSocketId) {
+			if (_routerRecvHeader.isMessagingEvent(eventBuffer)) {
+				_routerSendQueue.send(eventBuffer, _routerRecvHeader);
+				return;
+			}
+			
 			int eventTypeId = EventPattern.getEventType(eventBuffer, _routerRecvHeader);
 			final byte[] clientSocketId = RouterPattern.getSocketId(eventBuffer, _routerRecvHeader);
 			if (eventTypeId == CLIENT_CONNECT.getId()) {
