@@ -18,8 +18,8 @@ package com.adamroughton.concentus.messaging.zmq;
 import java.util.Arrays;
 import java.util.Objects;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
-import com.adamroughton.concentus.messaging.events.EventType;
+import com.adamroughton.concentus.data.BytesUtil;
+import com.adamroughton.concentus.data.DataType;
 import com.adamroughton.concentus.util.Util;
 
 public final class SocketSettings {
@@ -126,13 +126,13 @@ public final class SocketSettings {
 				true, _recvPairAddress, _reliableBufferLength, reliableTryAgainMillis);
 	}
 	
-	public SocketSettings subscribeTo(EventType eventType) {
+	public SocketSettings subscribeTo(DataType eventType) {
 		return subscribeTo(eventType.getId());
 	}
 	
 	public SocketSettings subscribeTo(int id) {
 		byte[] subId = new byte[4];
-		MessageBytesUtil.writeInt(subId, 0, id);
+		BytesUtil.writeInt(subId, 0, id);
 		return subscribeTo(subId);
 	}
 	

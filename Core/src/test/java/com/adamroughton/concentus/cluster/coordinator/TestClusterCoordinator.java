@@ -43,7 +43,7 @@ import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle;
 import com.adamroughton.concentus.cluster.coordinator.ParticipatingNodes;
 import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle.AssignmentRequest;
 import com.adamroughton.concentus.cluster.coordinator.ParticipatingNodes.ParticipatingNodesLatch;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.data.BytesUtil;
 import com.google.common.collect.Sets;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.CuratorFrameworkFactory;
@@ -130,7 +130,7 @@ public class TestClusterCoordinator extends TestClusterBase {
 		CuratorFramework testClient = getTestClient();
 		
 		byte[] reqData = new byte[4];
-		MessageBytesUtil.writeInt(reqData, 0, index * 31);
+		BytesUtil.writeInt(reqData, 0, index * 31);
 		
 		UUID serviceId = new UUID(23 * index, 79 * index);
 		
@@ -298,7 +298,7 @@ public class TestClusterCoordinator extends TestClusterBase {
 	
 	private ServicePacket createFakeRes(String serviceType, int index, UUID id) {
 		byte[] resData = new byte[4];
-		MessageBytesUtil.writeInt(resData, 0, 33 * index);
+		BytesUtil.writeInt(resData, 0, 33 * index);
 		return new ServicePacket(serviceType, resData, id);
 	}
 	

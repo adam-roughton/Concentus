@@ -12,7 +12,7 @@ import org.junit.Test;
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.DrivableClock;
 import com.adamroughton.concentus.FatalExceptionCallback;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.data.BytesUtil;
 import com.adamroughton.concentus.metric.NullMetricContext;
 import com.lmax.disruptor.BlockingWaitStrategy;
 import com.lmax.disruptor.EventFactory;
@@ -89,7 +89,7 @@ public class TestDeadlineBasedEventProcessor {
 		@Override
 		public void onEvent(byte[] event, long sequence, boolean isEndOfBatch)
 				throws Exception {
-			long eventContent = MessageBytesUtil.readLong(event, 0);
+			long eventContent = BytesUtil.readLong(event, 0);
 			_contentXor = xorRotate(_contentXor, eventContent);
 		}
 
@@ -137,7 +137,7 @@ public class TestDeadlineBasedEventProcessor {
 			long seq = _ringBuffer.next();
 			try {
 				buffer = _ringBuffer.get(val);
-				MessageBytesUtil.writeLong(buffer, 0, val);
+				BytesUtil.writeLong(buffer, 0, val);
 			} finally {
 				_ringBuffer.publish(seq);
 			}
@@ -175,7 +175,7 @@ public class TestDeadlineBasedEventProcessor {
 			long seq = _ringBuffer.next();
 			try {
 				buffer = _ringBuffer.get(val);
-				MessageBytesUtil.writeLong(buffer, 0, val);
+				BytesUtil.writeLong(buffer, 0, val);
 			} finally {
 				_ringBuffer.publish(seq);
 			}
@@ -210,7 +210,7 @@ public class TestDeadlineBasedEventProcessor {
 			long seq = _ringBuffer.next();
 			try {
 				buffer = _ringBuffer.get(val);
-				MessageBytesUtil.writeLong(buffer, 0, val);
+				BytesUtil.writeLong(buffer, 0, val);
 			} finally {
 				_ringBuffer.publish(seq);
 			}

@@ -17,7 +17,7 @@ package com.adamroughton.concentus.messaging.zmq;
 
 import org.zeromq.ZMQ;
 
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.Messenger;
 
 public interface ZmqSocketMessenger extends Messenger<ArrayBackedResizingBuffer> {

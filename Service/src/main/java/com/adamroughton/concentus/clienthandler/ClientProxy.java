@@ -15,27 +15,59 @@
  */
 package com.adamroughton.concentus.clienthandler;
 
-import com.adamroughton.concentus.util.SlidingWindowLongMap;
+import uk.co.real_logic.intrinsics.ComponentFactory;
 
-public class ClientProxy {
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ChunkWriter;
+import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.events.bufferbacked.ActionReceiptEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
+import com.adamroughton.concentus.data.model.bufferbacked.ActionReceipt;
+import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
+import com.adamroughton.concentus.messaging.SocketIdentity;
+import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
+import com.adamroughton.concentus.InitialiseDelegate;
+import com.esotericsoftware.minlog.Log;
+
+public final class ClientProxy {
 
 	private final long _clientId;
-	private byte[] _clientSocketId;
+	private SocketIdentity _clientRef;
+	private SocketIdentity _actionCollectorRef;
 	private long _lastMsgTime;
-	private long _lastUpdateId;
+	private long _lastCanonicalStateUpdateId;
 	
-	private boolean _isActive;
+	private boolean _isActive = false;
+	private boolean _shouldDropFlag = false;
 	
-	/**
-	 * Store the last 128 input actions -> client action ID mappings for this client
-	 */
-	private final SlidingWindowLongMap _actionIdMap = new SlidingWindowLongMap(128);
+	private final StructuredSlidingWindowMap<ResizingBuffer> _reliableDataMap = 
+			new StructuredSlidingWindowMap<ResizingBuffer>(
+					128, 
+					ResizingBuffer.class, 
+					new ComponentFactory<ResizingBuffer>() {
+
+						@Override
+						public ResizingBuffer newInstance(Object[] initArgs) {
+							return new ArrayBackedResizingBuffer(128);
+						}
+					}, 
+					new InitialiseDelegate<ResizingBuffer>() {
+						
+						@Override
+						public void initialise(ResizingBuffer content) {
+							content.reset();
+						}
+					});
+	
+	private final ActionReceipt _actionReceiptData = new ActionReceipt();
 	
 	public ClientProxy(final long clientId) {
 		_clientId = clientId;
 		_lastMsgTime = 0;
-		_clientSocketId = new byte[0];
-		_lastUpdateId = -1;
+		_clientRef = new SocketIdentity(new byte[0]);
+		_actionCollectorRef = new SocketIdentity(new byte[0]);
+		_lastCanonicalStateUpdateId = -1;
 		_isActive = false;
 	}
 	
@@ -47,29 +79,37 @@ public class ClientProxy {
 		_isActive = isActive;
 	}
 	
+	public boolean shouldDrop() {
+		return _shouldDropFlag;
+	}
+	
+	public void clear() {
+		_reliableDataMap.clear();
+		_clientRef = new SocketIdentity(new byte[0]);
+		_actionCollectorRef = new SocketIdentity(new byte[0]);
+		_clientRef = new SocketIdentity(new byte[0]);
+		_isActive = false;
+		_shouldDropFlag = false;
+	}
+	
 	public long getClientId() {
 		return _clientId;
 	}
 	
-	public void setSocketId(byte[] socketIdBytes) {
-		setSocketId(socketIdBytes, 0, socketIdBytes.length);
+	public void setClientRef(SocketIdentity clientRef) {
+		_clientRef = clientRef;
 	}
 	
-	public void setSocketId(byte[] socketIdBytes, int offset, int length) {
-		if (_clientSocketId.length < length) {
-			_clientSocketId = new byte[length];
-		}
-		System.arraycopy(socketIdBytes, offset, _clientSocketId, 0, length);
+	public SocketIdentity getClientSocketId() {
+		return _clientRef;
 	}
 	
-	public void writeSocketId(byte[] buffer, int offset) {
-		System.arraycopy(_clientSocketId, 0, buffer, offset, _clientSocketId.length);
+	public void setActionCollectorRef(SocketIdentity actionCollectorRef) {
+		_actionCollectorRef = actionCollectorRef;
 	}
 	
-	public byte[] getSocketId() {
-		byte[] clientSocketId = new byte[_clientSocketId.length];
-		System.arraycopy(_clientSocketId, 0, clientSocketId, 0, _clientSocketId.length);
-		return clientSocketId;
+	public SocketIdentity getActionCollectorRef() {
+		return _actionCollectorRef;
 	}
 	
 	public long getLastMsgTime() {
@@ -80,58 +120,78 @@ public class ClientProxy {
 		_lastMsgTime = msgTime;
 	}
 	
-	public long getLastUpdateId() {
-		return _lastUpdateId;
+	public long getLastCanonicalStateUpdateId() {
+		return _lastCanonicalStateUpdateId;
 	}
 	
-	public void setLastUpdateId(final long updateId) {
-		_lastUpdateId = updateId;
+	public void setLastCanonicalStateUpdateId(final long canonicalStateUpdateId) {
+		_lastCanonicalStateUpdateId = canonicalStateUpdateId;
 	}
 	
-	/**
-	 * Searches for the highest client action ID that the given
-	 * {@code clientHandlerInputId} is associated with. When client input
-	 * events are forwarded onto the canonical state processor, a
-	 * link is created that matches the emitted <i>client handler input
-	 * ID</i> and the originating <i>client input ID</i>. This allows the
-	 * client handler to get the highest client input action that has been
-	 * processed as part of the update.
-	 * @param clientHandlerInputId the ID of the client handler action
-	 * @return the highest associated client input action, or {@code -1} if
-	 * no actions have been generated by the client
-	 */
-	public long lookupActionId(long clientHandlerInputId) {
-		long headActionId = _actionIdMap.getHeadIndex();
-		if (headActionId >= 0) {
-			long tailActionId = headActionId - _actionIdMap.getLength() + 1;
-			tailActionId = (tailActionId < 0)? 0: tailActionId;	
-			return binarySearchHighestActionId(_actionIdMap, clientHandlerInputId, tailActionId, headActionId);
+	public void generateUpdate(ClientInputEvent inputEvent,
+			CanonicalStateUpdate latestCanonicalState,
+			ClientUpdateEvent updateEvent) { 
+		long ackSeq = inputEvent.getReliableSeqAck();
+		
+		long headSeq = _reliableDataMap.getHeadIndex();
+		long tailSeq = headSeq - _reliableDataMap.getLength() + 1;
+		if (ackSeq + 1 < tailSeq) {
+			// signal that the client has been disconnected
+			Log.warn(String.format("Disconnecting client %d: requested %d, but %d was the lowest seq available", _clientId, ackSeq + 1, tailSeq));
+			_shouldDropFlag = true;
+			return;
 		}
-		return -1;
+
+		ChunkWriter updateChunkWriter = updateEvent.newChunkedContentWriter();
+		ResizingBuffer chunkBuffer = updateChunkWriter.getChunkBuffer();
+		
+		// write canonical state update if there is a newer copy
+		long latestCanonicalStateId = latestCanonicalState.getUpdateId();
+		if (latestCanonicalStateId > _lastCanonicalStateUpdateId) {
+			ResizingBuffer latestCanonicalStateBuffer = latestCanonicalState.getBuffer();
+			int canonicalStateSize = latestCanonicalStateBuffer.getContentSize();
+			
+			// signal unreliable chunk
+			chunkBuffer.writeLong(0, -1);
+			
+			// copy update data
+			latestCanonicalStateBuffer.copyTo(chunkBuffer, ResizingBuffer.LONG_SIZE, canonicalStateSize);
+			updateChunkWriter.commitChunk();
+			_lastCanonicalStateUpdateId = latestCanonicalStateId;
+		}
+		
+		// write reliable chunks
+		for (long seq = ackSeq + 1; seq <= headSeq; seq++) {
+			chunkBuffer.writeLong(0, seq);
+			ResizingBuffer reliableChunk = _reliableDataMap.get(seq);
+			int chunkLength = reliableChunk.getContentSize();
+			reliableChunk.copyTo(chunkBuffer, ResizingBuffer.LONG_SIZE, chunkLength);
+			updateChunkWriter.commitChunk();
+		}
+		
+		updateChunkWriter.finish();	
+		
+		Log.warn("Update event " + updateEvent.getBuffer().toString());
 	}
 	
-	private static long binarySearchHighestActionId(SlidingWindowLongMap window, long clientHandlerId, long startId, long endId) {
-		if (startId > endId) {
-			return -1;
-		} 
-		long midId = startId + (endId - startId) / 2;
-		long midClientHandlerId = window.getDirect(midId);
-		if (midClientHandlerId == clientHandlerId) {
-			return midId;
-		} else if (midClientHandlerId < clientHandlerId) {
-			long nextHighestActionId = binarySearchHighestActionId(window, clientHandlerId, midId + 1, endId);
-			if (nextHighestActionId == -1) {
-				return midId;
-			} else {
-				return nextHighestActionId;
-			}
-		} else {
-			return binarySearchHighestActionId(window, clientHandlerId, startId, midId - 1);
+	public void processActionReceipt(ActionReceiptEvent actionReceiptEvent) {
+		// create actionReceipt
+		long seq = _reliableDataMap.advance();
+		_actionReceiptData.attachToBuffer(_reliableDataMap.get(seq));
+		try {
+			_actionReceiptData.writeTypeId();
+			_actionReceiptData.setActionId(actionReceiptEvent.getActionId());
+			_actionReceiptData.setStartTime(actionReceiptEvent.getStartTime());
+		} finally {
+			_actionReceiptData.releaseBuffer();
+		}
+		
+		// create effects
+		for (byte[] effect : actionReceiptEvent.getEffects()) {
+			seq = _reliableDataMap.advance();
+			_reliableDataMap.get(seq).writeBytes(0, effect);
 		}
 	}
 	
-	public void storeAssociation(long actionId, long clientHandlerInputId) {
-		_actionIdMap.put(actionId, clientHandlerInputId);
-	}
 	
 }

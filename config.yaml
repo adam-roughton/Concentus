@@ -6,6 +6,13 @@ zooKeeper:
   appRoot: /consentus
     
 services:
+  ActionCollector:
+    ports:
+      input: -1
+    messageBufferSizes:
+      recv: 1048576
+      send: 1048576
+
   CanonicalState:
     ports:
       pub: 9000

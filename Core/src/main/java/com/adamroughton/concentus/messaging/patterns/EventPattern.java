@@ -15,11 +15,11 @@
  */
 package com.adamroughton.concentus.messaging.patterns;
 
+import com.adamroughton.concentus.data.BufferBackedObject;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
-import com.adamroughton.concentus.messaging.events.BufferBackedObject;
 
 public class EventPattern {
 

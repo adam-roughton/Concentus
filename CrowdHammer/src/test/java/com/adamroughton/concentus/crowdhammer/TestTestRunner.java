@@ -10,7 +10,7 @@ import org.junit.Test;
 
 import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle.AssignmentRequest;
 import com.adamroughton.concentus.crowdhammer.TestRunner.WorkerAllocation;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.data.BytesUtil;
 
 import static org.junit.Assert.*;
 

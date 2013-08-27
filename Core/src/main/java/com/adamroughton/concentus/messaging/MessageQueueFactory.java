@@ -2,6 +2,8 @@ package com.adamroughton.concentus.messaging;
 
 import java.util.Objects;
 
+import com.adamroughton.concentus.data.BufferFactory;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.CollocatedBufferEventFactory;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;

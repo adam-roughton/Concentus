@@ -20,8 +20,8 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.esotericsoftware.minlog.Log;
 

@@ -17,7 +17,7 @@ package com.adamroughton.concentus.cluster;
 
 import java.util.Objects;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.data.BytesUtil;
 
 public class ClusterState {
 
@@ -43,15 +43,15 @@ public class ClusterState {
 			throw new IllegalArgumentException(
 					String.format("The byte array is too small to store a cluster state (%d < 8).", 
 							stateBytes.length));
-		int stateDomain = MessageBytesUtil.readInt(stateBytes, 0);
-		int stateCode = MessageBytesUtil.readInt(stateBytes, 4);
+		int stateDomain = BytesUtil.readInt(stateBytes, 0);
+		int stateCode = BytesUtil.readInt(stateBytes, 4);
 		return new ClusterState(stateDomain, stateCode);
 	}
 	
 	public static byte[] toBytes(ClusterState state) {
 		byte[] stateBytes = new byte[8];
-		MessageBytesUtil.writeInt(stateBytes, 0, state.getStateDomain());
-		MessageBytesUtil.writeInt(stateBytes, 4, state.getStateCode());
+		BytesUtil.writeInt(stateBytes, 0, state.getStateDomain());
+		BytesUtil.writeInt(stateBytes, 4, state.getStateCode());
 		return stateBytes;
 	}
 

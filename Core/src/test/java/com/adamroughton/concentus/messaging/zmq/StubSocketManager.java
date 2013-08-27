@@ -23,15 +23,18 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
+import com.adamroughton.concentus.data.BufferFactory;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
-import com.adamroughton.concentus.messaging.BufferFactory;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.MessengerMutex;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.messaging.SocketIdentity;
 import com.adamroughton.concentus.messaging.StubMessenger;
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerFactory;
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerMutex;
@@ -202,6 +205,19 @@ public class StubSocketManager<TBuffer extends ResizingBuffer> implements Socket
 	@Override
 	public void close() throws IOException {
 		destroyAllSockets();
+	}
+
+	@Override
+	public SocketIdentity resolveIdentity(int socketId,
+			String connectionString, long timeout, TimeUnit timeUnit)
+			throws InterruptedException, TimeoutException,
+			UnsupportedOperationException {
+		throw new UnsupportedOperationException();
+	}
+
+	@Override
+	public int[] getBoundPorts(int socketId) {
+		return new int[0];
 	}
 
 }

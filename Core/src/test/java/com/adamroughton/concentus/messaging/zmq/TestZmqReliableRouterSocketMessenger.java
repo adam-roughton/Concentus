@@ -47,13 +47,13 @@ import org.zeromq.ZMQ;
 import org.zeromq.ZMQException;
 
 import com.adamroughton.concentus.DrivableClock;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.BytesUtil;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.messaging.ByteArrayCaptor;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
 
 @RunWith(MockitoJUnitRunner.class)
 public class TestZmqReliableRouterSocketMessenger {
@@ -85,7 +85,7 @@ public class TestZmqReliableRouterSocketMessenger {
 		byte[] expectedIdBytes = genIdBytes(UUID.fromString("abababab-abab-abab-abab-abababababab"));
 		byte[] headerFrame = makeMsgHeader(-1, content);
 		
-		MessageBytesUtil.writeLong(_headerFrame, 0, -1);
+		BytesUtil.writeLong(_headerFrame, 0, -1);
 		
 		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.then(fakeRecv(expectedIdBytes))
@@ -345,7 +345,7 @@ public class TestZmqReliableRouterSocketMessenger {
 		
 		// recv a NACK
 		byte[] headerFrame = makeMsgHeader(nackSeq, 32);
-		MessageBytesUtil.writeLong(_headerFrame, 0, nackSeq);
+		BytesUtil.writeLong(_headerFrame, 0, nackSeq);
 		IncomingEventHeader recvHeader = new IncomingEventHeader(0, 2);
 		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
 			.then(fakeRecv(idBytes))

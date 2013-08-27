@@ -18,6 +18,8 @@ package com.adamroughton.concentus.messaging;
 import static org.junit.Assert.*;
 
 import org.junit.Test;
+
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.util.Util;
 

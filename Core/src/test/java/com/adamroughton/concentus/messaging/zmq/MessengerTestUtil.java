@@ -6,12 +6,12 @@ import static org.junit.Assert.fail;
 import java.util.Objects;
 import java.util.UUID;
 
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.BytesUtil;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
 
 public final class MessengerTestUtil {
 
@@ -22,14 +22,14 @@ public final class MessengerTestUtil {
 	public static byte[] genContent(int length, int seed) {
 		byte[] content = new byte[length];
 		for (int i = 0; i < length; i += 4) {
-			MessageBytesUtil.writeInt(content, i, i / 4 + seed);
+			BytesUtil.writeInt(content, i, i / 4 + seed);
 		}
 		return content;
 	}
 	
 	public static byte[] genIdBytes(UUID id) {
 		byte[] idBytes = new byte[16];
-		MessageBytesUtil.writeUUID(idBytes, 0, id);
+		BytesUtil.writeUUID(idBytes, 0, id);
 		return idBytes;
 	}
 	
@@ -55,7 +55,7 @@ public final class MessengerTestUtil {
 	
 	public static byte[] makeMsgHeader(int msgLength) {
 		byte[] header = new byte[ResizingBuffer.INT_SIZE];
-		MessageBytesUtil.writeInt(header, 0, msgLength);
+		BytesUtil.writeInt(header, 0, msgLength);
 		return header;
 	}
 	
@@ -73,8 +73,8 @@ public final class MessengerTestUtil {
 	
 	public static byte[] makeMsgHeader(long seq, int msgLength) {
 		byte[] header = new byte[ResizingBuffer.LONG_SIZE + ResizingBuffer.INT_SIZE];
-		MessageBytesUtil.writeLong(header, 0, seq);
-		MessageBytesUtil.writeInt(header, ResizingBuffer.LONG_SIZE, msgLength);
+		BytesUtil.writeLong(header, 0, seq);
+		BytesUtil.writeInt(header, ResizingBuffer.LONG_SIZE, msgLength);
 		return header;
 	}
 	

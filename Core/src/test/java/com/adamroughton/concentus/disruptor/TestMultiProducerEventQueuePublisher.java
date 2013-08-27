@@ -19,7 +19,7 @@ import java.util.concurrent.CyclicBarrier;
 
 import org.junit.*;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.data.BytesUtil;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.RingBuffer;
 import com.lmax.disruptor.Sequence;
@@ -58,7 +58,7 @@ public class TestMultiProducerEventQueuePublisher {
 
 			@Override
 			public void clear(byte[] event) {
-				MessageBytesUtil.clear(event, 0, event.length);
+				BytesUtil.clear(event, 0, event.length);
 			}
 
 			@Override
@@ -76,7 +76,7 @@ public class TestMultiProducerEventQueuePublisher {
 
 			@Override
 			public void clear(byte[] event) {
-				MessageBytesUtil.clear(event, 0, event.length);
+				BytesUtil.clear(event, 0, event.length);
 			}
 
 			@Override
@@ -109,7 +109,7 @@ public class TestMultiProducerEventQueuePublisher {
 		
 		byte[] buffer = _nonBlockingPublisher.next();
 		assertNotNull(buffer);
-		MessageBytesUtil.writeInt(buffer, 0, 15);
+		BytesUtil.writeInt(buffer, 0, 15);
 		assertFalse(_nonBlockingPublisher.publish());
 		assertEquals(3, _ringBuffer.getCursor());
 		
@@ -117,14 +117,14 @@ public class TestMultiProducerEventQueuePublisher {
 		
 		buffer = _nonBlockingPublisher.next();
 		assertNotNull(buffer);
-		MessageBytesUtil.writeInt(buffer, 0, 24);
+		BytesUtil.writeInt(buffer, 0, 24);
 		_nonBlockingPublisher.publish();
 		
 		byte[] expected4th = new byte[512];
-		MessageBytesUtil.writeInt(expected4th, 0, 15);
+		BytesUtil.writeInt(expected4th, 0, 15);
 		
 		byte[] expected5th = new byte[512];
-		MessageBytesUtil.writeInt(expected5th, 0, 24);
+		BytesUtil.writeInt(expected5th, 0, 24);
 		
 		assertEquals(5, _ringBuffer.getCursor());
 		assertArrayEquals(expected4th, _ringBuffer.get(4));
@@ -137,7 +137,7 @@ public class TestMultiProducerEventQueuePublisher {
 		
 		byte[] buffer = _nonBlockingPublisher.next();
 		assertNotNull(buffer);
-		MessageBytesUtil.writeInt(buffer, 0, 15);
+		BytesUtil.writeInt(buffer, 0, 15);
 		assertFalse(_nonBlockingPublisher.publish());
 		assertEquals(3, _ringBuffer.getCursor());
 		
@@ -151,7 +151,7 @@ public class TestMultiProducerEventQueuePublisher {
 		
 		byte[] buffer = _nonBlockingPublisher.next();
 		assertNotNull(buffer);
-		MessageBytesUtil.writeInt(buffer, 0, 15);
+		BytesUtil.writeInt(buffer, 0, 15);
 		assertFalse(_nonBlockingPublisher.publish());
 		assertEquals(3, _ringBuffer.getCursor());
 		
@@ -168,7 +168,7 @@ public class TestMultiProducerEventQueuePublisher {
 		assertNotNull(_nonBlockingPublisher.next());
 		
 		byte[] expected = new byte[512];
-		MessageBytesUtil.writeInt(expected, 0, 15);
+		BytesUtil.writeInt(expected, 0, 15);
 		assertArrayEquals(expected, _ringBuffer.get(4));
 	}
 	
@@ -203,20 +203,20 @@ public class TestMultiProducerEventQueuePublisher {
 		
 		byte[] buffer = _blockingPublisher.next();
 		assertNotNull(buffer);
-		MessageBytesUtil.writeInt(buffer, 0, 15);
+		BytesUtil.writeInt(buffer, 0, 15);
 		barrier.await();
 		assertTrue(_blockingPublisher.publish());
 		
 		buffer = _blockingPublisher.next();
 		assertNotNull(buffer);
-		MessageBytesUtil.writeInt(buffer, 0, 24);
+		BytesUtil.writeInt(buffer, 0, 24);
 		_blockingPublisher.publish();
 		
 		byte[] expected4th = new byte[512];
-		MessageBytesUtil.writeInt(expected4th, 0, 15);
+		BytesUtil.writeInt(expected4th, 0, 15);
 		
 		byte[] expected5th = new byte[512];
-		MessageBytesUtil.writeInt(expected5th, 0, 24);
+		BytesUtil.writeInt(expected5th, 0, 24);
 		
 		assertEquals(5, _ringBuffer.getCursor());
 		assertArrayEquals(expected4th, _ringBuffer.get(4));

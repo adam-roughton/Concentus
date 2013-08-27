@@ -18,13 +18,15 @@ package com.adamroughton.concentus.messaging.zmq;
 import java.io.IOException;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.data.BufferFactory;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
-import com.adamroughton.concentus.messaging.BufferFactory;
 import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.messaging.SocketIdentity;
 import com.adamroughton.concentus.messaging.TrackingMessengerDecorator;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.util.Mutex;
@@ -140,6 +142,19 @@ public class TrackingSocketManagerDecorator<TBuffer extends ResizingBuffer> impl
 	@Override
 	public void destroyAllSockets() {
 		_decoratedManager.destroyAllSockets();
+	}
+
+	@Override
+	public SocketIdentity resolveIdentity(int socketId,
+			String connectionString, long timeout, TimeUnit timeUnit)
+			throws InterruptedException, TimeoutException,
+			UnsupportedOperationException {
+		return _decoratedManager.resolveIdentity(socketId, connectionString, timeout, timeUnit);
+	}
+
+	@Override
+	public int[] getBoundPorts(int socketId) {
+		return _decoratedManager.getBoundPorts(socketId);
 	}
 
 }

@@ -30,7 +30,7 @@ import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.util.Util;
 
@@ -70,34 +70,49 @@ public class CrowdHammerHostNode implements ConcentusWorkerNode<CrowdHammerConfi
 	
 	@SuppressWarnings("unchecked")
 	private static ConcentusWorkerNode<Configuration, ConcentusServiceState> getAdaptedNode(String concentusNodeClassName) {
-		try {
-			Class<?> concentusServiceFactoryClass = Class.forName(concentusNodeClassName);
-			Object object = concentusServiceFactoryClass.newInstance();
-			
-			if (!(object instanceof ConcentusWorkerNode<?, ?>)) {
-				throw new RuntimeException(String.format("The class %s is not of type %s", 
-						concentusNodeClassName,
-						ConcentusWorkerNode.class.getName()));
-			}
-			ConcentusWorkerNode<?,?> node = (ConcentusWorkerNode<?, ?>) object;
-			
-			if (!node.getConfigType().equals(Configuration.class)) {
-				throw new RuntimeException(String.format("This host node only wraps worker nodes that use a configuration of type %1$s. " +
-						"The given node class %2$s expected a %3$s typed configuration.", 
-						Configuration.class.getName(), node.getClass().getName(), node.getConfigType().getName()));
-			}
-			
-			if (!node.getClusterStateClass().equals(ConcentusServiceState.class)) {
-				throw new RuntimeException(String.format("This host node only wraps worker nodes using a service state type of %1$s. " +
-						"The given node class %2$s expected a %3$s service state.", 
-						Configuration.class.getName(), node.getClass().getName(), node.getClusterStateClass().getName()));
-			}
-			return (ConcentusWorkerNode<Configuration, ConcentusServiceState>) node;
-		} catch (ClassNotFoundException eNotFound){
-			throw new RuntimeException(String.format("Could not find the worker node class '%1$s'.", concentusNodeClassName), eNotFound);
-		} catch (InstantiationException | IllegalAccessException | SecurityException e) {
-			throw new RuntimeException(String.format("Could not instantiate the worker node class %1$s.", concentusNodeClassName), e);
+		ConcentusWorkerNode<?, ?> node = Util.newInstance(concentusNodeClassName, ConcentusWorkerNode.class);
+		
+		if (!node.getConfigType().equals(Configuration.class)) {
+			throw new RuntimeException(String.format("This host node only wraps worker nodes that use a configuration of type %1$s. " +
+					"The given node class %2$s expected a %3$s typed configuration.", 
+					Configuration.class.getName(), node.getClass().getName(), node.getConfigType().getName()));
 		}
+		
+		if (!node.getClusterStateClass().equals(ConcentusServiceState.class)) {
+			throw new RuntimeException(String.format("This host node only wraps worker nodes using a service state type of %1$s. " +
+					"The given node class %2$s expected a %3$s service state.", 
+					Configuration.class.getName(), node.getClass().getName(), node.getClusterStateClass().getName()));
+		}
+		return (ConcentusWorkerNode<Configuration, ConcentusServiceState>) node;
+		
+//		try {
+//			Class<?> concentusServiceFactoryClass = Class.forName(concentusNodeClassName);
+//			Object object = concentusServiceFactoryClass.newInstance();
+//			
+//			if (!(object instanceof ConcentusWorkerNode<?, ?>)) {
+//				throw new RuntimeException(String.format("The class %s is not of type %s", 
+//						concentusNodeClassName,
+//						ConcentusWorkerNode.class.getName()));
+//			}
+//			ConcentusWorkerNode<?,?> node = (ConcentusWorkerNode<?, ?>) object;
+//			
+//			if (!node.getConfigType().equals(Configuration.class)) {
+//				throw new RuntimeException(String.format("This host node only wraps worker nodes that use a configuration of type %1$s. " +
+//						"The given node class %2$s expected a %3$s typed configuration.", 
+//						Configuration.class.getName(), node.getClass().getName(), node.getConfigType().getName()));
+//			}
+//			
+//			if (!node.getClusterStateClass().equals(ConcentusServiceState.class)) {
+//				throw new RuntimeException(String.format("This host node only wraps worker nodes using a service state type of %1$s. " +
+//						"The given node class %2$s expected a %3$s service state.", 
+//						Configuration.class.getName(), node.getClass().getName(), node.getClusterStateClass().getName()));
+//			}
+//			return (ConcentusWorkerNode<Configuration, ConcentusServiceState>) node;
+//		} catch (ClassNotFoundException eNotFound){
+//			throw new RuntimeException(String.format("Could not find the worker node class '%1$s'.", concentusNodeClassName), eNotFound);
+//		} catch (InstantiationException | IllegalAccessException | SecurityException e) {
+//			throw new RuntimeException(String.format("Could not instantiate the worker node class %1$s.", concentusNodeClassName), e);
+//		}
 	}
 
 	@Override

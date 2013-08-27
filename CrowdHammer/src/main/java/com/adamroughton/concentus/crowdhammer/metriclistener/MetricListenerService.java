@@ -28,21 +28,21 @@ import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService;
-import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
+import com.adamroughton.concentus.cluster.worker.ClusterListenerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
+import com.adamroughton.concentus.data.DataType;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
-import com.adamroughton.concentus.messaging.events.EventType;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
@@ -77,12 +77,12 @@ public class MetricListenerService<TBuffer extends ResizingBuffer> implements Cr
 		_header = new IncomingEventHeader(0, 2);
 		
 		_subSocketSettings = SocketSettings.create()
-				.subscribeTo(EventType.METRIC);
+				.subscribeTo(DataType.METRIC_EVENT);
 	}
 
 	@Override
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
-			ClusterWorkerHandle cluster) throws Exception {
+			ClusterListenerHandle cluster) throws Exception {
 		LOG.info(String.format("Entering state %s", newClusterState.name()));
 		if (newClusterState == CrowdHammerServiceState.INIT) {
 			onInit(cluster);
@@ -106,16 +106,16 @@ public class MetricListenerService<TBuffer extends ResizingBuffer> implements Cr
 		return CrowdHammerServiceState.class;
 	}
 	
-	private void onInit(ClusterWorkerHandle cluster) {
+	private void onInit(ClusterListenerHandle cluster) {
 		_metricProcessor = new MetricTestRunProcessor<TBuffer>(_header);
 	}
 	
-	private void onInitTest(ClusterWorkerHandle cluster) {
+	private void onInitTest(ClusterListenerHandle cluster) {
 		_socketManager = _concentusHandle.newSocketManager();
 		_subSocketId = _socketManager.create(ZMQ.SUB, _subSocketSettings, "sub");
 	}
 	
-	private void onSetUpTest(ClusterWorkerHandle cluster) {		
+	private void onSetUpTest(ClusterListenerHandle cluster) {		
 		Configuration config = _concentusHandle.getConfig();
 		EventQueueFactory eventQueueFactory = _concentusHandle.getEventQueueFactory();
 		
@@ -134,7 +134,7 @@ public class MetricListenerService<TBuffer extends ResizingBuffer> implements Cr
 				.createPipeline(_executor);
 	}
 	
-	private void onConnectSUT(ClusterWorkerHandle cluster) {
+	private void onConnectSUT(ClusterListenerHandle cluster) {
 		CrowdHammerConfiguration config = _concentusHandle.getConfig();
 		
 		int canoncicalPubPort = ConfigurationUtil.getPort(config, CanonicalStateService.SERVICE_TYPE, "pub");
@@ -153,7 +153,7 @@ public class MetricListenerService<TBuffer extends ResizingBuffer> implements Cr
 		_pipeline.start();
 	}
 	
-	private void onTearDown(ClusterWorkerHandle cluster) throws Exception {
+	private void onTearDown(ClusterListenerHandle cluster) throws Exception {
 		_pipeline.halt(60, TimeUnit.SECONDS);
 				
 		// persist results to file
@@ -165,7 +165,7 @@ public class MetricListenerService<TBuffer extends ResizingBuffer> implements Cr
 	}
 	
 	
-	private void onShutdown(ClusterWorkerHandle cluster) throws Exception {
+	private void onShutdown(ClusterListenerHandle cluster) throws Exception {
 		_metricProcessor.closeOpenFiles();
 	}
 }

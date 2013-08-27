@@ -29,7 +29,7 @@ import com.adamroughton.concentus.ConcentusExecutableOperations;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.esotericsoftware.minlog.Log;
 
 import asg.cliche.Command;
@@ -58,20 +58,25 @@ public final class CrowdHammerCoordinatorNode implements ConcentusCoordinatorNod
 		
 		@Command(name="start")
 		public void startRun(int... simClientCounts) throws Exception {
-			_coordinator.ensureTestInfrastructureInitialised();
-			
-			System.out.print("Starting test run with client counts: [");
-			for (int i = 0; i < simClientCounts.length; i++) {
-				if (i > 0) System.out.print(", ");
-				System.out.print(simClientCounts[i]);
+			try {
+				_coordinator.ensureTestInfrastructureInitialised();
+				
+				System.out.print("Starting test run with client counts: [");
+				for (int i = 0; i < simClientCounts.length; i++) {
+					if (i > 0) System.out.print(", ");
+					System.out.print(simClientCounts[i]);
+				}
+				System.out.print("]\n");
+				
+				clearExisting();
+				int testExecDur = _concentusHandle.getConfig().getCrowdHammer().getTestRunDurationInSeconds();
+				
+				TestRunner runner = new TestRunner(_coordinator, testExecDur, simClientCounts);
+				_currentTask = _executor.submit(runner);
+			} catch (Exception e) {
+				e.printStackTrace();
+				throw e;
 			}
-			System.out.print("]\n");
-			
-			clearExisting();
-			int testExecDur = _concentusHandle.getConfig().getCrowdHammer().getTestRunDurationInSeconds();
-			
-			TestRunner runner = new TestRunner(_coordinator, testExecDur, simClientCounts);
-			_currentTask = _executor.submit(runner);
 		}
 		
 		@Command(name="stop")

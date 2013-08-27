@@ -36,9 +36,9 @@ import org.apache.commons.cli.ParseException;
 import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle;
 import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.cluster.worker.ClusterStateValue;
-import com.adamroughton.concentus.cluster.worker.ClusterWorkerContainer;
+import com.adamroughton.concentus.cluster.worker.ClusterListenerContainer;
 import com.adamroughton.concentus.config.Configuration;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.metric.LogMetricContext;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.NullMetricContext;
@@ -69,7 +69,7 @@ public class ConcentusExecutableOperations {
 		
 		ExecutorService executor = Executors.newCachedThreadPool();
 		
-		try (ClusterWorkerContainer cluster = new ClusterWorkerContainer(
+		try (ClusterListenerContainer cluster = new ClusterListenerContainer(
 				concentusHandle.getZooKeeperAddress(), 
 				concentusHandle.getConfig().getZooKeeper().getAppRoot(), 
 				concentusWorkerService, 

@@ -19,7 +19,7 @@ import java.util.Arrays;
 import java.util.Objects;
 import java.util.Set;
 
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;

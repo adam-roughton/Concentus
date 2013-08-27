@@ -19,6 +19,7 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventProcessor;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueuePublisher;

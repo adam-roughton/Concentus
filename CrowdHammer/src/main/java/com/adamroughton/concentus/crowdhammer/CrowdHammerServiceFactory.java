@@ -21,7 +21,7 @@ import org.apache.commons.cli.Option;
 
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.data.ResizingBuffer;
 
 public interface CrowdHammerServiceFactory {
 

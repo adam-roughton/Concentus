@@ -4,7 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.UUID;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.data.BytesUtil;
 
 public final class MetricPublisherInfo {
 
@@ -53,10 +53,10 @@ public final class MetricPublisherInfo {
 		
 		byte[] bytes = new byte[reqLength];
 		int offset = 0;
-		MessageBytesUtil.writeUUID(bytes, offset, pubInfo.getSourceId());
+		BytesUtil.writeUUID(bytes, offset, pubInfo.getSourceId());
 		offset += 16;
 		for (byte[] stringBytes : stringBytesArray) {
-			MessageBytesUtil.writeInt(bytes, 0, stringBytes.length);
+			BytesUtil.writeInt(bytes, 0, stringBytes.length);
 			offset += 4;
 			System.arraycopy(stringBytes, 0, bytes, offset, stringBytes.length);
 			offset += stringBytes.length;
@@ -68,7 +68,7 @@ public final class MetricPublisherInfo {
 	public static MetricPublisherInfo fromBytes(byte[] bytes) {
 		int offset = 0;
 		assertCanRead(bytes, offset, 16);
-		UUID sourceId = MessageBytesUtil.readUUID(bytes, offset);
+		UUID sourceId = BytesUtil.readUUID(bytes, offset);
 		offset += 16;
 		
 		StringRes res;
@@ -94,7 +94,7 @@ public final class MetricPublisherInfo {
 	
 	private static StringRes readString(int offset, byte[] bytes) {
 		assertCanRead(bytes, offset, 4);
-		int stringLength = MessageBytesUtil.readInt(bytes, offset);
+		int stringLength = BytesUtil.readInt(bytes, offset);
 		offset += 4;
 		assertCanRead(bytes, offset, stringLength);
 		String string = new String(bytes, offset, stringLength, StandardCharsets.UTF_8);

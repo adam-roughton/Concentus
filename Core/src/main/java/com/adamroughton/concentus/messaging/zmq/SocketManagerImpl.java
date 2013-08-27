@@ -26,20 +26,22 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.Constants;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBufferFactory;
+import com.adamroughton.concentus.data.BufferFactory;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBufferFactory;
-import com.adamroughton.concentus.messaging.BufferFactory;
 import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.MessengerMutex;
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerFactory;
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerMutex;
+import com.adamroughton.concentus.messaging.SocketIdentity;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 
@@ -54,6 +56,8 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 	private final Int2ObjectMap<MessengerMutex<ArrayBackedResizingBuffer, ZmqSocketMessenger>> _socketMutexLookup = new Int2ObjectArrayMap<>();
 	private final Int2ObjectMap<SocketSettings> _settingsLookup = new Int2ObjectArrayMap<>();
 	private final Int2ObjectMap<MessengerMutex<ArrayBackedResizingBuffer, ZmqDealerSetSocketMessenger>> _dealerSetMessengers = new Int2ObjectArrayMap<>();
+	private final Int2ObjectMap<IdentityLookup> _socketToIdentityLookup = new Int2ObjectArrayMap<>();
+	private final Int2ObjectMap<IntSet> _extPortLookup = new Int2ObjectArrayMap<>();
 	
 	private int _nextSocketId = 0;
 	private boolean _isActive = true;
@@ -106,6 +110,7 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 			ZmqDealerSetSocketMessenger dealerSetMessenger = 
 					new ZmqDealerSetSocketMessenger(recvPairAddress, _zmqContext, _clock, name);
 			_dealerSetMessengers.put(socketId, new MessengerMutex<>(dealerSetMessenger));
+			_socketToIdentityLookup.put(socketId, dealerSetMessenger.getIdentityLookup());
 		} else {
 			newSocket(socketId, name);
 		}
@@ -129,13 +134,13 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 			messenger = new ZmqStandardSocketMessenger(socketId, name, socket, _clock);
 		}
 		_socketMutexLookup.put(socketId, new MessengerMutex<>(messenger));
-		configureSocket(socket, socketSettings);
+		configureSocket(socketId, socket, socketSettings);
 		for (String connectionString : _socketConnLookup.get(socketId).getAllConnectionStrings()) {
 			socket.connect(connectionString);
 		}
 	}
 	
-	private void configureSocket(ZMQ.Socket socket, SocketSettings settings) {
+	private void configureSocket(int socketId, ZMQ.Socket socket, SocketSettings settings) {
 		long hwm = settings.getHWM();
 		if (hwm != -1) {
 			socket.setHWM(hwm);
@@ -147,7 +152,28 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 			socket.bind(SocketSettings.getInprocAddress(inprocName));
 		}
 		for (int port : settings.getPortsToBindTo()) {
-			socket.bind("tcp://*:" + port);
+			if (port == -1) {
+				port = socket.bindToRandomPort("tcp://*");
+			} else {
+				socket.bind("tcp://*:" + port);
+			}
+			IntSet portSet;
+			if (!_extPortLookup.containsKey(socketId)) {
+				portSet = new IntArraySet();
+				_extPortLookup.put(socketId, portSet);
+			} else {
+				portSet = _extPortLookup.get(socketId);
+			}
+			portSet.add(port);
+		}
+	}
+	
+	public synchronized int[] getBoundPorts(int socketId) {
+		assertManagerActive();
+		if (_extPortLookup.containsKey(socketId)) {
+			return _extPortLookup.get(socketId).toIntArray();
+		} else {
+			return new int[0];
 		}
 	}
 	
@@ -168,6 +194,7 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 			}
 		});
 		_settingsLookup.put(socketId, socketSettings);
+		_extPortLookup.remove(socketId);
 		newSocket(socketId, nameContainer[0]);
 	}
 	
@@ -309,6 +336,7 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 			} finally {
 				_socketMutexLookup.remove(socketId);
 				_socketTypeLookup.remove(socketId);
+				_extPortLookup.remove(socketId);
 			}
 		}
 	}
@@ -373,6 +401,19 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 		
 		public String removeConnString(int connId) {
 			return _connections.remove(connId);
+		}
+	}
+
+	@Override
+	public SocketIdentity resolveIdentity(int socketId,
+			String connectionString, long timeout, TimeUnit timeUnit)
+			throws InterruptedException, TimeoutException,
+			UnsupportedOperationException {
+		assertManagerActive();
+		if (_socketToIdentityLookup.containsKey(socketId)) {
+			return _socketToIdentityLookup.get(socketId).resolveIdentity(connectionString, timeout, timeUnit);
+		} else {
+			throw new UnsupportedOperationException("The socketID " + socketId + " does not support address resolution.");
 		}
 	}
 	

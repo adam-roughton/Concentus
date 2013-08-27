@@ -34,14 +34,15 @@ import org.yaml.snakeyaml.constructor.Constructor;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.config.Configuration;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
-import com.adamroughton.concentus.messaging.events.EventType;
+import com.adamroughton.concentus.data.BytesUtil;
+import com.adamroughton.concentus.data.DataType;
 import com.esotericsoftware.kryo.Kryo;
 import com.lmax.disruptor.EventFactory;
 
 public class Util {
 	
 	public static void assertPortValid(int port) {
+		if (port == -1) return; // we reserve -1 to signal random port
 		if (port < 1024 || port > 65535)
 			throw new RuntimeException(String.format("Bad port number: %d", port));
 	}
@@ -52,74 +53,74 @@ public class Util {
 		return port;
 	}
 	
-	public static void initialiseKryo(Kryo kryo) {
-		for (EventType eventType : EventType.values()) {
-			kryo.register(eventType.getEventClass(), eventType.getId());
-		}
-	}
-	
-	public static Kryo createKryoInstance() {
+	public static Kryo newKryoInstance() {
 		Kryo kryo = new Kryo();
 		initialiseKryo(kryo);
 		return kryo;
 	}
 	
-	public static byte[] getSubscriptionBytes(EventType eventType) {
+	public static void initialiseKryo(Kryo kryo) {
+		for (DataType dataType : DataType.values()) {
+			dataType.register(kryo);
+		}
+	}
+	
+	public static byte[] getSubscriptionBytes(DataType eventType) {
 		byte[] subId = new byte[4];
-		MessageBytesUtil.writeInt(subId, 0, eventType.getId());
+		BytesUtil.writeInt(subId, 0, eventType.getId());
 		return subId;
 	}
 	
 	public static byte[] intToBytes(int value) {
 		byte[] intBytes = new byte[4];
-		MessageBytesUtil.writeInt(intBytes, 0, value);
+		BytesUtil.writeInt(intBytes, 0, value);
 		return intBytes;
 	}
 	
 	public static byte[] longToBytes(long value) {
 		byte[] longBytes = new byte[8];
-		MessageBytesUtil.writeLong(longBytes, 0, value);
+		BytesUtil.writeLong(longBytes, 0, value);
 		return longBytes;
 	}
 	
 	public static byte[] floatToBytes(float value) {
 		byte[] floatBytes = new byte[4];
-		MessageBytesUtil.writeFloat(floatBytes, 0, value);
+		BytesUtil.writeFloat(floatBytes, 0, value);
 		return floatBytes;
 	}
 	
 	public static byte[] doubleToBytes(double value) {
 		byte[] doubleBytes = new byte[8];
-		MessageBytesUtil.writeDouble(doubleBytes, 0, value);
+		BytesUtil.writeDouble(doubleBytes, 0, value);
 		return doubleBytes;
 	}
 	
 	public static int bytesToInt(byte[] bytes) {
 		if (bytes.length != 4)
 			throw new IllegalArgumentException("Expected 4 bytes for int");
-		return MessageBytesUtil.readInt(bytes, 0);
+		return BytesUtil.readInt(bytes, 0);
 	}
 	
 	public static long bytesToLong(byte[] bytes) {
 		if (bytes.length != 8)
 			throw new IllegalArgumentException("Expected 8 bytes for long");
-		return MessageBytesUtil.readLong(bytes, 0);
+		return BytesUtil.readLong(bytes, 0);
 	}
 	
 	public static float bytesToFloat(byte[] bytes) {
 		if (bytes.length != 4)
 			throw new IllegalArgumentException("Expected 4 bytes for float");
-		return MessageBytesUtil.readFloat(bytes, 0);
+		return BytesUtil.readFloat(bytes, 0);
 	}
 	
 	public static double bytesToDouble(byte[] bytes) {
 		if (bytes.length != 8)
 			throw new IllegalArgumentException("Expected 8 bytes for double");
-		return MessageBytesUtil.readDouble(bytes, 0);
+		return BytesUtil.readDouble(bytes, 0);
 	}
 	
-	public static void writeSubscriptionBytes(EventType eventType, byte[] buffer, int offset) {
-		MessageBytesUtil.writeInt(buffer, offset, eventType.getId());
+	public static void writeSubscriptionBytes(DataType eventType, byte[] buffer, int offset) {
+		BytesUtil.writeInt(buffer, offset, eventType.getId());
 	}
 	
 	public static EventFactory<byte[]> byteArrayEventFactory(final int msgBufferSize) {
@@ -284,6 +285,25 @@ public class Util {
 	
 	public static double getPercentage(long numerator, long denominator) {
 		return ((double) numerator / (double) denominator) * 100;
+	}
+	
+	@SuppressWarnings("unchecked")
+	public static <TCast> TCast newInstance(String instanceClassName, Class<TCast> castType) {
+		try {
+			Class<?> instanceClass = Class.forName(instanceClassName);
+			Object object = instanceClass.newInstance();
+			
+			if (!castType.isAssignableFrom(instanceClass)) {
+				throw new RuntimeException(String.format("The class %s is not of type %s", 
+						instanceClassName,
+						castType.getName()));
+			}
+			return (TCast) object;
+		} catch (ClassNotFoundException eNotFound){
+			throw new RuntimeException(String.format("Could not find the instance class '%1$s'.", instanceClassName), eNotFound);
+		} catch (InstantiationException | IllegalAccessException | SecurityException e) {
+			throw new RuntimeException(String.format("Could not instantiate the instance class %1$s.", instanceClassName), e);
+		}
 	}
 	
 }

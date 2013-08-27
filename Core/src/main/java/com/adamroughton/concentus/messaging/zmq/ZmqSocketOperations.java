@@ -3,7 +3,7 @@ package com.adamroughton.concentus.messaging.zmq;
 import org.zeromq.ZMQ;
 import org.zeromq.ZMQException;
 
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.MessengerClosedException;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;

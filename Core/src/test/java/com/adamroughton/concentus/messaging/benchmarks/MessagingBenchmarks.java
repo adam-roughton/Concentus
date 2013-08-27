@@ -17,7 +17,7 @@ package com.adamroughton.concentus.messaging.benchmarks;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.DefaultClock;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.zmq.ZmqSocketMessenger;

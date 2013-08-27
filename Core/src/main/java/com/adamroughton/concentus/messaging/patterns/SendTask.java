@@ -15,8 +15,8 @@
  */
 package com.adamroughton.concentus.messaging.patterns;
 
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
 
 public interface SendTask<TSendHeader extends OutgoingEventHeader> {
 

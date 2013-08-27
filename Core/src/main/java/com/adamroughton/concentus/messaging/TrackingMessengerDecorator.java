@@ -18,6 +18,7 @@ package com.adamroughton.concentus.messaging;
 import java.util.Objects;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.MetricGroup;

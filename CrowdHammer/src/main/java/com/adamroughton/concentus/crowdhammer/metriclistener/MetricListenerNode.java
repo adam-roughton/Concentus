@@ -26,7 +26,7 @@ import com.adamroughton.concentus.ConcentusWorkerNode;
 import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.metric.MetricContext;
 
 public class MetricListenerNode implements ConcentusWorkerNode<CrowdHammerConfiguration, CrowdHammerServiceState> {

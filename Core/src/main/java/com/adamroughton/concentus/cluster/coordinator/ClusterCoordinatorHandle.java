@@ -58,6 +58,10 @@ public final class ClusterCoordinatorHandle extends ClusterParticipant implement
 		super(zooKeeperAddress, root, clusterId, exHandler);
 	}
 	
+	public void setApplicationClass(String applicationClassName) {
+		createOrSetEphemeral(getPath(APPLICATION), applicationClassName.getBytes());
+	}
+	
 	public void setRunInfo(TestRunInfo runInfo) {
 		createOrSetEphemeral(getPath(RUN_INFO), Util.intToBytes(runInfo.getRunId()));
 		createOrSetEphemeral(getPath(RUN_CLIENT_COUNT), Util.intToBytes(runInfo.getClientCount()));

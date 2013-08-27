@@ -16,13 +16,16 @@
 package com.adamroughton.concentus.messaging.zmq;
 
 import java.io.Closeable;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
+import com.adamroughton.concentus.data.BufferFactory;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
-import com.adamroughton.concentus.messaging.BufferFactory;
 import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.messaging.SocketIdentity;
 import com.adamroughton.concentus.util.Mutex;
 
 public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable {
@@ -76,6 +79,8 @@ public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable
 	 */
 	SocketSettings getSettings(final int socketId);
 	
+	int[] getBoundPorts(int socketId);
+	
 	/**
 	 * Updates the settings associated with the given socket. If the socket
 	 * is already open, the socket will first be closed. 
@@ -91,6 +96,9 @@ public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable
 	Mutex<Messenger<TBuffer>> getSocketMutex(int socketId);
 	
 	Mutex<Messenger<TBuffer>> createPollInSet(int... socketIds);
+	
+	SocketIdentity resolveIdentity(int socketId, String connectionString, long timeout, TimeUnit timeUnit) 
+			throws InterruptedException, TimeoutException, UnsupportedOperationException;
 	
 	int connectSocket(final int socketId, final String address);
 	

@@ -9,13 +9,14 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectRBTreeMap;
 
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.FatalExceptionCallback;
-import com.adamroughton.concentus.messaging.BufferFactory;
+import com.adamroughton.concentus.data.BufferFactory;
+import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.events.bufferbacked.MetricMetaDataEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.MetricMetaDataRequestEvent;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
-import com.adamroughton.concentus.messaging.events.MetricMetaDataEvent;
-import com.adamroughton.concentus.messaging.events.MetricMetaDataRequestEvent;
+import com.adamroughton.concentus.messaging.SocketIdentity;
 import com.adamroughton.concentus.messaging.patterns.EventPattern;
 import com.adamroughton.concentus.messaging.patterns.EventReader;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
@@ -81,7 +82,7 @@ class MetricMetaDataRequestListener<TBuffer extends ResizingBuffer> implements R
 		try {
 			while (_state.get() == State.RUNNING) {
 				if (messenger.recv(_recvBuffer, _incomingEventHeader, true)) {
-					final byte[] clientId = RouterPattern.getSocketId(_recvBuffer, _incomingEventHeader);
+					final SocketIdentity clientId = RouterPattern.getSocketId(_recvBuffer, _incomingEventHeader);
 					EventPattern.readContent(_recvBuffer, _incomingEventHeader, _metaDataReqEvent, 
 							new EventReader<IncomingEventHeader, MetricMetaDataRequestEvent>() {
 	
@@ -101,7 +102,7 @@ class MetricMetaDataRequestListener<TBuffer extends ResizingBuffer> implements R
 		_state.set(State.STOPPED);
 	}
 	
-	private void sendMetaData(byte[] destId, int metricId, Messenger<TBuffer> messenger) {
+	private void sendMetaData(SocketIdentity destId, int metricId, Messenger<TBuffer> messenger) {
 		final MetricMetaData requestedMetaData;
 		synchronized(_metaDataLookup) {
 			requestedMetaData = _metaDataLookup.get(metricId);

@@ -2,11 +2,11 @@ package com.adamroughton.concentus.metric.eventpublishing;
 
 import java.util.Objects;
 
+import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.events.bufferbacked.MetricEvent;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueuePublisher;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
-import com.adamroughton.concentus.messaging.events.MetricEvent;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.PubSubPattern;
 import com.adamroughton.concentus.metric.MetricMetaData;

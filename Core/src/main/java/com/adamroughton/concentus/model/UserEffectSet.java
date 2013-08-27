@@ -1,6 +1,8 @@
 package com.adamroughton.concentus.model;
 
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.model.ClientId;
+import com.adamroughton.concentus.data.model.Effect;
 
 public interface UserEffectSet {
 

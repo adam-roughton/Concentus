@@ -17,7 +17,7 @@ package com.adamroughton.concentus.cluster.data;
 
 import java.util.UUID;
 
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.data.BytesUtil;
 
 public class WorkerAllocationInfo {
 	
@@ -52,20 +52,20 @@ public class WorkerAllocationInfo {
 	public static byte[] toBytes(WorkerAllocationInfo allocationInfo) {
 		byte[] bytes = new byte[20];
 		int offset = 0;
-		MessageBytesUtil.writeUUID(bytes, offset, allocationInfo.getWorkerId());
+		BytesUtil.writeUUID(bytes, offset, allocationInfo.getWorkerId());
 		offset += 16;
-		MessageBytesUtil.writeInt(bytes, offset, allocationInfo.getClientAllocation());
+		BytesUtil.writeInt(bytes, offset, allocationInfo.getClientAllocation());
 		return bytes;
 	}
 	
 	public static WorkerAllocationInfo fromBytes(byte[] bytes) {
 		int offset = 0;
 		assertCanRead(bytes, offset, 16);
-		UUID workerId = MessageBytesUtil.readUUID(bytes, offset);
+		UUID workerId = BytesUtil.readUUID(bytes, offset);
 		offset += 16;
 		
 		assertCanRead(bytes, offset, 4);
-		int clientAllocation = MessageBytesUtil.readInt(bytes, offset);
+		int clientAllocation = BytesUtil.readInt(bytes, offset);
 		
 		return new WorkerAllocationInfo(workerId, clientAllocation);
 	}

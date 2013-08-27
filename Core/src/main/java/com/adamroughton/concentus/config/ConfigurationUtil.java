@@ -18,6 +18,7 @@ package com.adamroughton.concentus.config;
 import java.util.Map;
 
 import com.adamroughton.concentus.Constants;
+import com.esotericsoftware.minlog.Log;
 
 public class ConfigurationUtil {
 
@@ -36,7 +37,8 @@ public class ConfigurationUtil {
 		Service service = getService(config, serviceType, true);
 		Map<String, Integer> portAssignments = service.getPorts();
 		if (portAssignments == null || !portAssignments.containsKey(portName)) {
-			throw new RuntimeException(String.format("No such port '%s' for service '%s'.", portName, serviceType));
+			Log.info(String.format("Allowing any port for port ID '%s' of service '%s'.", portName, serviceType));
+			return -1;
 		}
 		return portAssignments.get(portName);
 	}

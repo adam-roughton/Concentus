@@ -15,6 +15,8 @@
  */
 package com.adamroughton.concentus.messaging;
 
+import com.adamroughton.concentus.data.ResizingBuffer;
+
 /**
  * A header storing outgoing event specific meta-data for processing.
  * 

@@ -17,6 +17,7 @@ package com.adamroughton.concentus.messaging;
 
 import java.util.Objects;
 
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.messaging.MessagingUtil.MessengerDependentEventHandler;
 
 public class Publisher<TBuffer extends ResizingBuffer> implements MessengerDependentEventHandler<TBuffer> {

@@ -22,51 +22,51 @@ import uk.co.real_logic.intrinsics.StructuredArray;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.Constants;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.events.bufferbacked.ActionEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ActionReceiptEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientConnectEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientDisconnectedEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ConnectResponseEvent;
+import com.adamroughton.concentus.data.model.ClientId;
+import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
-import com.adamroughton.concentus.messaging.events.ClientConnectEvent;
-import com.adamroughton.concentus.messaging.events.ClientInputEvent;
-import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
-import com.adamroughton.concentus.messaging.events.StateInputEvent;
-import com.adamroughton.concentus.messaging.events.StateUpdateEvent;
-import com.adamroughton.concentus.messaging.events.StateUpdateInfoEvent;
+import com.adamroughton.concentus.messaging.SocketIdentity;
 import com.adamroughton.concentus.messaging.patterns.EventPattern;
 import com.adamroughton.concentus.messaging.patterns.EventReader;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
-import com.adamroughton.concentus.messaging.patterns.PubSubPattern;
 import com.adamroughton.concentus.messaging.patterns.RouterPattern;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.MetricGroup;
-import com.adamroughton.concentus.model.ClientId;
 import com.esotericsoftware.minlog.Log;
 
-import static com.adamroughton.concentus.messaging.events.EventType.*;
+import static com.adamroughton.concentus.data.DataType.*;
 
 public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements DeadlineBasedEventHandler<TBuffer> {
 	
 	private final Clock _clock;
 	
+	private final ActionProcessorAllocationStrategy _actionProcessorAllocator;
 	private final int _clientHandlerId;
 	private final int _routerSocketId;
 	private final int _subSocketId;
 	
-	private final SendQueue<OutgoingEventHeader, TBuffer> _pubSendQueue;
 	private final SendQueue<OutgoingEventHeader, TBuffer> _routerSendQueue;
 	
-	private final UpdateHandler _updateHandler;
 	private final IncomingEventHeader _routerRecvHeader;
 	private final IncomingEventHeader _subRecvHeader;
 	
-	private long _inputId = 0;
 	private long _nextClientId = 0;
-	private long _nextHeartbeat = -1;
 	
-	private final StructuredArray<ClientProxy> _clientLookup = StructuredArray.newInstance(128 * 1024, ClientProxy.class, new ComponentFactory<ClientProxy>() {
+	private final StructuredArray<ClientProxy> _clientLookup = StructuredArray.newInstance(32 * 1024, ClientProxy.class, new ComponentFactory<ClientProxy>() {
 
 		private long nextClientId = 0;
 		
@@ -75,14 +75,18 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 			return new ClientProxy(nextClientId++);
 		}
 	});
-	//private final Long2ObjectMap<ClientProxy> _clientLookup = new Long2ObjectRBTreeMap<>();// new Long2ObjectArrayMap<>(10000);
 	
-	private final StateInputEvent _stateInputEvent = new StateInputEvent();
-	private final StateUpdateEvent _stateUpdateEvent = new StateUpdateEvent();
-	private final StateUpdateInfoEvent _updateInfoEvent = new StateUpdateInfoEvent();
+	private final ActionEvent _actionEvent = new ActionEvent();
+	private final ActionReceiptEvent _actionReceiptEvent = new ActionReceiptEvent();
 	private final ConnectResponseEvent _connectResEvent = new ConnectResponseEvent();
 	private final ClientConnectEvent _clientConnectEvent = new ClientConnectEvent();
 	private final ClientInputEvent _clientInputEvent = new ClientInputEvent();
+	private final CanonicalStateUpdate _canonicalStateUpdate = new CanonicalStateUpdate();
+	private final ClientUpdateEvent _clientUpdateEvent = new ClientUpdateEvent();
+	private final ClientDisconnectedEvent _clientDisconnectedEvent = new ClientDisconnectedEvent();
+	
+	private final CanonicalStateUpdate _latestCanonicalState = new CanonicalStateUpdate();
+	private final ArrayBackedResizingBuffer _latestCanonicalStateBuffer;
 	
 	private final MetricContext _metricContext;
 	private final MetricGroup _metrics;
@@ -90,30 +94,29 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	private final CountMetric _inputActionThroughputMetric;
 	private final CountMetric _connectionRequestThroughputMetric;
 	private final CountMetric _incomingUpdateThroughputMetric;
-	private final CountMetric _incomingUpdateInfoThroughputMetric;
 	private final CountMetric _updateSendThroughputMetric;
 	private final CountMetric _activeClientCountMetric;
+	private final CountMetric _droppedClientCountMetric;
 	
 	private long _nextDeadline = 0;
-	private boolean _sendHeartbeatFlag = false;
 
 	public ClientHandlerProcessor(
+			ActionProcessorAllocationStrategy actionProcessorAllocator,
 			Clock clock,
 			int clientHandlerId,
 			int routerSocketId,
 			int subSocketId,
 			SendQueue<OutgoingEventHeader, TBuffer> routerSendQueue,
-			SendQueue<OutgoingEventHeader, TBuffer> pubSendQueue,
 			IncomingEventHeader routerRecvHeader,
 			IncomingEventHeader subRecvHeader,
 			MetricContext metricContext) {
 		_clock = Objects.requireNonNull(clock);
+		_actionProcessorAllocator = Objects.requireNonNull(actionProcessorAllocator);
 		_clientHandlerId = clientHandlerId;
 		_routerSocketId = routerSocketId;
 		_subSocketId = subSocketId;
 		
 		_routerSendQueue = Objects.requireNonNull(routerSendQueue);
-		_pubSendQueue = Objects.requireNonNull(pubSendQueue);
 		
 		_routerRecvHeader = routerRecvHeader;
 		_subRecvHeader = subRecvHeader;
@@ -125,11 +128,19 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 		_inputActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "inputActionThroughput", false));
 		_connectionRequestThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "connectionRequestThroughput", false));
 		_incomingUpdateThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "incomingUpdateThroughput", false));
-		_incomingUpdateInfoThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "incomingUpdateInfoThroughput", false));
 		_updateSendThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "updateSendThroughput", false));
 		_activeClientCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "activeClientCount", true));
+		_droppedClientCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "droppedClientCount", true));
 		
-		_updateHandler = new UpdateHandler(32, reference, _metrics, _metricContext);
+		/*
+		 * Create canonical state buffer
+		 * Initialise with values signalling no update
+		 */
+		_latestCanonicalStateBuffer = 
+				new ArrayBackedResizingBuffer(Constants.DEFAULT_MSG_BUFFER_SIZE);
+		_latestCanonicalState.attachToBuffer(_latestCanonicalStateBuffer);
+		_latestCanonicalState.setUpdateId(-1);
+		_latestCanonicalState.setTime(-1);
 	}
 	
 	/**
@@ -160,22 +171,30 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 			}
 			
 			int eventTypeId = EventPattern.getEventType(eventBuffer, _routerRecvHeader);
-			final byte[] clientSocketId = RouterPattern.getSocketId(eventBuffer, _routerRecvHeader);
-			if (eventTypeId == CLIENT_CONNECT.getId()) {
+			final SocketIdentity senderRef = RouterPattern.getSocketId(eventBuffer, _routerRecvHeader);
+			if (eventTypeId == CLIENT_CONNECT_EVENT.getId()) {
 				EventPattern.readContent(eventBuffer, _routerRecvHeader, _clientConnectEvent, new EventReader<IncomingEventHeader, ClientConnectEvent>() {
 
 					@Override
 					public void read(IncomingEventHeader header, ClientConnectEvent event) {
-						onClientConnected(clientSocketId, event);
+						onClientConnected(senderRef, event);
 					}
 					
 				});				
-			} else if (eventTypeId == CLIENT_INPUT.getId()) {
+			} else if (eventTypeId == CLIENT_INPUT_EVENT.getId()) {
 				EventPattern.readContent(eventBuffer, _routerRecvHeader, _clientInputEvent, new EventReader<IncomingEventHeader, ClientInputEvent>() {
 
 					@Override
 					public void read(IncomingEventHeader header, ClientInputEvent event) {
-						onClientInput(clientSocketId, event);
+						onClientInput(senderRef, event);
+					}
+				});
+			} else if (eventTypeId == ACTION_RECEIPT_EVENT.getId()) {
+				EventPattern.readContent(eventBuffer, _routerRecvHeader, _actionReceiptEvent, new EventReader<IncomingEventHeader, ActionReceiptEvent>() {
+
+					@Override
+					public void read(IncomingEventHeader header, ActionReceiptEvent event) {
+						onActionReceipt(senderRef, event);
 					}
 				});
 			} else {
@@ -183,33 +202,15 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 			}
 		} else if (_subRecvHeader.hasMyHeader(eventBuffer) && _subRecvHeader.getSocketId(eventBuffer) == _subSocketId) {
 			int eventTypeId = EventPattern.getEventType(eventBuffer, _subRecvHeader);
-			if (eventTypeId == STATE_UPDATE.getId()) {
-				EventPattern.readContent(eventBuffer, _subRecvHeader, _stateUpdateEvent, new EventReader<IncomingEventHeader, StateUpdateEvent>() {
+			if (eventTypeId == CANONICAL_STATE_UPDATE.getId()) {
+				EventPattern.readContent(eventBuffer, _subRecvHeader, _canonicalStateUpdate, new EventReader<IncomingEventHeader, CanonicalStateUpdate>() {
 
 					@Override
-					public void read(IncomingEventHeader header, StateUpdateEvent event) {
-						long updateId = event.getUpdateId();
-						int contentIndex = _subRecvHeader.getSegmentCount() - 1;
-						int contentMetaData = _subRecvHeader.getSegmentMetaData(event.getBuffer(), contentIndex);
-						int contentOffset = EventHeader.getSegmentOffset(contentMetaData);
-						int contentLength = EventHeader.getSegmentLength(contentMetaData);
-						_updateHandler.addUpdate(updateId, event.getBuffer(), contentOffset, contentLength);
-						_incomingUpdateThroughputMetric.push(1);
-						if (_updateHandler.hasFullUpdateData(updateId)) {
-							_updateHandler.sendUpdates(updateId, _clientLookup, _routerSendQueue);
-						}
+					public void read(IncomingEventHeader header, CanonicalStateUpdate canonicalStateUpdate) {
+						onCanonicalStateUpdate(canonicalStateUpdate);
 					}
 					
 				});				
-			} else if (eventTypeId == STATE_INFO.getId()) {
-				EventPattern.readContent(eventBuffer, _subRecvHeader, _updateInfoEvent, new EventReader<IncomingEventHeader, StateUpdateInfoEvent>() {
-
-					@Override
-					public void read(IncomingEventHeader header, StateUpdateInfoEvent event) {
-						onUpdateInfoEvent(event);
-					}
-					
-				});	
 			} else {
 				Log.warn(String.format("Unknown event type %d received on the sub socket.", eventTypeId));
 			}
@@ -220,24 +221,12 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	
 	@Override
 	public void onDeadline() {
-		if (_sendHeartbeatFlag) {
-			sendHeartbeat();
-			_sendHeartbeatFlag = false;
-		} else {
-			_metrics.publishPending();
-		}
+		_metrics.publishPending();
 	}
 	
 	@Override
 	public long moveToNextDeadline(long pendingEventCount) {
-		long nextMetricDeadline = _metrics.nextBucketReadyTime();
-		if (_nextHeartbeat < nextMetricDeadline) {
-			_sendHeartbeatFlag = true;
-			_nextDeadline = _nextHeartbeat;
-		} else {
-			_sendHeartbeatFlag = false;
-			_nextDeadline = nextMetricDeadline;
-		}
+		_nextDeadline = _metrics.nextBucketReadyTime();
 		return _nextDeadline;
 	}
 	
@@ -246,7 +235,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 		return _nextDeadline;
 	}
 	
-	private void onClientConnected(final byte[] clientSocketId, final ClientConnectEvent connectEvent) {
+	private void onClientConnected(final SocketIdentity clientSocketId, final ClientConnectEvent connectEvent) {
 		if (_nextClientId >= _clientLookup.getLength()) {
 			// over-subscribed - turn away
 			_routerSendQueue.send(RouterPattern.asReliableTask(clientSocketId, _connectResEvent, new EventWriter<OutgoingEventHeader, ConnectResponseEvent>() {
@@ -263,11 +252,16 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 			ClientProxy newClient = _clientLookup.get(newClientId);
 			
 			newClient.setLastMsgTime(_clock.currentMillis());
-			newClient.setSocketId(clientSocketId);
+			newClient.setClientRef(clientSocketId);
+			
+			SocketIdentity actionProcessorRef = _actionProcessorAllocator.allocateClient(newClientId);
+			newClient.setActionCollectorRef(actionProcessorRef);
+			
 			newClient.setIsActive(true);
 			
 			// send a connect response
-			_routerSendQueue.send(RouterPattern.asReliableTask(newClient.getSocketId(), _connectResEvent, new EventWriter<OutgoingEventHeader, ConnectResponseEvent>() {
+			_routerSendQueue.send(RouterPattern.asReliableTask(newClient.getClientSocketId(), 
+					_connectResEvent, new EventWriter<OutgoingEventHeader, ConnectResponseEvent>() {
 
 				@Override
 				public void write(OutgoingEventHeader header, ConnectResponseEvent event) {
@@ -282,24 +276,55 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 		_connectionRequestThroughputMetric.push(1);
 	}
 	
-	private void onClientInput(final byte[] clientSocketId, final ClientInputEvent inputEvent) {
-		//TODO
+	private void onClientInput(final SocketIdentity senderRef, final ClientInputEvent inputEvent) {
 		try {
 			final ClientProxy client = _clientLookup.get(inputEvent.getClientId().getClientId());
-			_pubSendQueue.send(PubSubPattern.asTask(_stateInputEvent, new EventWriter<OutgoingEventHeader, StateInputEvent>() {
+			if (client.isActive()) {
 				
-				@Override
-				public void write(OutgoingEventHeader header, StateInputEvent event) {
-					long handlerInputId = _inputId++;
-					event.setClientHandlerId(_clientHandlerId);
-					event.setInputId(handlerInputId);
-					event.setIsHeartbeat(false);
-					inputEvent.getInputSlice().copyTo(event.getInputSlice());
-					client.storeAssociation(inputEvent.getClientActionId(), handlerInputId);
+				/*
+				 * Send any action
+				 */
+				if (inputEvent.hasAction()) {
+					_routerSendQueue.send(RouterPattern.asReliableTask(client.getActionCollectorRef(), _actionEvent, 
+							new EventWriter<OutgoingEventHeader, ActionEvent>() {
+	
+								@Override
+								public void write(OutgoingEventHeader header,
+										ActionEvent event) throws Exception {
+									inputEvent.getActionSlice().copyTo(event.getBuffer());
+								}
+					}));
 				}
 				
-			}));
-			_nextHeartbeat = _clock.currentMillis() + Constants.METRIC_TICK;
+				/*
+				 * Generate an update for the client
+				 */
+				_routerSendQueue.send(RouterPattern.asReliableTask(client.getClientSocketId(), _clientUpdateEvent, 
+						new EventWriter<OutgoingEventHeader, ClientUpdateEvent>(){
+
+							@Override
+							public void write(OutgoingEventHeader header,
+									ClientUpdateEvent event) throws Exception {
+								client.generateUpdate(inputEvent, _latestCanonicalState, event);								
+							}
+				}));
+				if (client.shouldDrop()) {
+					client.clear();
+					_droppedClientCountMetric.push(1);
+					_routerSendQueue.send(RouterPattern.asReliableTask(senderRef, _clientDisconnectedEvent, 
+							new EventWriter<OutgoingEventHeader, ClientDisconnectedEvent>() {
+
+								@Override
+								public void write(OutgoingEventHeader header,
+										ClientDisconnectedEvent event)
+										throws Exception {
+									event.setClientId(inputEvent.getClientId());
+								}
+					}));
+				} else {
+					_updateSendThroughputMetric.push(1);
+				}
+			}
 			_inputActionThroughputMetric.push(1);
 		} catch (ArrayIndexOutOfBoundsException eNotFound) {
 			Log.warn(String.format("Unknown client ID %d", inputEvent.getClientId().getClientId()));
@@ -308,39 +333,24 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 		}
 	}
 	
-	private void sendHeartbeat() {
-		_pubSendQueue.send(PubSubPattern.asTask(_stateInputEvent, new EventWriter<OutgoingEventHeader, StateInputEvent>() {
-			
-			@Override
-			public void write(OutgoingEventHeader header, StateInputEvent event) {
-				long handlerInputId = _inputId++;
-				event.setClientHandlerId(_clientHandlerId);
-				event.setInputId(handlerInputId);
-				event.setIsHeartbeat(true);
+	private void onActionReceipt(SocketIdentity senderRef, ActionReceiptEvent receiptEvent) {
+		try {
+			final ClientProxy client = _clientLookup.get(receiptEvent.getClientId().getClientId());
+			if (client.isActive()) {
+				client.processActionReceipt(receiptEvent);
 			}
-			
-		}));
-		_nextHeartbeat = _clock.currentMillis() + Constants.METRIC_TICK;
+		} catch (ArrayIndexOutOfBoundsException eNotFound) {
+			Log.warn(String.format("Unknown client ID %d", receiptEvent.getClientId().getClientId()));
+			Log.warn(String.format("Router Header: %d, Sub Header: %d", _routerRecvHeader.getHeaderId(), _subRecvHeader.getHeaderId()));
+			Log.warn(receiptEvent.getBuffer().toString());
+		}
 	}
 	
-	private void onUpdateInfoEvent(final StateUpdateInfoEvent updateInfoEvent) {
-		_incomingUpdateInfoThroughputMetric.push(1);
-		long highestSeq = -1;
-		boolean handlerFound = false;
-		for (int i = 0; i < updateInfoEvent.getEntryCount() && !handlerFound; i++) {
-			if (updateInfoEvent.getClientHandlerIdAtIndex(i) == _clientHandlerId) {
-				handlerFound = true;
-				highestSeq = updateInfoEvent.getHighestSequenceAtIndex(i);
-			}
+	private void onCanonicalStateUpdate(CanonicalStateUpdate canonicalStateUpdateEvent) {
+		if (_latestCanonicalState.getUpdateId() < canonicalStateUpdateEvent.getUpdateId()) {
+			canonicalStateUpdateEvent.getBuffer().copyTo(_latestCanonicalStateBuffer);
 		}
-		if (handlerFound) {
-			long updateId = updateInfoEvent.getUpdateId();
-			_updateHandler.addUpdateMetaData(updateId, highestSeq);
-			if (_updateHandler.hasFullUpdateData(updateId)) {
-				_updateHandler.sendUpdates(updateId, _clientLookup, _routerSendQueue);
-				_updateSendThroughputMetric.push(1);
-			}
-		}
+		_incomingUpdateThroughputMetric.push(1);
 	}
 
 	@Override

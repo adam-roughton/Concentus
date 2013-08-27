@@ -4,7 +4,7 @@ import java.util.Map;
 
 import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle;
 import com.adamroughton.concentus.config.Configuration;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.data.ResizingBuffer;
 
 public interface ConcentusCoordinatorNode<TConfig extends Configuration> extends ConcentusNode<TConfig> {
 

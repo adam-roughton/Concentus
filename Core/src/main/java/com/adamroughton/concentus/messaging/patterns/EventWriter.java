@@ -15,8 +15,8 @@
  */
 package com.adamroughton.concentus.messaging.patterns;
 
+import com.adamroughton.concentus.data.BufferBackedObject;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.events.BufferBackedObject;
 
 public interface EventWriter<TSendHeader extends OutgoingEventHeader, TEvent extends BufferBackedObject> {
 

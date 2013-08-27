@@ -1,7 +1,7 @@
 package com.adamroughton.concentus.disruptor;
 
-import com.adamroughton.concentus.messaging.BufferFactory;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.data.BufferFactory;
+import com.adamroughton.concentus.data.ResizingBuffer;
 
 /**
  * Allocates {@code count} collocated buffer entries using the provided {@link BufferFactory#newCollocatedSet(int, int)}

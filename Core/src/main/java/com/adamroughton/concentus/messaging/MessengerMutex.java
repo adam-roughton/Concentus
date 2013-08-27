@@ -23,6 +23,7 @@ import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.util.Mutex;
 
 public final class MessengerMutex<TBuffer extends ResizingBuffer, TMessenger extends Messenger<TBuffer>> implements Mutex<Messenger<TBuffer>> {

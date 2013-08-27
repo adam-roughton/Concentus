@@ -20,12 +20,12 @@ import java.util.Objects;
 import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.Clock;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.BytesUtil;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.esotericsoftware.minlog.Log;
 
 public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenger {
@@ -91,8 +91,8 @@ public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenge
 	}
 		
 	public boolean sendHeader(int msgSize, boolean isBlocking) {
-		MessageBytesUtil.writeLong(_headerBytes, 0, _nack);
-		MessageBytesUtil.writeInt(_headerBytes, ResizingBuffer.LONG_SIZE, msgSize);
+		BytesUtil.writeLong(_headerBytes, 0, _nack);
+		BytesUtil.writeInt(_headerBytes, ResizingBuffer.LONG_SIZE, msgSize);
 		return ZmqSocketOperations.doSend(_socket, _headerBytes, 0, _headerBytes.length, (isBlocking? 0 : ZMQ.NOBLOCK) | ZMQ.SNDMORE);
 	}
 	
@@ -162,8 +162,8 @@ public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenge
 					"but instead found %d bytes.", _headerBytes.length, headerSize));
 			return -1;
 		} else {
-			long seq = MessageBytesUtil.readLong(_headerBytes, 0);
-			int msgSize = MessageBytesUtil.readInt(_headerBytes, ResizingBuffer.LONG_SIZE);
+			long seq = BytesUtil.readLong(_headerBytes, 0);
+			int msgSize = BytesUtil.readInt(_headerBytes, ResizingBuffer.LONG_SIZE);
 			incomingBuffer.allocateForWriting(msgSize + eventHeader.getEventOffset());
 			
 			if (seq != -1) {
@@ -180,7 +180,7 @@ public final class ZmqReliableDealerSocketMessenger implements ZmqSocketMessenge
 				} else {
 					_nack = _lastRecvReliableSeq + 1;
 					//send nack
-					MessageBytesUtil.writeLong(_headerBytes, 0, _nack);
+					BytesUtil.writeLong(_headerBytes, 0, _nack);
 					ZmqSocketOperations.doSend(_socket, _headerBytes, 0, _headerBytes.length, (isBlocking? 0 : ZMQ.NOBLOCK));
 					return -1; // drop out of order message: easy way of avoiding duplicates
 				}

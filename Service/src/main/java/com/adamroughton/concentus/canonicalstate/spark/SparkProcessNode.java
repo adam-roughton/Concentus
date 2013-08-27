@@ -12,7 +12,7 @@ import com.adamroughton.concentus.ConcentusWorkerNode;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
 import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.config.Configuration;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.metric.MetricContext;
 
 public class SparkProcessNode implements ConcentusWorkerNode<Configuration, ConcentusServiceState> {

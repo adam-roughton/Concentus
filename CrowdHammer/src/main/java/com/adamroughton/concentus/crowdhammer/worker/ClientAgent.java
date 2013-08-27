@@ -15,11 +15,11 @@
  */
 package com.adamroughton.concentus.crowdhammer.worker;
 
-import com.adamroughton.concentus.messaging.events.ClientInputEvent;
-import com.adamroughton.concentus.messaging.events.ClientUpdateEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
 
 public interface ClientAgent {
-
+	
 	long nextInputDeadline();
 	
 	void createInputEvent(ClientInputEvent inputEvent);

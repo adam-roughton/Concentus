@@ -23,14 +23,15 @@ import java.util.Objects;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.Constants;
+import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.events.bufferbacked.ActionEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.FullCollectiveVarInputEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.PartialCollectiveVarInputEvent;
+import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
+import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
-import com.adamroughton.concentus.messaging.events.ClientHandlerEntry;
-import com.adamroughton.concentus.messaging.events.StateInputEvent;
-import com.adamroughton.concentus.messaging.events.StateUpdateEvent;
-import com.adamroughton.concentus.messaging.events.StateUpdateInfoEvent;
 import com.adamroughton.concentus.messaging.patterns.EventPattern;
 import com.adamroughton.concentus.messaging.patterns.EventReader;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
@@ -39,21 +40,21 @@ import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.MetricGroup;
+import com.adamroughton.concentus.model.CollectiveApplication;
 
 public class StateProcessor<TBuffer extends ResizingBuffer> implements DeadlineBasedEventHandler<TBuffer> {
 	
 	private final Clock _clock;
 	
-	private final StateInputEvent _inputEvent = new StateInputEvent();
-	private final StateUpdateEvent _updateEvent = new StateUpdateEvent();
-	private final StateUpdateInfoEvent _updateInfoEvent = new StateUpdateInfoEvent();
+	private final FullCollectiveVarInputEvent _fullCollectiveVarInputEvent = new FullCollectiveVarInputEvent();
+	private final PartialCollectiveVarInputEvent _partialCollectiveVarInputEvent = new PartialCollectiveVarInputEvent();
+	private final CanonicalStateUpdate _canonicalStateUpdate = new CanonicalStateUpdate();
 	
-	private final StateLogic _stateLogic;
-	private final IncomingEventHeader _subHeader;
+	private final CollectiveApplication _application;
+	private final int[] _actionProcessorIds;
+	private final IncomingEventHeader _recvHeader;
 	private final SendQueue<OutgoingEventHeader, TBuffer> _pubSendQueue;
 
-	private final Int2LongMap _clientHandlerEventTracker;
-	
 	private final MetricContext _metricContext;
 	private final MetricGroup _metrics;
 	private final CountMetric _errorCountMetric;
@@ -69,18 +70,18 @@ public class StateProcessor<TBuffer extends ResizingBuffer> implements DeadlineB
 
 	public StateProcessor(
 			Clock clock,
-			StateLogic stateLogic,
-			IncomingEventHeader subHeader,
+			int[] actionProcessorIds,
+			CollectiveApplication application,
+			IncomingEventHeader recvHeader,
 			SendQueue<OutgoingEventHeader, TBuffer> pubSendQueue,
 			MetricContext metricContext) {
 		_clock = Objects.requireNonNull(clock);
-		_stateLogic = Objects.requireNonNull(stateLogic);
-		_subHeader = Objects.requireNonNull(subHeader);
+		_application = Objects.requireNonNull(application);
+		_actionProcessorIds = Objects.requireNonNull(actionProcessorIds);
+		_recvHeader = Objects.requireNonNull(recvHeader);
 		_pubSendQueue = Objects.requireNonNull(pubSendQueue);
 		_metricContext = Objects.requireNonNull(metricContext);
 
-		_clientHandlerEventTracker = new Int2LongOpenHashMap(50);
-		
 		_metrics = new MetricGroup();
 		String reference = name();
 		_errorCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "errorCount", false));
@@ -89,41 +90,44 @@ public class StateProcessor<TBuffer extends ResizingBuffer> implements DeadlineB
 	@Override
 	public void onEvent(TBuffer event, long sequence, boolean isEndOfBatch)
 			throws Exception {
-		boolean wasValid = _subHeader.isValid(event);
-		if (wasValid) {
-			EventPattern.readContent(event, _subHeader, _inputEvent, new EventReader<IncomingEventHeader, StateInputEvent>() {
-
-				@Override
-				public void read(IncomingEventHeader header, StateInputEvent event) {
-					processInput(event);
-				}
-				
-			});
-		}
-		if (!wasValid) _errorCountMetric.push(1);
+//		if (!EventHeader.isValid(event, 0)) {
+//			_errorCountMetric.push(1);
+//			return;
+//		}
+//		
+//		
+//		
+//		EventPattern.readContent(event, _recvHeader, _inputEvent, new EventReader<IncomingEventHeader, ActionEvent>() {
+//
+//			@Override
+//			public void read(IncomingEventHeader header, ActionEvent event) {
+//				processInput(event);
+//			}
+//			
+//		});
+		
 	}
 
 	@Override
 	public void onDeadline() {
-		if (_sendMetric) {
-			_metrics.publishPending();
-		} else {
-			long now = _clock.currentMillis();
-			long frameTime = now - _lastTickTime;
-			_accumulator += frameTime;
-			
-			long dt = Constants.TIME_STEP_IN_MS;
-			while (_accumulator >= dt) {
-				_stateLogic.tick(_simTime, dt);
-				_simTime += dt;
-				_accumulator -= dt;
-			}
-			_lastTickTime = now;
-			
-			_updateId++;
-			sendUpdateEvent(_updateId, _simTime);
-			sendClientHandlerEvents(_updateId);
-		}
+//		if (_sendMetric) {
+//			_metrics.publishPending();
+//		} else {
+//			long now = _clock.currentMillis();
+//			long frameTime = now - _lastTickTime;
+//			_accumulator += frameTime;
+//			
+//			long dt = Constants.TIME_STEP_IN_MS;
+//			while (_accumulator >= dt) {
+//				_stateLogic.tick(_simTime, dt);
+//				_simTime += dt;
+//				_accumulator -= dt;
+//			}
+//			_lastTickTime = now;
+//			
+//			_updateId++;
+//			sendUpdateEvent(_updateId, _simTime);
+//		}
 	}
 
 	@Override
@@ -153,56 +157,24 @@ public class StateProcessor<TBuffer extends ResizingBuffer> implements DeadlineB
 			return _nextTickTime;
 		}
 	}
-	
-	private void processInput(StateInputEvent event) {
-		// read header (client handler) etc
-		int clientHandlerId = event.getClientHandlerId();
-		long inputId = event.getInputId();
-		_clientHandlerEventTracker.put(clientHandlerId, inputId);
-		
-		if (!event.isHeartbeat()) {
-			// get input bytes
-			_stateLogic.collectInput(event.getInputSlice());
-		}
-	}
-	
-	private void sendUpdateEvent(final long updateId, final long simTime) {
-		_pubSendQueue.send(PubSubPattern.asTask(_updateEvent, new EventWriter<OutgoingEventHeader, StateUpdateEvent>() {
-
-			@Override
-			public void write(OutgoingEventHeader header, StateUpdateEvent event) {
-				event.setUpdateId(updateId);
-				event.setSimTime(simTime);
-				_stateLogic.createUpdate(event.getContentSlice());
-			}
-			
-		}));
-	}
-	
-	private void sendClientHandlerEvents(final long updateId) {	
-		// Iterate through all client handler IDs and create state update info events until
-		// all handler sequence numbers have been published. As we can fit n entries in each
-		// update, we attempt to fill each update with the maximum number of entries.
-		final IntIterator handlerIdIterator = _clientHandlerEventTracker.keySet().iterator();
-		while(handlerIdIterator.hasNext()) {
-			_pubSendQueue.send(PubSubPattern.asTask(_updateInfoEvent, new EventWriter<OutgoingEventHeader, StateUpdateInfoEvent>() {
-	
-				@Override
-				public void write(OutgoingEventHeader header, StateUpdateInfoEvent event) {
-					int currEntryIndex = 0;
-					event.setUpdateId(updateId);
-					while (handlerIdIterator.hasNext()) {
-						int handlerId = handlerIdIterator.nextInt();
-						long highestSequence = _clientHandlerEventTracker.get(handlerId);
-						ClientHandlerEntry entry = new ClientHandlerEntry(handlerId, highestSequence);
-						event.setHandlerEntry(currEntryIndex++, entry);
-					}
-					event.setEntryCount(currEntryIndex + 1);
-				}
-				
-			}));
-		}
-	}
+//	
+//	private void processInput(ActionEvent event) {
+//
+//	}
+//	
+//	private void sendUpdateEvent(final long updateId, final long simTime) {
+//		_pubSendQueue.send(PubSubPattern.asTask(_updateEvent, new EventWriter<OutgoingEventHeader, StateUpdateEvent>() {
+//
+//			@Override
+//			public void write(OutgoingEventHeader header, StateUpdateEvent event) {
+//				event.setUpdateId(updateId);
+//				event.setSimTime(simTime);
+//				_stateLogic.createUpdate(event.getContentSlice());
+//			}
+//			
+//		}));
+//	}
+//	
 
 	@Override
 	public String name() {

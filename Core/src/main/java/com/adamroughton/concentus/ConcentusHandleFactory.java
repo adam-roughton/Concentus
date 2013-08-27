@@ -18,10 +18,10 @@ package com.adamroughton.concentus;
 import java.net.InetAddress;
 
 import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.disruptor.MetricTrackingEventQueueFactory;
 import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketManagerImpl;
 import com.adamroughton.concentus.messaging.zmq.TrackingSocketManagerDecorator;

@@ -22,7 +22,7 @@ import org.zeromq.ZMQ;
 import org.zeromq.ZMQ.Context;
 
 import com.adamroughton.concentus.DefaultClock;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;

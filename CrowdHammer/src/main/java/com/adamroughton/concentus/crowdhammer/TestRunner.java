@@ -27,7 +27,7 @@ import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle;
 import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle.AssignmentRequest;
 import com.adamroughton.concentus.cluster.data.WorkerAllocationInfo;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.data.BytesUtil;
 
 import static com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState.*;
 
@@ -44,7 +44,8 @@ public final class TestRunner implements Runnable {
 	}
 	
 	@Override
-	public void run() {		
+	public void run() {	
+		_coordinator.getClusterHandle().setApplicationClass(TestApplication.class.getName());
 		try {			
 			for (int clientCount : _testClientCounts) {	
 				_coordinator.newTestRun(clientCount, _testRunDuration);
@@ -59,7 +60,7 @@ public final class TestRunner implements Runnable {
 				List<WorkerAllocationInfo> allocations = createWorkerAllocations(clientCount, workerAssignmentReqs);
 				for (WorkerAllocationInfo allocation : allocations) {
 					byte[] res = new byte[4];
-					MessageBytesUtil.writeInt(res, 0, allocation.getClientAllocation());
+					BytesUtil.writeInt(res, 0, allocation.getClientAllocation());
 					cluster.setAssignment(WorkerService.SERVICE_TYPE, allocation.getWorkerId(), res);
 					workerAllocations.add(allocation);
 				}
@@ -71,7 +72,7 @@ public final class TestRunner implements Runnable {
 				int nextId = 0;
 				for (AssignmentRequest req : clientHandlerReqs) {
 					byte[] res = new byte[4];
-					MessageBytesUtil.writeInt(res, 0, nextId++);
+					BytesUtil.writeInt(res, 0, nextId++);
 					cluster.setAssignment(ClientHandlerService.SERVICE_TYPE, UUID.fromString(req.getServiceId()), res);
 				}
 				
@@ -79,7 +80,9 @@ public final class TestRunner implements Runnable {
 					_coordinator.setAndWait(state);
 				}
 				
-				Thread.sleep(TimeUnit.SECONDS.toMillis(_testRunDuration));
+				//Thread.sleep(TimeUnit.SECONDS.toMillis(_testRunDuration));
+				Thread.sleep(TimeUnit.DAYS.toMillis(30));
+				
 				
 				for (CrowdHammerServiceState state : Arrays.asList(STOP_SENDING_EVENTS, TEAR_DOWN)) {
 					_coordinator.setAndWait(state);
@@ -123,7 +126,7 @@ public final class TestRunner implements Runnable {
 		
 		for (int i = 0; i < workerCount; i++) {
 			AssignmentRequest assignmentReq = workerAssignmentRequests.get(i);
-			int workerMaxClientCount = MessageBytesUtil.readInt(assignmentReq.getRequestBytes(), 0);
+			int workerMaxClientCount = BytesUtil.readInt(assignmentReq.getRequestBytes(), 0);
 			workerMaxClientCountLookup[i] = workerMaxClientCount;
 			globalMaxClients += workerMaxClientCount;
 			workerAllocations.add(i, new WorkerAllocationInfo(UUID.fromString(assignmentReq.getServiceId()), 0));

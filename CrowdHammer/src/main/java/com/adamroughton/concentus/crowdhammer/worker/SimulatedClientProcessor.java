@@ -15,19 +15,19 @@
  */
 package com.adamroughton.concentus.crowdhammer.worker;
 
-import it.unimi.dsi.fastutil.longs.Long2LongAVLTreeMap;
 import it.unimi.dsi.fastutil.longs.Long2LongMap;
+import it.unimi.dsi.fastutil.longs.Long2LongOpenHashMap;
 
 import java.util.Objects;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.data.DataType;
+import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ConnectResponseEvent;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
-import com.adamroughton.concentus.messaging.events.ClientUpdateEvent;
-import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
-import com.adamroughton.concentus.messaging.events.EventType;
 import com.adamroughton.concentus.messaging.patterns.EventPattern;
 import com.adamroughton.concentus.messaging.patterns.EventReader;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
@@ -35,6 +35,7 @@ import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.MetricGroup;
 import com.adamroughton.concentus.metric.StatsMetric;
 import com.adamroughton.concentus.metric.MetricContext;
+import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.LifecycleAware;
 
 import uk.co.real_logic.intrinsics.StructuredArray;
@@ -59,10 +60,9 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 	private final CountMetric _connectedClientCountMetric;
 	private final CountMetric _connectResRecvCountMetric;
 	private final CountMetric _sentActionThroughputMetric;
-	private final StatsMetric _actionEffectLatencyMetric;
-	private final CountMetric _lateActionEffectCountMetric;	
+	private final StatsMetric _actionToCanonicalStateLatencyMetric;
+	private final CountMetric _lateActionToCanonicalStateCountMetric;	
 	private final CountMetric _droppedActionThroughputMetric;
-	//private final CountMetric _connectionInvalidMetric;
 	
 	private long _nextClientIndex = -1;
 	private boolean _sendMetric = false;
@@ -79,7 +79,7 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 		_activeClientCount = activeClientCount;
 		
 		// create an index for quickly looking up clients
-		_clientsIndex = new Long2LongAVLTreeMap();
+		_clientsIndex = new Long2LongOpenHashMap();
 		//_clientsIndex = new Long2LongArrayMap((int)_clients.getLength());
 		
 		_clientSendQueue = Objects.requireNonNull(clientSendQueue);
@@ -90,10 +90,18 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 		String reference = name();
 		_connectedClientCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "connectedClientCount", true));
 		_sentActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "sentActionThroughput", false));
-		_actionEffectLatencyMetric = _metrics.add(_metricContext.newStatsMetric(reference, "actionEffectLatency", false));
-		_lateActionEffectCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "lateActionEffectCount", false));
+		_actionToCanonicalStateLatencyMetric = _metrics.add(_metricContext.newStatsMetric(reference, "actionToCanonicalStateLatency", false));
+		_lateActionToCanonicalStateCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "lateActionToCanonicalStateCount", false));
 		_droppedActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "droppedActionThroughput", false));
 		//_connectionInvalidMetric = _metrics.add(_metricContext.newCountMetric(reference, "connectionInvalid", false));
+		
+		for (Client client : clients) {
+			client.setMetricCollectors(_connectedClientCountMetric, 
+					_sentActionThroughputMetric, 
+					_actionToCanonicalStateLatencyMetric, 
+					_lateActionToCanonicalStateCountMetric,
+					_droppedActionThroughputMetric);
+		}
 		
 		_connectResRecvCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "connectResCount", true));
 	}
@@ -111,19 +119,15 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 	public void onEvent(TBuffer event, long sequence, boolean isEndOfBatch)
 			throws Exception {
 		if (!_recvHeader.isValid(event)) return;
-//		
-//		if (_recvHeader.connectionInvalid(event)) {
-//			_connectionInvalidMetric.push(1);
-//			_isSendingInput = false;
-//			return;
-//		}
+		
+		Log.info("Seq = " + sequence);
 		
 		if (_recvHeader.isMessagingEvent(event)) {
 			_clientSendQueue.send(event, _recvHeader);
 			return;
 		}
 		
-		if (EventPattern.getEventType(event, _recvHeader) == EventType.CLIENT_UPDATE.getId()) {
+		if (EventPattern.getEventType(event, _recvHeader) == DataType.CLIENT_UPDATE_EVENT.getId()) {
 			EventPattern.readContent(event, _recvHeader, _updateEvent, new EventReader<IncomingEventHeader, ClientUpdateEvent>() {
 
 				@Override
@@ -131,10 +135,10 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 					long clientId = event.getClientId();
 					long clientIndex = _clientsIndex.get(clientId);
 					Client updatedClient = _clients.get(clientIndex);
-					updatedClient.onClientUpdate(event, _actionEffectLatencyMetric, _lateActionEffectCountMetric);
+					updatedClient.onClientUpdate(event);
 				}
 			});
-		} else if (EventPattern.getEventType(event, _recvHeader) == EventType.CONNECT_RES.getId()) {
+		} else if (EventPattern.getEventType(event, _recvHeader) == DataType.CLIENT_CONNECT_RES_EVENT.getId()) {
 			_connectResRecvCountMetric.push(1);
 			EventPattern.readContent(event, _recvHeader, _connectRes, new EventReader<IncomingEventHeader, ConnectResponseEvent>() {
 
@@ -143,7 +147,7 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 					// we use the index of the connecting client as the request ID
 					long clientIndex = event.getCallbackBits();
 					Client connectedClient = _clients.get(clientIndex);
-					connectedClient.onConnectResponse(event, _connectedClientCountMetric);
+					connectedClient.onConnectResponse(event);
 					_clientsIndex.put(event.getClientIdBits(), clientIndex);
 				}
 			});
@@ -156,7 +160,7 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 			_metrics.publishPending();
 		} else if (_isSendingInput) {
 			Client client = _clients.get(_nextClientIndex);
-			client.onActionDeadline(_clientSendQueue, _sentActionThroughputMetric, _droppedActionThroughputMetric);
+			client.onActionDeadline(_clientSendQueue);
 		}
 	}
 

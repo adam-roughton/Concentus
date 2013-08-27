@@ -28,6 +28,8 @@ public enum ClusterPath {
 	RUN_CLIENT_COUNT		(RUN_INFO, "clientCount"),
 	RUN_DURATION			(RUN_INFO, "duration"),
 	RUN_WORKER_ALLOCATIONS 	(RUN_INFO, "workerAllocations"),
+	APPLICATION   			("application"),
+	ACTION_PROCESSOR_IDS	("actionProcessors"),
 	SERVICES				("services"),
 	READY					(STATE, "ready"),
 	METRIC					("metric"),

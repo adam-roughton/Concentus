@@ -24,9 +24,11 @@ import java.util.logging.Logger;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.ConcentusService;
 import com.adamroughton.concentus.ConcentusServiceState;
-import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
+import com.adamroughton.concentus.ConcentusEndpoints;
+import com.adamroughton.concentus.cluster.worker.ClusterListenerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.config.ConfigurationUtil;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
@@ -35,11 +37,11 @@ import com.adamroughton.concentus.messaging.MessagingUtil;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.metric.MetricContext;
+import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.StatefulRunnable;
@@ -65,13 +67,14 @@ public class CanonicalStateService<TBuffer extends ResizingBuffer> implements Co
 	private final EventQueue<TBuffer> _outputQueue;
 	private final OutgoingEventHeader _pubHeader;
 	private final IncomingEventHeader _subHeader;
-	private final StateLogic _stateLogic;
+	private CollectiveApplication _application;
 	
 	private ProcessingPipeline<TBuffer> _pipeline;
 	private StatefulRunnable<EventListener<TBuffer>> _subListener;
 	private StateProcessor<TBuffer> _stateProcessor;
 	private EventProcessor _publisher;	
 	
+	private final int _pubPort;
 	private final int _pubSocketId;
 	private final int _inputSocketId;
 	
@@ -100,27 +103,6 @@ public class CanonicalStateService<TBuffer extends ResizingBuffer> implements Co
 		_pubHeader = new OutgoingEventHeader(0, 2);
 		_subHeader = new IncomingEventHeader(0, 1);
 		
-		_stateLogic = new StateLogic() {
-
-			private int i = 0;
-			
-			@Override
-			public void collectInput(ResizingBuffer inputBuffer) {
-				i++;
-			}
-
-			@Override
-			public void tick(long simTime, long timeDelta) {
-				i += 2;
-			}
-
-			@Override
-			public void createUpdate(ResizingBuffer updateBuffer) {
-				updateBuffer.writeInt(0, i);
-			}
-			
-		};
-		
 		/*
 		 * Configure sockets
 		 */
@@ -133,18 +115,21 @@ public class CanonicalStateService<TBuffer extends ResizingBuffer> implements Co
 		_inputSocketId = _socketManager.create(ZMQ.SUB, subSocketSettings, "input");
 		
 		// pub socket
-		int pubPort = ConfigurationUtil.getPort(config, SERVICE_TYPE, "pub");
+		_pubPort = ConfigurationUtil.getPort(config, SERVICE_TYPE, "pub");
 		SocketSettings pubSocketSettings = SocketSettings.create()
-				.bindToPort(pubPort)
+				.bindToPort(_pubPort)
 				.setHWM(1000);
 		_pubSocketId = _socketManager.create(ZMQ.PUB, pubSocketSettings, "pub");
 	}
 
 	@Override
 	public void onStateChanged(ConcentusServiceState newClusterState,
-			ClusterWorkerHandle cluster) throws Exception {
+			ClusterListenerHandle cluster) throws Exception {
 		LOG.info(String.format("Entering state %s", newClusterState.name()));
 		switch (newClusterState) {
+			case INIT:
+				onInit(cluster);
+				break;
 			case BIND:
 				onBind(cluster);
 				break;
@@ -160,7 +145,11 @@ public class CanonicalStateService<TBuffer extends ResizingBuffer> implements Co
 		cluster.signalReady();
 	}
 	
-	private void onBind(ClusterWorkerHandle cluster) throws Exception {
+	private void onInit(ClusterListenerHandle cluster) throws Exception {
+		_application = Util.newInstance(cluster.getApplicationClass(), CollectiveApplication.class);
+	}
+	
+	private void onBind(ClusterListenerHandle cluster) throws Exception {
 		// infrastructure for sub socket
 		Mutex<Messenger<TBuffer>> subSocketPackageMutex = _socketManager.getSocketMutex(_inputSocketId);
 		_subListener = Util.asStateful(new EventListener<>("inputListener", _subHeader, subSocketPackageMutex, _inputQueue, _concentusHandle));
@@ -170,7 +159,7 @@ public class CanonicalStateService<TBuffer extends ResizingBuffer> implements Co
 		Mutex<Messenger<TBuffer>> pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
 		_publisher = MessagingUtil.asSocketOwner("publisher", _outputQueue, new Publisher<TBuffer>(_pubHeader), pubSocketPackageMutex);
 		
-		_stateProcessor = new StateProcessor<>(_concentusHandle.getClock(), _stateLogic, _subHeader, pubSendQueue, _metricContext);
+		//_stateProcessor = new StateProcessor<>(_concentusHandle.getClock(), _stateLogic, _subHeader, pubSendQueue, _metricContext);
 		
 		_pipeline = ProcessingPipeline.<TBuffer>build(_subListener, _concentusHandle.getClock())
 				.thenConnector(_inputQueue)
@@ -179,15 +168,16 @@ public class CanonicalStateService<TBuffer extends ResizingBuffer> implements Co
 				.then(_publisher)
 				.createPipeline(_executor);
 		
-		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _concentusHandle.getNetworkAddress().getHostAddress()));
+		cluster.registerServiceEndpoint(ConcentusEndpoints.CANONICAL_STATE_PUB, 
+				_concentusHandle.getNetworkAddress().getHostAddress(),
+				_pubPort);
 	}
 
-
-	private void onStart(ClusterWorkerHandle cluster) {
+	private void onStart(ClusterListenerHandle cluster) {
 		_pipeline.start();
 	}
 
-	private void onShutdown(ClusterWorkerHandle cluster) throws Exception {
+	private void onShutdown(ClusterListenerHandle cluster) throws Exception {
 		_pipeline.halt(60, TimeUnit.SECONDS);
 		_socketManager.close();
 	}

@@ -5,7 +5,7 @@ import java.util.Map;
 import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.cluster.worker.ClusterStateValue;
 import com.adamroughton.concentus.config.Configuration;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.metric.MetricContext;
 
 public interface ConcentusWorkerNode<TConfig extends Configuration,

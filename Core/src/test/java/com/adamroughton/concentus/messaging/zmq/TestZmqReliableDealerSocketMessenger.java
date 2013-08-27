@@ -46,11 +46,11 @@ import org.zeromq.ZMQ;
 import org.zeromq.ZMQException;
 
 import com.adamroughton.concentus.DrivableClock;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.BytesUtil;
 import com.adamroughton.concentus.messaging.ByteArrayCaptor;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 
 @RunWith(MockitoJUnitRunner.class)
@@ -305,7 +305,7 @@ public class TestZmqReliableDealerSocketMessenger {
 		
 		for (int i = 0; i < contents.length; i++) {
 			for (int j = 0; j < contents[i].length; j += 4) {
-				MessageBytesUtil.writeInt(contents[i], j, -(i + 1));
+				BytesUtil.writeInt(contents[i], j, -(i + 1));
 			}
 		}
 		

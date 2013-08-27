@@ -11,21 +11,23 @@ import org.zeromq.ZMQ;
 import org.zeromq.ZMQ.Socket;
 
 import com.adamroughton.concentus.Clock;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.BytesUtil;
+import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.events.bufferbacked.ConnectEvent;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.MessengerClosedException;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
-import com.adamroughton.concentus.messaging.events.ConnectEvent;
+import com.adamroughton.concentus.messaging.SocketIdentity;
 import com.esotericsoftware.minlog.Log;
 
 public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedResizingBuffer> {
 
-	private final Object2ObjectMap<ZMQIdentity, ZMQ.Socket> _socketLookup = new Object2ObjectOpenHashMap<>();
+	private final Object2ObjectMap<SocketIdentity, ZMQ.Socket> _socketLookup = new Object2ObjectOpenHashMap<>();
 	private final Object2ObjectMap<String, ZMQ.Socket> _connStringToSocketLookup = new Object2ObjectOpenHashMap<>();
+	private final IdentityLookup _identityLookup;
 	private final String _recvRouterAddress;
 	private final ZMQ.Context _context;
 	private final Clock _clock;
@@ -40,6 +42,7 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 		_recvRouterAddress = Objects.requireNonNull(recvRouterAddress);
 		_context = Objects.requireNonNull(context);
 		_clock = Objects.requireNonNull(clock);
+		_identityLookup = new IdentityLookup(_clock);
 		_name = name;
 	}
 	
@@ -48,7 +51,7 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 		_recvConnectEvent.attachToBuffer(tmpBuffer, 0);
 		_recvConnectEvent.setIsConnect(true);
 		_recvConnectEvent.setAddress(connString);
-		newConnection(new ZMQIdentity(new byte[0]), _recvConnectEvent);
+		newConnection(new SocketIdentity(new byte[0]), _recvConnectEvent);
 		_recvConnectEvent.releaseBuffer();
 	}
 	
@@ -71,13 +74,13 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 		int segmentCount = header.getSegmentCount();
 		if (segmentCount < 2)
 			throw new RuntimeException(
-					String.format("The event header have at least 2 segments for the ZmqDealerSetSocket (had %d).", segmentCount));
+					String.format("The event header must have at least 2 segments for the ZmqDealerSetSocket (had %d).", segmentCount));
 		
 		// read identity
 		int identitySegmentMetaData = header.getSegmentMetaData(outgoingBuffer, 0);
 		int identityOffset = EventHeader.getSegmentOffset(identitySegmentMetaData);
 		int identityLength = EventHeader.getSegmentLength(identitySegmentMetaData);
-		ZMQIdentity identity = new ZMQIdentity(outgoingBuffer.getBuffer(), identityOffset, identityLength);
+		SocketIdentity identity = new SocketIdentity(outgoingBuffer.getBuffer(), identityOffset, identityLength);
 		
 		if (header.isMessagingEvent(outgoingBuffer)) {
 			int eventSegmentMetaData = header.getSegmentMetaData(outgoingBuffer, 1);
@@ -91,7 +94,7 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 		} else {
 			// lookup socket
 			if (!_socketLookup.containsKey(identity)) {
-				Log.warn(String.format("No socket found for identity %s", identity.copyWithNewArray().buffer));
+				Log.warn(String.format("No socket found for identity %s", Arrays.toString(identity.copyWithNewArray().buffer)));
 				return false;
 			}
 			ZMQ.Socket socket = _socketLookup.get(identity);
@@ -135,11 +138,11 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 	
 	public boolean sendHeader(ZMQ.Socket socket, int msgSize, ArrayBackedResizingBuffer eventBuffer, 
 			OutgoingEventHeader header, boolean isBlocking) {
-		MessageBytesUtil.writeInt(_headerBytes, 0, msgSize);
+		BytesUtil.writeInt(_headerBytes, 0, msgSize);
 		return ZmqSocketOperations.doSend(socket, _headerBytes, 0, _headerBytes.length, (isBlocking? 0 : ZMQ.NOBLOCK) | ZMQ.SNDMORE);
 	}
 	
-	private boolean newConnection(ZMQIdentity identity, ConnectEvent connectEvent) {		
+	private boolean newConnection(SocketIdentity identity, ConnectEvent connectEvent) {		
 		ZMQ.Socket socket;
 		String address = connectEvent.getAddress();
 		
@@ -160,7 +163,7 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 			_sendConnectEvent.releaseBuffer();
 			
 			int length = tmpBuffer.getContentSize();
-			MessageBytesUtil.writeInt(_headerBytes, 0, length);
+			BytesUtil.writeInt(_headerBytes, 0, length);
 			socket.send(_headerBytes, ZMQ.SNDMORE);
 			socket.send(tmpBuffer.getBuffer(), 0, length, 0);
 		}
@@ -172,6 +175,7 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 			socket.close();
 		} else {
 			_socketLookup.put(identity, socket);
+			_identityLookup.putIdentity(connectEvent.getAddress(), identity);
 		}
 		return true;
 	}
@@ -183,7 +187,7 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 			Log.warn(String.format("Tried to disconnect from %s when no such connection existed", address));
 			return true;
 		}
-		for (Entry<ZMQIdentity, Socket> entry : _socketLookup.entrySet()) {
+		for (Entry<SocketIdentity, Socket> entry : _socketLookup.entrySet()) {
 			if (entry.getValue() == socket) {
 				_socketLookup.remove(entry.getKey());
 				break;
@@ -218,6 +222,10 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 	@Override
 	public String name() {
 		return _name;
+	}
+	
+	public IdentityLookup getIdentityLookup() {
+		return _identityLookup;
 	}
 	
 }

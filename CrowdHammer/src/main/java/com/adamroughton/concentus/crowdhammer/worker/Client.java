@@ -16,15 +16,22 @@
 package com.adamroughton.concentus.crowdhammer.worker;
 
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
+
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ChunkReader;
+import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.events.bufferbacked.ActionEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientConnectEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ConnectResponseEvent;
+import com.adamroughton.concentus.data.model.bufferbacked.ActionReceipt;
+import com.adamroughton.concentus.data.model.bufferbacked.BufferBackedEffect;
+import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
-import com.adamroughton.concentus.messaging.events.ClientConnectEvent;
-import com.adamroughton.concentus.messaging.events.ClientInputEvent;
-import com.adamroughton.concentus.messaging.events.ClientUpdateEvent;
-import com.adamroughton.concentus.messaging.events.ConnectResponseEvent;
-//import com.adamroughton.concentus.messaging.patterns.EventPattern;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.RouterPattern;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
@@ -32,6 +39,7 @@ import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.StatsMetric;
 import com.adamroughton.concentus.util.SlidingWindowLongMap;
 import com.adamroughton.concentus.util.Util;
+import com.esotericsoftware.minlog.Log;
 
 import static com.adamroughton.concentus.Constants.TIME_STEP_IN_MS;
 
@@ -42,25 +50,38 @@ public final class Client {
 	 * if not received within this window.
 	 */
 	public final static int WINDOW_SIZE = Util.nextPowerOf2((int)(10000 / TIME_STEP_IN_MS));	
+	private static final long CONNECT_TIMEOUT = TimeUnit.SECONDS.toMillis(10);	
 	
-	private final SlidingWindowLongMap _inputIdToSentTimeLookup = new SlidingWindowLongMap(WINDOW_SIZE);
-	private final SlidingWindowLongMap _updateIdToRecvTimeLookup = new SlidingWindowLongMap(WINDOW_SIZE);
-	
+	private final SlidingWindowLongMap _actionIdToSentTimeLookup = new SlidingWindowLongMap(WINDOW_SIZE);
+	private final SlidingWindowLongMap _actionIdToStartTimeLookup = new SlidingWindowLongMap(WINDOW_SIZE);
+	private long _simTime = 0;
+		
 	private final long _index;
 	private final Clock _clock;
 	
 	private final ClientConnectEvent _connectEvent = new ClientConnectEvent();
 	private final ClientInputEvent _inputEvent = new ClientInputEvent();
+	private final ActionEvent _actionEvent = new ActionEvent();
+	
+	private final CanonicalStateUpdate _canonicalStateUpdate = new CanonicalStateUpdate();
+	private final BufferBackedEffect _effect = new BufferBackedEffect();
+	private final ActionReceipt _receipt = new ActionReceipt();
+	
+	private CountMetric _connectedClientCountMetric;
+	private CountMetric _sentActionThroughputMetric;
+	private StatsMetric _actionToCanonicalStateLatencyMetric;
+	private CountMetric _lateActionToCanonicalStateCountMetric;	
+	private CountMetric _droppedActionThroughputMetric;
+	
+	private long _connectReqSendTime = -1;
 	
 	//private final long[] _neighbourJointActionIds = new long[25];
 	
 	private long _lastActionTime = -1;
-	private long _lastConfirmedInputId = -1;
-	//private long _lastClientUpdateId = -1;
+	private long _reliableSeq = -1;
 	
 	private long _clientId = -1;
 	private byte[] _handlerId = new byte[0];
-	//private int _handlerId = -1;
 	
 	private boolean _isActive = false;
 	private boolean _isConnecting = false;
@@ -70,6 +91,27 @@ public final class Client {
 		_clock = Objects.requireNonNull(clock);
 	}
 	
+	public void setMetricCollectors(
+			CountMetric connectedClientCountMetric,
+			CountMetric sentActionThroughputMetric,
+			StatsMetric actionToCanonicalStateLatencyMetric,
+			CountMetric lateActionToCanonicalStateCountMetric,	
+			CountMetric droppedActionThroughputMetric) {
+		_connectedClientCountMetric = connectedClientCountMetric;
+		_sentActionThroughputMetric = sentActionThroughputMetric;
+		_actionToCanonicalStateLatencyMetric = actionToCanonicalStateLatencyMetric;
+		_lateActionToCanonicalStateCountMetric = lateActionToCanonicalStateCountMetric;
+		_droppedActionThroughputMetric = droppedActionThroughputMetric;
+	}
+	
+	public void unsetMetricCollectors() {
+		_connectedClientCountMetric = null;
+		_sentActionThroughputMetric = null;
+		_actionToCanonicalStateLatencyMetric = null;
+		_lateActionToCanonicalStateCountMetric = null;
+		_droppedActionThroughputMetric = null;
+	}
+	
 	public boolean isActive() {
 		return _isActive;
 	}
@@ -77,14 +119,6 @@ public final class Client {
 	public void setIsActive(boolean isActive) {
 		_isActive = isActive;
 	}
-	
-//	public int getHandlerId() {
-//		return _handlerId;
-//	}
-//	
-//	public void setHandlerId(int handlerId) {
-//		_handlerId = handlerId;
-//	}
 	
 	public byte[] getHandlerId() {
 		return _handlerId;
@@ -110,36 +144,42 @@ public final class Client {
 		return _clientId != -1;
 	}
 	
-	public <TBuffer extends ResizingBuffer> void onActionDeadline(SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue, CountMetric sentActionThroughputMetric, 
-			CountMetric droppedActionThroughputMetric) {
+	public <TBuffer extends ResizingBuffer> void onActionDeadline(SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue) {
 		if (_clientId == -1) {
-			// if we are waiting to connect, do nothing with this client
-			if (_isConnecting) return;
+			if (_isConnecting) {
+				// if we are waiting to connect and still within the timeout, do nothing with this client
+				if (_clock.currentMillis() - _connectReqSendTime < CONNECT_TIMEOUT)	return;
+			}
 			connect(clientSendQueue);
 			_isConnecting = true;
 		} else {
-			sendInputAction(clientSendQueue, sentActionThroughputMetric, droppedActionThroughputMetric);
+			sendInputAction(clientSendQueue);
 		}
 		_lastActionTime = _clock.currentMillis();
 	}
 	
-	private <TBuffer extends ResizingBuffer> void sendInputAction(SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue, 
-			CountMetric sentActionThroughputMetric, CountMetric droppedActionThroughputMetric) {		
+	private <TBuffer extends ResizingBuffer> void sendInputAction(SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue) {		
 		if (!clientSendQueue.trySend(RouterPattern.asTask(_handlerId, false, _inputEvent, new EventWriter<OutgoingEventHeader, ClientInputEvent>() {
 
 			@Override
 			public void write(OutgoingEventHeader header, ClientInputEvent event) throws Exception {
-				//header.setTargetSocketId(event.getBuffer(), _handlerId);
 				long sendTime = _clock.currentMillis();
-				long actionId = _inputIdToSentTimeLookup.add(sendTime);
+				long actionId = nextActionId(sendTime);
 				event.setClientId(_clientId);
-				event.setClientActionId(actionId);
+				event.setReliableSeqAck(_reliableSeq);
+				event.setHasAction(true);
+				_actionEvent.attachToBuffer(event.getActionSlice());
+				_actionEvent.writeTypeId();
+				_actionEvent.setActionId(actionId);
+				_actionEvent.setActionTypeId(0);
+				_actionEvent.setClientIdBits(_clientId);
+				_actionEvent.releaseBuffer();
 			}
 			
 		}))) {
-			droppedActionThroughputMetric.push(1);
+			_droppedActionThroughputMetric.push(1);
 		}
-		sentActionThroughputMetric.push(1);
+		_sentActionThroughputMetric.push(1);
 	}
 	
 	private <TBuffer extends ResizingBuffer> void connect(SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue) {
@@ -147,32 +187,127 @@ public final class Client {
 
 			@Override
 			public void write(OutgoingEventHeader header, ClientConnectEvent event) throws Exception {
-				//header.setTargetSocketId(event.getBuffer(), _handlerId);
 				event.setCallbackBits(_index);
 			}
 			
 		}));
+		_connectReqSendTime = _clock.currentMillis();
 	}
 	
-	public void onClientUpdate(ClientUpdateEvent updateEvent, StatsMetric actionEffectLatencyMetric, CountMetric lateActionEffectMetric) {
+	public void onClientUpdate(ClientUpdateEvent updateEvent) {
 		long updateRecvTime = _clock.currentMillis();
-		_updateIdToRecvTimeLookup.put(updateEvent.getUpdateId(), updateRecvTime);
 		
-		// work out the latency for any sent input
-		long lastConfirmedInputId = _lastConfirmedInputId;
-		for (long inputId = lastConfirmedInputId + 1; inputId <= updateEvent.getHighestInputActionId(); inputId++) {
-			if (_inputIdToSentTimeLookup.containsIndex(inputId)) {
-				long latency = updateRecvTime - _inputIdToSentTimeLookup.getDirect(inputId);
-				actionEffectLatencyMetric.push(latency);
-				_inputIdToSentTimeLookup.remove(inputId);
-			} else {
-				lateActionEffectMetric.push(1);
+		Log.info("Update event: " + updateEvent.getBuffer().toString());
+		
+		for (byte[] chunk : updateEvent.getChunkedContent()) {
+			ArrayBackedResizingBuffer chunkBuffer = new ArrayBackedResizingBuffer(chunk);
+			int cursor = 0;
+			long reliableSeq = chunkBuffer.readLong(cursor);
+			cursor += ResizingBuffer.LONG_SIZE;
+			
+			// only process chunk if unreliable (-1) or if all previous
+			// reliable chunks have been processed
+			if (reliableSeq == -1 || reliableSeq == _reliableSeq + 1) {
+				int dataType = chunkBuffer.readInt(cursor);
+				
+				if (dataType == _receipt.getTypeId()) {
+					_receipt.attachToBuffer(chunkBuffer, cursor);
+					try {
+						onActionReceipt(_receipt, updateRecvTime);
+					} finally {
+						_receipt.releaseBuffer();
+					}
+				} else if (dataType == _canonicalStateUpdate.getTypeId()) {
+					_canonicalStateUpdate.attachToBuffer(chunkBuffer, cursor);
+					try {
+						onCanonicalStateUpdate(_canonicalStateUpdate, updateRecvTime);
+					} finally {
+						_canonicalStateUpdate.releaseBuffer();
+					}
+				} else if (dataType == _effect.getTypeId()) {
+					_effect.attachToBuffer(chunkBuffer, cursor);
+					try {
+						onEffectUpdate(_effect, updateRecvTime);
+					} finally {
+						_effect.releaseBuffer();
+					}
+				}
+				
+				if (reliableSeq >= 0) {
+					_reliableSeq = reliableSeq;
+				}
 			}
 		}
-		_lastConfirmedInputId = updateEvent.getHighestInputActionId();
 	}
 	
-	public void onConnectResponse(ConnectResponseEvent connectResEvent, CountMetric clientCountMetric) {
+	private long nextActionId(long sendTime) {
+		/* 
+		 * if any actions drop out of the sliding window, they are
+		 * considered unacknowledged
+		 */
+		long prevTailId = _actionIdToSentTimeLookup.getHeadIndex() - _actionIdToSentTimeLookup.getLength() + 1;
+		if (_actionIdToSentTimeLookup.containsIndex(prevTailId)) {
+			_lateActionToCanonicalStateCountMetric.push(1);
+		}
+		return _actionIdToSentTimeLookup.add(sendTime);
+	}
+	
+	private void onActionReceipt(ActionReceipt receipt, long recvTime) {
+		long actionId = receipt.getActionId();
+		long startTime = receipt.getStartTime();
+		if (_actionIdToSentTimeLookup.containsIndex(actionId)) {
+			if (_simTime < startTime) {
+				_actionIdToStartTimeLookup.put(actionId, startTime);
+			} else {
+				_actionToCanonicalStateLatencyMetric.push(recvTime - _actionIdToSentTimeLookup.getDirect(actionId));
+				_actionIdToSentTimeLookup.remove(actionId);
+			}
+		}
+	}
+	
+	private void onCanonicalStateUpdate(CanonicalStateUpdate update, long recvTime) {
+		// search through pending actions to work out latency
+		_simTime = Math.max(_simTime, update.getTime());
+		long headId = _actionIdToStartTimeLookup.getHeadIndex();
+		long tailId = headId - _actionIdToStartTimeLookup.getLength() + 1;
+		for (long actionId = tailId; actionId <= headId; actionId++) {
+			if (_actionIdToStartTimeLookup.containsIndex(actionId)) {
+				long startTime = _actionIdToStartTimeLookup.getDirect(actionId);
+				if (startTime <= _simTime) {
+					_actionToCanonicalStateLatencyMetric.push(recvTime - _actionIdToSentTimeLookup.getDirect(actionId));
+					_actionIdToSentTimeLookup.remove(actionId);
+					_actionIdToStartTimeLookup.remove(actionId);
+				}
+			}
+		}
+		
+		if (_clientId == 0) {
+			ChunkReader updateChunkReader = new ChunkReader(update.getData());
+			StringBuilder stateBuilder = new StringBuilder();
+			stateBuilder.append("update [");
+			boolean isFirst = true;
+			for (byte[] chunk : updateChunkReader) {
+				if (isFirst) {
+					isFirst = false;
+				} else {
+					stateBuilder.append(", ");
+				}
+				
+				ArrayBackedResizingBuffer chunkBuffer = new ArrayBackedResizingBuffer(chunk);
+				int score = chunkBuffer.readInt(0);
+				String data = new String(chunkBuffer.readBytes(ResizingBuffer.INT_SIZE, chunk.length - ResizingBuffer.INT_SIZE));
+				stateBuilder.append(String.format("{'%s': %d}", data, score));
+			}
+			stateBuilder.append("]");
+			Log.info(stateBuilder.toString());
+		}
+
+	}
+	
+	private void onEffectUpdate(BufferBackedEffect effect, long recvTime) {
+	}
+	
+	public void onConnectResponse(ConnectResponseEvent connectResEvent) {
 		if (!_isConnecting) 
 			throw new RuntimeException(String.format("Expected the client (index = %d) to be connecting on reception of a connect response event.", _index));
 		if (connectResEvent.getResponseCode() != ConnectResponseEvent.RES_OK) {
@@ -181,15 +316,17 @@ public final class Client {
 		}
 		_clientId = connectResEvent.getClientIdBits();
 		_isConnecting = false;
-		clientCountMetric.push(1);
+		_connectedClientCountMetric.push(1);
 	}
 	
 	public void reset() {
 		_isConnecting = false;
 		_clientId = -1;
 		_isActive = false;
-		_inputIdToSentTimeLookup.clear();
-		_updateIdToRecvTimeLookup.clear();
+		_actionIdToSentTimeLookup.clear();
+		_actionIdToStartTimeLookup.clear();
+		_simTime = -1;
+		unsetMetricCollectors();
 	}
 
 }

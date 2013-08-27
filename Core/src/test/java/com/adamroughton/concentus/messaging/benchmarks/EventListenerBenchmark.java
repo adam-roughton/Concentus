@@ -23,12 +23,12 @@ import org.zeromq.ZMQ.Context;
 
 import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBufferFactory;
 import com.adamroughton.concentus.disruptor.CollocatedBufferEventFactory;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueImpl;
 import com.adamroughton.concentus.disruptor.SingleProducerQueueStrategy;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBufferFactory;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessengerMutex;

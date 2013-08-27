@@ -17,7 +17,7 @@ package com.adamroughton.concentus.cluster.worker;
 
 import java.util.Objects;
 
-import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
+import com.adamroughton.concentus.cluster.worker.ClusterListenerHandle;
 import com.adamroughton.concentus.cluster.worker.ClusterListener;
 import com.adamroughton.concentus.cluster.worker.ClusterStateValue;
 
@@ -33,7 +33,7 @@ public class ClusterListenerStateCapturer<T extends Enum<T> & ClusterStateValue>
 	}
 	
 	@Override
-	public void onStateChanged(T newClusterState, ClusterWorkerHandle cluster)
+	public void onStateChanged(T newClusterState, ClusterListenerHandle cluster)
 			throws Exception {
 		_valueCollector.addValue(newClusterState);
 	}

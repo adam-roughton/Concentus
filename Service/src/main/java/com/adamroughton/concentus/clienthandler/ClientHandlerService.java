@@ -15,6 +15,7 @@
  */
 package com.adamroughton.concentus.clienthandler;
 
+import java.util.ArrayList;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -24,19 +25,21 @@ import java.util.logging.Logger;
 
 import org.zeromq.ZMQ;
 
+import com.adamroughton.concentus.ConcentusEndpoints;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.ConcentusService;
 import com.adamroughton.concentus.ConcentusServiceState;
 import com.adamroughton.concentus.Constants;
-import com.adamroughton.concentus.canonicalstate.CanonicalStateService;
-import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
+import com.adamroughton.concentus.cluster.worker.ClusterListenerHandle;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.config.ConfigurationUtil;
+import com.adamroughton.concentus.data.BytesUtil;
+import com.adamroughton.concentus.data.DataType;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.MessagingUtil;
 import com.adamroughton.concentus.messaging.Messenger;
@@ -44,13 +47,11 @@ import com.adamroughton.concentus.messaging.MessengerBridge;
 import com.adamroughton.concentus.messaging.MessengerBridge.BridgeDelegate;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
-import com.adamroughton.concentus.messaging.events.EventType;
+import com.adamroughton.concentus.messaging.SocketIdentity;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.metric.MetricContext;
-import com.adamroughton.concentus.pipeline.PipelineBranch;
 import com.adamroughton.concentus.pipeline.PipelineSection;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
@@ -67,13 +68,13 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 	
 	private final ConcentusHandle<? extends Configuration, TBuffer> _concentusHandle;
 	private final MetricContext _metricContext;
+	private final RoundRobinAllocationStrategy _actionProcAllocationStrategy = new RoundRobinAllocationStrategy();
 	
 	private final SocketManager<TBuffer> _socketManager;
 	private final ExecutorService _executor;
 	
 	private final EventQueue<TBuffer> _recvQueue;
 	private final EventQueue<TBuffer> _routerSendQueue;
-	private final EventQueue<TBuffer> _outQueue;
 	private ProcessingPipeline<TBuffer> _pipeline;
 	
 	private final OutgoingEventHeader _outgoingHeader; // both router and pub can share the same outgoing header
@@ -86,12 +87,11 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 	private EventProcessor _dealerSetPublisher;
 	//private SendRecvMessengerReactor<TBuffer> _routerReactor;
 	private ClientHandlerProcessor<TBuffer> _processor;
-	private EventProcessor _publisher;
 	
+	private final int _routerPort;
 	private final int _routerSocketId;
 	private final int _dealerSetSocketId;
 	private final int _subSocketId;
-	private final int _pubSocketId;
 	
 	private int _clientHandlerId;
 
@@ -106,7 +106,6 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 		
 		int recvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "recv");
 		int routerSendBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "routerSend");
-		int pubBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "pub");
 		
 		MessageQueueFactory<TBuffer> messageQueueFactory = _socketManager.newMessageQueueFactory(_concentusHandle.getEventQueueFactory());
 		
@@ -119,10 +118,6 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 				routerSendBufferLength, 
 				MSG_BUFFER_ENTRY_LENGTH, 
 				new YieldingWaitStrategy());
-		_outQueue = messageQueueFactory.createSingleProducerQueue("pubQueue", 
-				pubBufferLength, 
-				MSG_BUFFER_ENTRY_LENGTH, 
-				new YieldingWaitStrategy());
 		_outgoingHeader = new OutgoingEventHeader(0, 2);
 		_routerRecvHeader = new IncomingEventHeader(0, 2);
 		_subRecvHeader = new IncomingEventHeader(0, 1);
@@ -131,33 +126,26 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 		 * Configure sockets
 		 */
 		// router socket
-		int routerPort = ConfigurationUtil.getPort(config, SERVICE_TYPE, "input");
+		_routerPort = ConfigurationUtil.getPort(config, SERVICE_TYPE, "input");
 		SocketSettings routerSocketSetting = SocketSettings.create()
-	/*			.setSupportReliable(true)
-				.setReliableBufferLength(2048)
-				.setReliableTryAgainMillis(100) */
-				.bindToPort(routerPort);
+				.bindToPort(_routerPort);
 		_routerSocketId = _socketManager.create(ZMQ.ROUTER, routerSocketSetting, "input_recv");
 		
 		SocketSettings dealerSetSocketSettings = SocketSettings.create()
 				.setRecvPairAddress(String.format("tcp://%s:%d", 
 						concentusHandle.getNetworkAddress().getHostAddress(),
-						routerPort));
+						_routerPort));
 		_dealerSetSocketId = _socketManager.create(SocketManager.DEALER_SET, dealerSetSocketSettings, "input_send");
 		
 		// sub socket
 		SocketSettings subSocketSetting = SocketSettings.create()
-				.subscribeTo(EventType.STATE_UPDATE)
-				.subscribeTo(EventType.STATE_INFO);
+				.subscribeTo(DataType.CANONICAL_STATE_UPDATE);
 		_subSocketId = _socketManager.create(ZMQ.SUB, subSocketSetting, "sub");
-
-		// pub socket
-		_pubSocketId = _socketManager.create(ZMQ.PUB, "pub");
 	}
 
 	@Override
 	public void onStateChanged(ConcentusServiceState newClusterState,
-			ClusterWorkerHandle cluster) throws Exception {
+			ClusterListenerHandle cluster) throws Exception {
 		LOG.info(String.format("Entering state %s", newClusterState.name()));
 		switch (newClusterState) {
 			case INIT:
@@ -186,20 +174,20 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 		return ConcentusServiceState.class;
 	}
 	
-	private void onInit(ClusterWorkerHandle cluster) throws Exception {		
+	private void onInit(ClusterListenerHandle cluster) throws Exception {		
 		// Request a client handler ID
 		byte[] clientHandlerAssignmentReq = new byte[16];
-		MessageBytesUtil.writeUUID(clientHandlerAssignmentReq, 0, cluster.getMyId());
+		BytesUtil.writeUUID(clientHandlerAssignmentReq, 0, cluster.getMyId());
 		cluster.requestAssignment(SERVICE_TYPE, clientHandlerAssignmentReq);
 	}
 	
-	private void onBind(ClusterWorkerHandle cluster) throws Exception {
+	private void onBind(ClusterListenerHandle cluster) throws Exception {
 		// get client handler ID
 		byte[] assignment = cluster.getAssignment(SERVICE_TYPE);
 		if (assignment.length != 4) 
 			throw new RuntimeException(String.format("Expected the assignment to be an Int, " +
 					"instead had length %d", assignment.length));
-		_clientHandlerId = MessageBytesUtil.readInt(assignment, 0);
+		_clientHandlerId = BytesUtil.readInt(assignment, 0);
 		
 		// infrastructure for router socket
 		Mutex<Messenger<TBuffer>> routerSocketPackageMutex = _socketManager.getSocketMutex(_routerSocketId);
@@ -216,15 +204,6 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 				_routerSendQueue, 
 				new Publisher<TBuffer>(_outgoingHeader), 
 				dealerSetSocketPackageMutex);	
-				
-//		_routerReactor = new SendRecvMessengerReactor<>(
-//				"routerReactor",
-//				routerSocketPackageMutex, 
-//				_outgoingHeader, 
-//				_routerRecvHeader,
-//				_recvQueue,
-//				_routerSendQueue, 
-//				_concentusHandle);
 		
 		// infrastructure for sub socket
 		Mutex<Messenger<TBuffer>> subSocketPackageMutex = _socketManager.getSocketMutex(_subSocketId);
@@ -235,48 +214,58 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 				_recvQueue, 
 				_concentusHandle);
 
-		// infrastructure for pub socket
 		SendQueue<OutgoingEventHeader, TBuffer> routerSendQueue = new SendQueue<>("processor", _outgoingHeader, _routerSendQueue);
-		SendQueue<OutgoingEventHeader, TBuffer> pubSendQueue = new SendQueue<>("processor", _outgoingHeader, _outQueue);
-		Mutex<Messenger<TBuffer>> pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
+
 		// event processing infrastructure
 		_processor = new ClientHandlerProcessor<>(
-				_concentusHandle.getClock(),
+				_actionProcAllocationStrategy,
+				_concentusHandle.getClock(), 
 				_clientHandlerId, 
-				_routerSocketId,
-				_subSocketId,
+				_routerSocketId, 
+				_subSocketId, 
 				routerSendQueue, 
-				pubSendQueue, 
-				_routerRecvHeader,
-				_subRecvHeader,
-				_metricContext);
-		_publisher = MessagingUtil.asSocketOwner("publisher", _outQueue, new Publisher<TBuffer>(_outgoingHeader), pubSocketPackageMutex);
+				_routerRecvHeader, 
+				_subRecvHeader, 
+				_metricContext);		
 		
 		// create processing pipeline
 		PipelineSection<TBuffer> subRecvSection = ProcessingPipeline.<TBuffer>build(_subListener, _concentusHandle.getClock())
 				.thenConnector(_recvQueue)
 				.asSection();
-		PipelineBranch<TBuffer> dealerSetBranch = ProcessingPipeline.<TBuffer>startBranch(_routerSendQueue, _concentusHandle.getClock())
-				.then(_dealerSetPublisher)
-				.create();
-		PipelineBranch<TBuffer> publisherBranch = ProcessingPipeline.<TBuffer>startBranch(_outQueue, _concentusHandle.getClock())
-				.then(_publisher)
-				.create();
 		_pipeline = ProcessingPipeline.<TBuffer>build(_routerListener, _concentusHandle.getClock())
 				.thenConnector(_recvQueue)
 				.join(subRecvSection)
 				.into(_recvQueue.createEventProcessor("processor", _processor, _concentusHandle.getClock(), _concentusHandle))
-				.thenBranch(dealerSetBranch, publisherBranch)
+				.thenConnector(_routerSendQueue)
+				.then(_dealerSetPublisher)
 				.createPipeline(_executor);
 		
-//		_pipeline = ProcessingPipeline.<TBuffer>startCyclicPipeline(_routerSendQueue, _concentusHandle.getClock())
-//				.then(_routerReactor)
-//				.thenConnector(_recvQueue)
-//				.join(subRecvSection)
-//				.into(_recvQueue.createEventProcessor("processor", _processor, _concentusHandle.getClock(), _concentusHandle))
-//				.thenConnector(_outQueue)
-//				.then(_publisher)
-//				.completeCycle(_executor);
+		// register the service
+		cluster.registerServiceEndpoint(ConcentusEndpoints.CLIENT_HANDLER, 
+				_concentusHandle.getNetworkAddress().getHostAddress(),
+				_routerPort);
+	}
+	
+	private void onConnect(ClusterListenerHandle cluster) throws Exception {
+		String[] canonicalStateAddresses = cluster.getAllServiceEndpoints(ConcentusEndpoints.CANONICAL_STATE_PUB);
+		if (canonicalStateAddresses.length < 1) {
+			throw new RuntimeException("No canonical state services registered!");
+		}
+		final String[] actionProcessorAddresses = cluster.getAllServiceEndpoints(ConcentusEndpoints.ACTION_PROCESSOR);
+		if (actionProcessorAddresses.length < 1) {
+			throw new RuntimeException("No action processor services registered!");
+		}
+		
+		for (String canonicalStateAddress : canonicalStateAddresses) {
+			_socketManager.connectSocket(_subSocketId, canonicalStateAddress);
+		}
+		
+		for (String actionProcessorAddress : actionProcessorAddresses) {
+			_socketManager.connectSocket(_dealerSetSocketId, actionProcessorAddress);
+		}
+		
+		Mutex<Messenger<TBuffer>> routerSocketPackageMutex = _socketManager.getSocketMutex(_routerSocketId);	
+		Mutex<Messenger<TBuffer>> dealerSetSocketPackageMutex = _socketManager.getSocketMutex(_dealerSetSocketId);
 		
 		// create a bridge for router -> dealer set until pipeline is started
 		_routerDealerSetBridgeTask = _executor.submit(new MessengerBridge<>(
@@ -313,26 +302,17 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 				_routerRecvHeader, 
 				_outgoingHeader));
 		
-		// register the service
-		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _concentusHandle.getNetworkAddress().getHostAddress()));
+		/*
+		 * Get the socket identities for all action processors
+		 */
+		ArrayList<SocketIdentity> actionProcessorRefs = new ArrayList<>(actionProcessorAddresses.length);
+		for (String connectionString : actionProcessorAddresses) {
+			actionProcessorRefs.add(_socketManager.resolveIdentity(_dealerSetSocketId, connectionString, 10, TimeUnit.SECONDS));
+		}
+		_actionProcAllocationStrategy.setActionProcessorRefs(actionProcessorRefs);
 	}
 	
-	private void onConnect(ClusterWorkerHandle cluster) throws Exception {
-		String[] canonicalStateAddresses = cluster.getAllServices(CanonicalStateService.SERVICE_TYPE);
-		if (canonicalStateAddresses.length < 1) {
-			throw new RuntimeException("No canonical state services registered!");
-		}
-
-		// assuming only one publishes at any given time (i.e. the slave publishes to null)
-		int canonicalPubPort = ConfigurationUtil.getPort(_concentusHandle.getConfig(), CanonicalStateService.SERVICE_TYPE ,"pub");
-		int canonicalSubPort = ConfigurationUtil.getPort(_concentusHandle.getConfig(), CanonicalStateService.SERVICE_TYPE, "input");
-		for (String canonicalStateAddress : canonicalStateAddresses) {
-			_socketManager.connectSocket(_subSocketId, String.format("%s:%d", canonicalStateAddress, canonicalPubPort));
-			_socketManager.connectSocket(_pubSocketId, String.format("%s:%d", canonicalStateAddress, canonicalSubPort));
-		}
-	}
-	
-	private void onStart(ClusterWorkerHandle cluster) throws Exception {
+	private void onStart(ClusterListenerHandle cluster) throws Exception {
 		_routerDealerSetBridgeTask.cancel(true);
 		Mutex<Messenger<TBuffer>> routerMutex = _socketManager.getSocketMutex(_routerSocketId);
 		routerMutex.waitForRelease(60, TimeUnit.SECONDS);
@@ -344,8 +324,9 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> implements Con
 		}
 	}
 	
-	private void onShutdown(ClusterWorkerHandle cluster) throws Exception {
+	private void onShutdown(ClusterListenerHandle cluster) throws Exception {
 		_pipeline.halt(60, TimeUnit.SECONDS);
 		_socketManager.close();
 	}
+	
 }

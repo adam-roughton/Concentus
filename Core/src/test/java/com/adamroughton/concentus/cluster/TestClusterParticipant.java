@@ -26,7 +26,7 @@ import org.junit.Test;
 import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.cluster.ClusterParticipant;
 import com.adamroughton.concentus.cluster.ClusterPath;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.data.BytesUtil;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.utils.ZKPaths;
 
@@ -79,7 +79,7 @@ public class TestClusterParticipant extends TestClusterBase {
 		
 		String testPath = ZKPaths.makePath(ClusterPath.ASSIGN_RES.getPath(ROOT), "abcdefg");
 		byte[] testData = new byte[4];
-		MessageBytesUtil.writeInt(testData, 0, 100);
+		BytesUtil.writeInt(testData, 0, 100);
 		
 		_clusterParticipant.createOrSetEphemeral(testPath, testData);
 		
@@ -87,7 +87,7 @@ public class TestClusterParticipant extends TestClusterBase {
 		assertTrue("Ephemeral node was not created", testClient.checkExists().forPath(testPath) != null);
 		
 		byte[] storedTestData = testClient.getData().forPath(testPath);
-		assertEquals(100, MessageBytesUtil.readInt(storedTestData, 0));
+		assertEquals(100, BytesUtil.readInt(storedTestData, 0));
 		
 		_clusterParticipant.close();
 		
@@ -101,7 +101,7 @@ public class TestClusterParticipant extends TestClusterBase {
 		
 		String testPath = ZKPaths.makePath(ClusterPath.ASSIGN_REQ.getPath(ROOT), "abcdefg");
 		byte[] testData = new byte[4];
-		MessageBytesUtil.writeInt(testData, 0, 100);
+		BytesUtil.writeInt(testData, 0, 100);
 		testClient.create().creatingParentsIfNeeded().forPath(testPath);
 		
 		assertTrue("Failed setting up test conditions (failed to make standard node)", testClient.checkExists().forPath(testPath) != null);
@@ -118,7 +118,7 @@ public class TestClusterParticipant extends TestClusterBase {
 		
 		String testPath = ZKPaths.makePath(ClusterPath.ASSIGN_REQ.getPath(ROOT), "abcdefg");
 		byte[] testData = new byte[4];
-		MessageBytesUtil.writeInt(testData, 0, 100);
+		BytesUtil.writeInt(testData, 0, 100);
 		testClient.create().creatingParentsIfNeeded().withMode(CreateMode.EPHEMERAL).forPath(testPath);
 		
 		assertTrue("Failed setting up test conditions (failed to make ephemeral node)", testClient.checkExists().forPath(testPath) != null);

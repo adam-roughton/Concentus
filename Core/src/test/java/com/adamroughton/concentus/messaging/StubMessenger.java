@@ -17,6 +17,8 @@ package com.adamroughton.concentus.messaging;
 
 import java.util.Objects;
 
+import com.adamroughton.concentus.data.ResizingBuffer;
+
 public final class StubMessenger<TBuffer extends ResizingBuffer> implements Messenger<TBuffer> {
 
 	public static interface FakeRecvDelegate<TBuffer extends ResizingBuffer> {

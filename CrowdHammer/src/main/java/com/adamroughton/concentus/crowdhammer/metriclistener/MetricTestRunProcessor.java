@@ -28,12 +28,12 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Objects;
 
+import com.adamroughton.concentus.data.DataType;
+import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.events.bufferbacked.MetricEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.MetricMetaDataEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.MetricMetaDataRequestEvent;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
-import com.adamroughton.concentus.messaging.events.EventType;
-import com.adamroughton.concentus.messaging.events.MetricMetaDataEvent;
-import com.adamroughton.concentus.messaging.events.MetricMetaDataRequestEvent;
-import com.adamroughton.concentus.messaging.events.MetricEvent;
 import com.adamroughton.concentus.messaging.patterns.EventPattern;
 import com.adamroughton.concentus.messaging.patterns.EventReader;
 import com.adamroughton.concentus.metric.MetricType;
@@ -88,7 +88,7 @@ public class MetricTestRunProcessor<TBuffer extends ResizingBuffer> implements E
 		if (!_subHeader.isValid(eventBytes)) return;
 		
 		int eventType = EventPattern.getEventType(eventBytes, _subHeader);
-		if (eventType == EventType.METRIC.getId()) {
+		if (eventType == DataType.METRIC_EVENT.getId()) {
 			EventPattern.readContent(eventBytes, _subHeader, _metricEvent, new EventReader<IncomingEventHeader, MetricEvent>() {
 
 				@Override

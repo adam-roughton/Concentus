@@ -15,6 +15,8 @@
  */
 package com.adamroughton.concentus.messaging;
 
+import com.adamroughton.concentus.data.ResizingBuffer;
+
 public interface Messenger<TBuffer extends ResizingBuffer> {
 
 	/**

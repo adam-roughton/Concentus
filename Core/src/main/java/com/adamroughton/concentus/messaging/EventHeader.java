@@ -17,6 +17,8 @@ package com.adamroughton.concentus.messaging;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.adamroughton.concentus.data.ResizingBuffer;
+
 /**
  * A header is reserved on the allocated event memory that flow from event receiver to processor, and processor
  * to sender; for communicating event validity, and other meta data about the event. This class serves as the 

@@ -23,6 +23,9 @@ import org.zeromq.ZMQ.Context;
 
 import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBufferFactory;
+import com.adamroughton.concentus.data.BytesUtil;
 import com.adamroughton.concentus.disruptor.CollocatedBufferEventFactory;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueImpl;
@@ -30,10 +33,7 @@ import com.adamroughton.concentus.disruptor.EventQueuePublisher;
 import com.adamroughton.concentus.disruptor.EventQueueStrategyBase;
 import com.adamroughton.concentus.disruptor.SingleProducerEventQueuePublisher;
 import com.adamroughton.concentus.disruptor.SingleProducerQueueStrategy;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBufferFactory;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.SendRecvMessengerReactor;
@@ -62,7 +62,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 	private static final byte[] DEALER_SOCKET_ID = Util.intToBytes(15);
 	static {
 		// ensure first bit is raised for Identity (ZMQ reserves IDs starting with binary 0)
-		MessageBytesUtil.writeFlagToByte(DEALER_SOCKET_ID, 0, 0, true);
+		BytesUtil.writeFlagToByte(DEALER_SOCKET_ID, 0, 0, true);
 	}
 	
 	@Param int messageCount;

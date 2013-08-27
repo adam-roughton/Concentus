@@ -18,6 +18,7 @@ package com.adamroughton.concentus.messaging;
 import java.util.Objects;
 
 import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueuePublisher;
 import com.adamroughton.concentus.util.Mutex;

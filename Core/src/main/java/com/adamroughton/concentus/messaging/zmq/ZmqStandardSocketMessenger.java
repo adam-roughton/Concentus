@@ -20,12 +20,12 @@ import java.util.Objects;
 import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.Clock;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.BytesUtil;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
 import com.esotericsoftware.minlog.Log;
 
 public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
@@ -37,6 +37,9 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 	private final int _socketType;
 	
 	private final byte[] _headerBytes;
+	
+	// maximum 0MQ identity is 255 bytes, so ensure enough space just in case
+	private final byte[] _socketIdTmpBuffer = new byte[255];
 	
 	public ZmqStandardSocketMessenger(int socketId, String name, ZMQ.Socket socket, Clock clock) {
 		_socketId = socketId;
@@ -167,11 +170,11 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 			int eventTypeOffset = EventHeader.getSegmentOffset(eventTypeSegmentMetaData);
 			int eventTypeId = eventBuffer.readInt(eventTypeOffset);
 			
-			MessageBytesUtil.writeInt(_headerBytes, cursor, eventTypeId);
+			BytesUtil.writeInt(_headerBytes, cursor, eventTypeId);
 			cursor += ResizingBuffer.INT_SIZE;
 		}
 		
-		MessageBytesUtil.writeInt(_headerBytes, cursor, msgSize);
+		BytesUtil.writeInt(_headerBytes, cursor, msgSize);
 		return ZmqSocketOperations.doSend(_socket, _headerBytes, 0, _headerBytes.length, (isBlocking? 0 : ZMQ.NOBLOCK) | ZMQ.SNDMORE);
 	}
 	
@@ -202,21 +205,21 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 					}
 					segmentIndex++;
 				} else {
-					byte[] eventBufferByteArray;
+					int recvdAmount;
 					if (segmentIndex == 0 && _socketType == ZMQ.ROUTER) {
-						// maximum 0MQ identity is 255 bytes, so ensure enough space just in case
-						eventBufferByteArray = eventBuffer.allocateForWriting(255);
+						recvdAmount = ZmqSocketOperations.doRecv(_socket, _socketIdTmpBuffer, 0, _socketIdTmpBuffer.length, isBlocking);
+						eventBuffer.copyFrom(_socketIdTmpBuffer, 0, cursor, recvdAmount);
 					} else {
-						eventBufferByteArray = eventBuffer.getBuffer();
+						byte[] eventBufferByteArray = eventBuffer.getBuffer();
+						recvdAmount = ZmqSocketOperations.doRecv(_socket, eventBufferByteArray, cursor, eventBufferByteArray.length - cursor, isBlocking);
 					}
 					
-					int recvdAmount = ZmqSocketOperations.doRecv(_socket, eventBufferByteArray, cursor, eventBufferByteArray.length - cursor, isBlocking);
 					if (segmentIndex == 0 && recvdAmount == 0) {
 						// no message ready
 						return false;
 					} else if (recvdAmount == -1) {
 						isValid = false;
-					} else {
+					} else {					
 						if (recvTime == -1) recvTime = _clock.currentMillis();
 						header.setSegmentMetaData(eventBuffer, eventSegmentIndex, cursor, recvdAmount);	
 						lastCursor = cursor;
@@ -263,7 +266,7 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 				headerCursor += ResizingBuffer.INT_SIZE;
 			}
 			
-			int msgSize = MessageBytesUtil.readInt(_headerBytes, headerCursor);
+			int msgSize = BytesUtil.readInt(_headerBytes, headerCursor);
 			incomingBuffer.preallocate(cursor, msgSize);
 			
 			return headerSize;

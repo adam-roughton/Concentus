@@ -1,6 +1,8 @@
 package com.adamroughton.concentus.model;
 
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.model.Effect;
+import com.adamroughton.concentus.data.model.kyro.CandidateValue;
 
 public interface CollectiveApplication {
 
@@ -24,6 +26,10 @@ public interface CollectiveApplication {
 	 */
 	CandidateValue apply(Effect effect, long time);
 	
-	void createUpdate(ResizingBuffer updateBuffer, CollectiveVariableSet collectiveVariableSet);
+	long getTickDuration();
+	
+	CollectiveVariableDefinition[] getCollectiveVariableDefinitions();
+	
+	void createUpdate(ResizingBuffer updateData, long time, CollectiveVariableSet collectiveVariableSet);
 	
 }

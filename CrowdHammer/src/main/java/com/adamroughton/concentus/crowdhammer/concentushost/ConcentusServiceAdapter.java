@@ -30,7 +30,8 @@ import com.adamroughton.concentus.ConcentusWorkerNode;
 import com.adamroughton.concentus.cluster.data.MetricPublisherInfo;
 import com.adamroughton.concentus.cluster.data.TestRunInfo;
 import com.adamroughton.concentus.cluster.worker.ClusterListener;
-import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
+import com.adamroughton.concentus.cluster.worker.ClusterListenerHandle;
+import com.adamroughton.concentus.cluster.worker.ServiceEndpointType;
 import com.adamroughton.concentus.config.Configuration;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
@@ -63,7 +64,7 @@ public class ConcentusServiceAdapter implements CrowdHammerService {
 
 	@Override
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
-			ClusterWorkerHandle cluster) throws Exception {
+			ClusterListenerHandle cluster) throws Exception {
 		SignalReadyDisabledCluster clusterWrapper = new SignalReadyDisabledCluster(cluster);
 		
 		_log.info(String.format("Entering state %s", newClusterState.name()));
@@ -87,13 +88,18 @@ public class ConcentusServiceAdapter implements CrowdHammerService {
 		return CrowdHammerServiceState.class;
 	}
 	
-	private class SignalReadyDisabledCluster implements ClusterWorkerHandle {
+	private class SignalReadyDisabledCluster implements ClusterListenerHandle {
 
-		private final ClusterWorkerHandle _wrappedCluster;
+		private final ClusterListenerHandle _wrappedCluster;
 		private Set<String> _registeredServiceNames = new HashSet<>();
 		
-		public SignalReadyDisabledCluster(final ClusterWorkerHandle wrappedCluster) {
+		public SignalReadyDisabledCluster(final ClusterListenerHandle wrappedCluster) {
 			_wrappedCluster = Objects.requireNonNull(wrappedCluster);
+		}
+		
+		@Override
+		public String getApplicationClass() {
+			return _wrappedCluster.getApplicationClass();
 		}
 		
 		@Override
@@ -172,6 +178,44 @@ public class ConcentusServiceAdapter implements CrowdHammerService {
 		public List<MetricPublisherInfo> getMetricPublishers(
 				CuratorWatcher watcher) {
 			return _wrappedCluster.getMetricPublishers(watcher);
+		}
+
+		@Override
+		public void registerServiceEndpoint(ServiceEndpointType endpointTypeId,
+				String hostAddress, int port) {
+			_wrappedCluster.registerServiceEndpoint(endpointTypeId, hostAddress, port);
+		}
+
+		@Override
+		public void unregisterServiceEndpoint(ServiceEndpointType endpointTypeId) {
+			_wrappedCluster.unregisterServiceEndpoint(endpointTypeId);
+		}
+
+		@Override
+		public String getServiceEndpointAtRandom(
+				ServiceEndpointType endpointTypeId) {
+			return _wrappedCluster.getServiceEndpointAtRandom(endpointTypeId);
+		}
+
+		@Override
+		public String[] getAllServiceEndpoints(
+				ServiceEndpointType endpointTypeId) {
+			return _wrappedCluster.getAllServiceEndpoints(endpointTypeId);
+		}
+
+		@Override
+		public void registerAsActionProcessor(int id) {
+			_wrappedCluster.registerAsActionProcessor(id);
+		}
+
+		@Override
+		public void unregisterAsActionProcessor() {
+			_wrappedCluster.unregisterAsActionProcessor();
+		}
+
+		@Override
+		public List<Integer> getActionProcessorIds() {
+			return _wrappedCluster.getActionProcessorIds();
 		}
 		
 	}

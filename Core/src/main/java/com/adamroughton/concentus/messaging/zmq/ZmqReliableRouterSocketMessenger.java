@@ -25,12 +25,13 @@ import uk.co.real_logic.intrinsics.ComponentFactory;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.InitialiseDelegate;
-import com.adamroughton.concentus.messaging.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.BytesUtil;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
+import com.adamroughton.concentus.messaging.SocketIdentity;
 import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
 import com.esotericsoftware.minlog.Log;
 
@@ -41,7 +42,7 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 	private final ZMQ.Socket _socket;
 	private final Clock _clock;
 	
-	private final Map<ZMQIdentity, ReliableSeqInfo> _reliableSeqLookup = new HashMap<>();
+	private final Map<SocketIdentity, ReliableSeqInfo> _reliableSeqLookup = new HashMap<>();
 	private final StructuredSlidingWindowMap<CachedMessage> _reliableMsgBuffer;
 	private final long _tryAgainMillis;	
 	private final byte[] _headerBytes = new byte[ResizingBuffer.LONG_SIZE + ResizingBuffer.INT_SIZE];
@@ -158,14 +159,14 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 		return segmentIndex;
 	}
 	
-	private static ZMQIdentity getIdentity(ArrayBackedResizingBuffer messageBuffer, EventHeader header) {
+	private static SocketIdentity getIdentity(ArrayBackedResizingBuffer messageBuffer, EventHeader header) {
 		int segmentMetaData = header.getSegmentMetaData(messageBuffer, 0);
 		int offset = EventHeader.getSegmentOffset(segmentMetaData);
 		int length = EventHeader.getSegmentLength(segmentMetaData);
-		return new ZMQIdentity(messageBuffer.getBuffer(), offset, length);
+		return new SocketIdentity(messageBuffer.getBuffer(), offset, length);
 	}
 	
-	private long assignSeq(ZMQIdentity identity, ArrayBackedResizingBuffer outgoingBuffer, OutgoingEventHeader eventHeader) {
+	private long assignSeq(SocketIdentity identity, ArrayBackedResizingBuffer outgoingBuffer, OutgoingEventHeader eventHeader) {
 		long seqToWrite;
 		
 		ReliableSeqInfo reliableSeqInfo;
@@ -201,8 +202,8 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 	}
 	
 	private boolean sendHeader(long seq, int msgSize, ArrayBackedResizingBuffer outgoingBuffer, OutgoingEventHeader eventHeader, boolean isBlocking) {
-		MessageBytesUtil.writeLong(_headerBytes, 0, seq);
-		MessageBytesUtil.writeInt(_headerBytes, ResizingBuffer.LONG_SIZE, msgSize);
+		BytesUtil.writeLong(_headerBytes, 0, seq);
+		BytesUtil.writeInt(_headerBytes, ResizingBuffer.LONG_SIZE, msgSize);
 		return ZmqSocketOperations.doSend(_socket, _headerBytes, 0, _headerBytes.length, (isBlocking? 0 : ZMQ.NOBLOCK) | ZMQ.SNDMORE);
 	}
 			
@@ -265,7 +266,7 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 		return true;
 	}
 	
-	public int processHeaderFrame(ArrayBackedResizingBuffer incomingBuffer, IncomingEventHeader eventHeader, int contentStartOffset, ZMQIdentity identity, boolean isBlocking) {	
+	public int processHeaderFrame(ArrayBackedResizingBuffer incomingBuffer, IncomingEventHeader eventHeader, int contentStartOffset, SocketIdentity identity, boolean isBlocking) {	
 		ReliableSeqInfo reliableSeqInfo;
 		if (_reliableSeqLookup.containsKey(identity)) {
 			reliableSeqInfo = _reliableSeqLookup.get(identity);
@@ -284,8 +285,8 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 					"but instead found %d bytes.", headerSize));
 			return -1;
 		} else {
-			long nackSeq = MessageBytesUtil.readLong(_headerBytes, 0);
-			int msgSize = MessageBytesUtil.readInt(_headerBytes, ResizingBuffer.LONG_SIZE);
+			long nackSeq = BytesUtil.readLong(_headerBytes, 0);
+			int msgSize = BytesUtil.readInt(_headerBytes, ResizingBuffer.LONG_SIZE);
 			incomingBuffer.preallocate(contentStartOffset, msgSize + contentStartOffset);
 			
 			if (nackSeq == -1) {
@@ -316,7 +317,7 @@ public final class ZmqReliableRouterSocketMessenger implements ZmqSocketMessenge
 						}
 					} else {
 						// send seq frame indicating an inability to fulfill NACK
-						MessageBytesUtil.writeLong(_headerBytes, 0, Long.MAX_VALUE);
+						BytesUtil.writeLong(_headerBytes, 0, Long.MAX_VALUE);
 						boolean sendSucceeded = true;
 						sendSucceeded &= ZmqSocketOperations.doSend(_socket, identity.buffer, identity.offset, identity.length, (isBlocking? 0 : ZMQ.NOBLOCK) | ZMQ.SNDMORE);
 						if (sendSucceeded) {

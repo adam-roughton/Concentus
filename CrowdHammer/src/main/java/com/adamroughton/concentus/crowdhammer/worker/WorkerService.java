@@ -24,27 +24,25 @@ import java.util.logging.Logger;
 import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.ConcentusEndpoints;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
-import com.adamroughton.concentus.clienthandler.ClientHandlerService;
-import com.adamroughton.concentus.cluster.worker.ClusterWorkerHandle;
-//import com.adamroughton.concentus.config.Configuration;
+import com.adamroughton.concentus.cluster.worker.ClusterListenerHandle;
 import com.adamroughton.concentus.config.ConfigurationUtil;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
 import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
 import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
+import com.adamroughton.concentus.data.BytesUtil;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.EventListener;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
 import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.MessagingUtil;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
-//import com.adamroughton.concentus.messaging.SendRecvMessengerReactor;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
@@ -113,7 +111,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 
 	@Override
 	public void onStateChanged(CrowdHammerServiceState newClusterState,
-			ClusterWorkerHandle cluster) throws Exception {
+			ClusterListenerHandle cluster) throws Exception {
 		LOG.info(String.format("Entering state %s", newClusterState.name()));
 		if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
 			initTest(cluster);
@@ -139,7 +137,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 		return CrowdHammerServiceState.class;
 	}
 	
-	private void initTest(ClusterWorkerHandle cluster) throws Exception {
+	private void initTest(ClusterListenerHandle cluster) throws Exception {
 		_socketManager = _concentusHandle.newSocketManager();
 		
 		int routerRecvPort = ConfigurationUtil.getPort(_concentusHandle.getConfig(), SERVICE_TYPE, "routerRecv");
@@ -155,15 +153,15 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 		
 		// request client allocation
 		byte[] reqBytes = new byte[4];
-		MessageBytesUtil.writeInt(reqBytes, 0, _maxClients);
+		BytesUtil.writeInt(reqBytes, 0, _maxClients);
 		cluster.requestAssignment(SERVICE_TYPE, reqBytes);
 	}
 
-	private void setUpTest(ClusterWorkerHandle cluster) throws Exception {
+	private void setUpTest(ClusterListenerHandle cluster) throws Exception {
 		// read in the number of clients to test with
 		byte[] res = cluster.getAssignment(SERVICE_TYPE);
 		if (res.length != 4) throw new RuntimeException("Expected an integer value");
-		_clientCountForTest = MessageBytesUtil.readInt(res, 0);
+		_clientCountForTest = BytesUtil.readInt(res, 0);
 		
 		if (_clientCountForTest > _maxClients)
 			throw new IllegalArgumentException(
@@ -188,38 +186,17 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 				routerSendBufferLength, 
 				Constants.MSG_BUFFER_ENTRY_LENGTH, 
 				new YieldingWaitStrategy());
-		
-		cluster.registerService(SERVICE_TYPE, String.format("tcp://%s", _concentusHandle.getNetworkAddress().getHostAddress()));
 	}
 	
-	private void startSUT(ClusterWorkerHandle cluster) throws Exception {
-		final String[] clientHandlerConnStrings = cluster.getAllServices(ClientHandlerService.SERVICE_TYPE);
-		int clientHandlerPort = _concentusHandle.getConfig().getServices().get(ClientHandlerService.SERVICE_TYPE).getPorts().get("input");
-		
-//		/*
-//		 * connect client socket to all client handlers
-//		 */
-//		_handlerIds = new int[clientHandlerConnStrings.length];
-//		for (int clientHandlerIndex = 0; clientHandlerIndex < clientHandlerConnStrings.length; clientHandlerIndex++) {
-//			String connString = String.format("%s:%d", 
-//					clientHandlerConnStrings[clientHandlerIndex],
-//					clientHandlerPort);
-//			SocketSettings socketSettings = SocketSettings.create().setSupportReliable(true);
-//			int handlerSocketId = _socketManager.create(ZMQ.DEALER, socketSettings, "clientHandler" + clientHandlerIndex + " (" + connString + ")");
-//			_socketManager.connectSocket(handlerSocketId, connString);
-//			_handlerIds[clientHandlerIndex] = handlerSocketId;
-//		}
-		
+	private void startSUT(ClusterListenerHandle cluster) throws Exception {
 		/*
 		 * connect client socket to all client handlers
-		 */
-		for (int clientHandlerIndex = 0; clientHandlerIndex < clientHandlerConnStrings.length; clientHandlerIndex++) {
-			String connString = String.format("%s:%d", 
-					clientHandlerConnStrings[clientHandlerIndex],
-					clientHandlerPort);
+		 */	
+		final String[] clientHandlerConnStrings = cluster.getAllServiceEndpoints(ConcentusEndpoints.CLIENT_HANDLER);
+		for (String connString : clientHandlerConnStrings) {
 			_socketManager.connectSocket(_dealerSetSocketId, connString);
 		}
-		
+				
 		// process connect events & collect identities
 		final byte[][] handlerIds = new byte[clientHandlerConnStrings.length][];
 		Mutex<Messenger<TBuffer>> routerSocketMutex = _socketManager.getSocketMutex(_routerSocketId);
@@ -270,29 +247,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 				client.setIsActive(false);
 			}
 		}
-		
-//		Mutex<Messenger<TBuffer>> clientHandlerSet = _socketManager.createPollInSet(_handlerIds);
-//		
-//		// infrastructure for client socket
-//		_clientSocketReactor = new SendRecvMessengerReactor<>(
-//				"clientSocketReactor",
-//				clientHandlerSet, 
-//				_clientSendHeader, 
-//				_clientRecvHeader,
-//				_clientRecvQueue,
-//				_clientSendQueue, 
-//				_concentusHandle);
-//
-//		// event processing infrastructure
-//		SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue = new SendQueue<>("clientProcessor", _clientSendHeader, _clientSendQueue);
-//		_clientProcessor = new SimulatedClientProcessor<>(_concentusHandle.getClock(), _clients, _clientCountForTest, clientSendQueue, _clientRecvHeader, _metricContext);
-//		
-//		_pipeline = ProcessingPipeline.<TBuffer>startCyclicPipeline(_clientSendQueue, _concentusHandle.getClock())
-//				.then(_clientSocketReactor)
-//				.thenConnector(_clientRecvQueue)
-//				.then(_clientRecvQueue.createEventProcessor("clientProcessor", _clientProcessor, _concentusHandle.getClock(), _concentusHandle))
-//				.completeCycle(_executor);
-		
+				
 		// infrastructure for client socket
 		_routerListener = new EventListener<>(
 				"routerListener",
@@ -319,15 +274,15 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 				.createPipeline(_executor);
 	}
 	
-	private void executeTest(ClusterWorkerHandle cluster) throws Exception {
+	private void executeTest(ClusterListenerHandle cluster) throws Exception {
 		_pipeline.start();
 	}
 	
-	private void stopSendingInputEvents(ClusterWorkerHandle cluster) throws Exception {
+	private void stopSendingInputEvents(ClusterListenerHandle cluster) throws Exception {
 		_clientProcessor.stopSendingInput();
 	}
 	
-	private void teardown(ClusterWorkerHandle cluster) throws Exception {		
+	private void teardown(ClusterListenerHandle cluster) throws Exception {		
 		_pipeline.halt(60, TimeUnit.SECONDS);
 		_socketManager.close();
 		
@@ -340,7 +295,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 		}
 	}
 	
-	private void shutdown(ClusterWorkerHandle cluster) throws Exception {
+	private void shutdown(ClusterListenerHandle cluster) throws Exception {
 	}
 	
 }

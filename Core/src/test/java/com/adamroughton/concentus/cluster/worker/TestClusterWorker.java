@@ -34,8 +34,8 @@ import com.adamroughton.concentus.cluster.ClusterState;
 import com.adamroughton.concentus.cluster.ExceptionCallback;
 import com.adamroughton.concentus.cluster.TestClusterBase;
 import com.adamroughton.concentus.cluster.TestState1;
-import com.adamroughton.concentus.cluster.worker.ClusterWorkerContainer;
-import com.adamroughton.concentus.messaging.MessageBytesUtil;
+import com.adamroughton.concentus.cluster.worker.ClusterListenerContainer;
+import com.adamroughton.concentus.data.BytesUtil;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.utils.ZKPaths;
 
@@ -48,7 +48,7 @@ public class TestClusterWorker extends TestClusterBase {
 	private ExecutorService _executor;
 	private ExceptionCallback _exCallback;
 	private ClusterListenerStateCapturer<TestState1> _stateChangeCapturer;
-	private ClusterWorkerContainer _clusterWorker;
+	private ClusterListenerContainer _clusterWorker;
 	
 	@Before
 	public void setUp() {
@@ -56,7 +56,7 @@ public class TestClusterWorker extends TestClusterBase {
 		_exCallback = new ExceptionCallback();
 		_stateChangeCapturer = new ClusterListenerStateCapturer<>(TestState1.class);
 		
-		_clusterWorker = new ClusterWorkerContainer(getZooKeeperAddress(), ROOT, WORKER_ID, _stateChangeCapturer, _executor, _exCallback);
+		_clusterWorker = new ClusterListenerContainer(getZooKeeperAddress(), ROOT, WORKER_ID, _stateChangeCapturer, _executor, _exCallback);
 	}
 	
 	@After
@@ -297,7 +297,7 @@ public class TestClusterWorker extends TestClusterBase {
 		
 		String serviceType = "TEST";
 		byte[] requestBytes = new byte[4];
-		MessageBytesUtil.writeInt(requestBytes, 0, 23);
+		BytesUtil.writeInt(requestBytes, 0, 23);
 		
 		_clusterWorker.requestAssignment(serviceType, requestBytes);
 		_exCallback.throwAnyExceptions();
@@ -307,7 +307,7 @@ public class TestClusterWorker extends TestClusterBase {
 		assertTrue("The request was not created", getTestClient().checkExists().forPath(reqPath) != null);
 		byte[] storedReqData = getTestClient().getData().forPath(reqPath);
 		assertEquals(4, storedReqData.length);
-		assertEquals(23, MessageBytesUtil.readInt(storedReqData, 0));
+		assertEquals(23, BytesUtil.readInt(storedReqData, 0));
 	}
 	
 	@Test
@@ -316,9 +316,9 @@ public class TestClusterWorker extends TestClusterBase {
 		
 		String serviceType = "TEST";
 		byte[] requestBytes1 = new byte[4];
-		MessageBytesUtil.writeInt(requestBytes1, 0, 23);
+		BytesUtil.writeInt(requestBytes1, 0, 23);
 		byte[] requestBytes2 = new byte[4];
-		MessageBytesUtil.writeInt(requestBytes2, 0, 45);
+		BytesUtil.writeInt(requestBytes2, 0, 45);
 		
 		_clusterWorker.requestAssignment(serviceType, requestBytes1);
 		_clusterWorker.requestAssignment(serviceType, requestBytes2);
@@ -329,7 +329,7 @@ public class TestClusterWorker extends TestClusterBase {
 		assertTrue("The request was not created", getTestClient().checkExists().forPath(reqPath) != null);
 		byte[] storedReqData = getTestClient().getData().forPath(reqPath);
 		assertEquals(4, storedReqData.length);
-		assertEquals(45, MessageBytesUtil.readInt(storedReqData, 0));
+		assertEquals(45, BytesUtil.readInt(storedReqData, 0));
 	}
 	
 	@Test
@@ -337,7 +337,7 @@ public class TestClusterWorker extends TestClusterBase {
 		_clusterWorker.start();
 		
 		byte[] resData = new byte[4];
-		MessageBytesUtil.writeInt(resData, 0, 42356);
+		BytesUtil.writeInt(resData, 0, 42356);
 		
 		String serviceType = "TEST";
 		String resPathRoot = ZKPaths.makePath(ClusterPath.ASSIGN_RES.getPath(ROOT), serviceType);
@@ -372,7 +372,7 @@ public class TestClusterWorker extends TestClusterBase {
 		_clusterWorker.start();
 		
 		byte[] resData1 = new byte[4];
-		MessageBytesUtil.writeInt(resData1, 0, 42356);
+		BytesUtil.writeInt(resData1, 0, 42356);
 		
 		String serviceType1 = "TEST1";
 		String resPathRoot1 = ZKPaths.makePath(ClusterPath.ASSIGN_RES.getPath(ROOT), serviceType1);
@@ -381,7 +381,7 @@ public class TestClusterWorker extends TestClusterBase {
 		getTestClient().create().withMode(CreateMode.EPHEMERAL).forPath(serviceResPath1, resData1);
 		
 		byte[] resData2 = new byte[4];
-		MessageBytesUtil.writeInt(resData2, 0, 76345);
+		BytesUtil.writeInt(resData2, 0, 76345);
 		
 		String serviceType2 = "TEST2";
 		String resPathRoot2 = ZKPaths.makePath(ClusterPath.ASSIGN_RES.getPath(ROOT), serviceType2);
@@ -399,7 +399,7 @@ public class TestClusterWorker extends TestClusterBase {
 
 		String serviceType = "TEST";
 		byte[] requestBytes = new byte[4];
-		MessageBytesUtil.writeInt(requestBytes, 0, 23);
+		BytesUtil.writeInt(requestBytes, 0, 23);
 		
 		String reqPathRoot = ZKPaths.makePath(ClusterPath.ASSIGN_REQ.getPath(ROOT), serviceType);
 		String reqPath = ZKPaths.makePath(reqPathRoot, _clusterWorker.getMyIdString());

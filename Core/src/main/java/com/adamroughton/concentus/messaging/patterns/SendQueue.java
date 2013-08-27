@@ -17,12 +17,12 @@ package com.adamroughton.concentus.messaging.patterns;
 
 import java.util.Objects;
 
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueuePublisher;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.messaging.ResizingBuffer;
 
 public class SendQueue<TSendHeader extends OutgoingEventHeader, TBuffer extends ResizingBuffer> {
 
