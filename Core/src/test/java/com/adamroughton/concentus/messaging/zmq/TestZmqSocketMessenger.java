@@ -27,7 +27,6 @@ import static org.mockito.Matchers.anyInt;
 import static org.mockito.Matchers.argThat;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.List;
@@ -39,9 +38,7 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
-import org.mockito.invocation.InvocationOnMock;
 import org.mockito.runners.MockitoJUnitRunner;
-import org.mockito.stubbing.Answer;
 import org.zeromq.ZMQ;
 import org.zeromq.ZMQException;
 
@@ -68,7 +65,7 @@ public class TestZmqSocketMessenger {
 		_buffer = new ArrayBackedResizingBuffer(EVENT_BUFFER_LENGTH);
 		_clock = new DrivableClock();
 		_clock.setTime(5500000, TimeUnit.MILLISECONDS);
-		_messenger = new ZmqStandardSocketMessenger(0, "", _zmqSocket, _clock);
+		_messenger = new ZmqStandardSocketMessenger(0, "", _zmqSocket);
 	}
 	
 	@Test
@@ -309,111 +306,6 @@ public class TestZmqSocketMessenger {
 		header.setSegmentMetaData(_buffer, 2, lastOffset, EVENT_BUFFER_LENGTH);
 		_messenger.send(_buffer, header, false);
 	}
-	
-	@Test
-	public void recvTimeOneSegment() {
-		IncomingEventHeader header = new IncomingEventHeader(0, 1);
-		_clock.setTime(10000, TimeUnit.MILLISECONDS);
-		
-		final int contentSize = 32;
-		
-		Answer<Integer> clockAdvancer = new Answer<Integer>() {
 
-			@Override
-			public Integer answer(InvocationOnMock invocation) throws Throwable {
-				_clock.advance(1000, TimeUnit.MILLISECONDS);
-				return contentSize;
-			}
-			
-		};
-		
-		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
-			.then(fakeRecv(makeMsgHeader(contentSize)))
-			.then(clockAdvancer);
-		when(_zmqSocket.hasReceiveMore())
-			.thenReturn(true)
-			.thenReturn(false);
-		
-		assertTrue(_messenger.recv(_buffer, header, false));
-		assertEquals(11000, header.getRecvTime(_buffer));
-	}
-	
-	@Test
-	public void recvTimeMultipleSegments() {
-		IncomingEventHeader header = new IncomingEventHeader(0, 4);
-		_clock.setTime(10000, TimeUnit.MILLISECONDS);
-		
-		final int contentSize = 32;
-		
-		Answer<Integer> clockAdvancer = new Answer<Integer>() {
-
-			@Override
-			public Integer answer(InvocationOnMock invocation) throws Throwable {
-				_clock.advance(1000, TimeUnit.MILLISECONDS);
-				return 32;
-			}
-			
-		};
-		when(_zmqSocket.recv(any(byte[].class), anyInt(), anyInt(), anyInt()))
-			.then(fakeRecv(makeMsgHeader(contentSize)))
-			.then(clockAdvancer);
-		when(_zmqSocket.hasReceiveMore())
-			.thenReturn(true)
-			.thenReturn(false);
-		
-		assertTrue(_messenger.recv(_buffer, header, false));
-		assertEquals(11000, header.getRecvTime(_buffer));
-	}
-	
-	@Test
-	public void sentTimeOneSegment() {
-		OutgoingEventHeader header = new OutgoingEventHeader(0, 1);
-		writeMessage(new byte[][] { new byte[32] }, _buffer, header);
-		_clock.setTime(10000, TimeUnit.MILLISECONDS);
-		
-		Answer<Boolean> clockAdvancer = new Answer<Boolean>() {
-
-			@Override
-			public Boolean answer(InvocationOnMock invocation) throws Throwable {
-				_clock.advance(1000, TimeUnit.MILLISECONDS);
-				return true;
-			}
-			
-		};
-		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt(), anyInt()))
-			.then(clockAdvancer)
-			.then(clockAdvancer);
-
-		assertTrue(_messenger.send(_buffer, header, false));
-		assertEquals(12000, header.getSentTime(_buffer));
-	}
-	
-	@Test
-	public void sentTimeMultipleSegments() {
-		OutgoingEventHeader header = new OutgoingEventHeader(0, 3);
-		byte[][] content = new byte[3][];
-		genSegmentData(32, 9, content, 0, 1, 2);
-		writeMessage(content, _buffer, header);
-		
-		_clock.setTime(10000, TimeUnit.MILLISECONDS);
-		
-		Answer<Boolean> clockAdvancer = new Answer<Boolean>() {
-
-			@Override
-			public Boolean answer(InvocationOnMock invocation) throws Throwable {
-				_clock.advance(1000, TimeUnit.MILLISECONDS);
-				return true;
-			}
-			
-		};
-		when(_zmqSocket.send(any(byte[].class), anyInt(), anyInt(), anyInt()))
-			.then(clockAdvancer)
-			.then(clockAdvancer)
-			.then(clockAdvancer)
-			.then(clockAdvancer);
-
-		assertTrue(_messenger.send(_buffer, header, false));
-		assertEquals(14000, header.getSentTime(_buffer));
-	}
 	
 }

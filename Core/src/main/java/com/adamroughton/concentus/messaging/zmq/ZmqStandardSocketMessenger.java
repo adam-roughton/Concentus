@@ -19,7 +19,6 @@ import java.util.Objects;
 
 import org.zeromq.ZMQ;
 
-import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.data.BytesUtil;
 import com.adamroughton.concentus.data.ResizingBuffer;
@@ -33,7 +32,6 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 	private final int _socketId;
 	private final String _name;
 	private final ZMQ.Socket _socket;
-	private final Clock _clock;
 	private final int _socketType;
 	
 	private final byte[] _headerBytes;
@@ -41,11 +39,10 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 	// maximum 0MQ identity is 255 bytes, so ensure enough space just in case
 	private final byte[] _socketIdTmpBuffer = new byte[255];
 	
-	public ZmqStandardSocketMessenger(int socketId, String name, ZMQ.Socket socket, Clock clock) {
+	public ZmqStandardSocketMessenger(int socketId, String name, ZMQ.Socket socket) {
 		_socketId = socketId;
 		_name = Objects.requireNonNull(name);
 		_socket = Objects.requireNonNull(socket);
-		_clock = Objects.requireNonNull(clock);
 		
 		_socketType = socket.getType();
 		if (_socketType == ZMQ.PUB || _socketType == ZMQ.SUB) {
@@ -70,7 +67,6 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 		int lastSegmentLength = EventHeader.getSegmentLength(lastSegmentMetaData);
 		int requiredLength = lastSegmentOffset + lastSegmentLength;
 		if (requiredLength > bufferContentSize) {
-			header.setSentTime(outgoingBuffer, -1);
 			throw new RuntimeException(String.format("The buffer length is less than the content length (%d < %d)", 
 					bufferContentSize, requiredLength));
 		}
@@ -90,12 +86,10 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 		}
 		
 		if (segmentIndex != segmentCount - 1) {
-			header.setSentTime(outgoingBuffer, -1);
 			header.setNextSegmentToSend(outgoingBuffer, segmentIndex);
 			header.setIsPartiallySent(outgoingBuffer, true);
 			return false;
 		}
-		header.setSentTime(outgoingBuffer, _clock.currentMillis());
 		return true;
 	}
 		
@@ -187,7 +181,6 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 		int eventSegmentIndex = 0;
 		int segmentIndex = 0;
 		boolean isValid = true;
-		long recvTime = -1;
 		int lastCursor = -1;
 		
 		do {
@@ -220,7 +213,6 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 					} else if (recvdAmount == -1) {
 						isValid = false;
 					} else {					
-						if (recvTime == -1) recvTime = _clock.currentMillis();
 						header.setSegmentMetaData(eventBuffer, eventSegmentIndex, cursor, recvdAmount);	
 						lastCursor = cursor;
 						cursor += recvdAmount;
@@ -242,7 +234,6 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 		header.setIsMessagingEvent(eventBuffer, isMessagingEvent);
 		header.setIsValid(eventBuffer, isValid);
 		header.setSocketId(eventBuffer, _socketId);
-		header.setRecvTime(eventBuffer, recvTime);
 		return true;
 	}
 	

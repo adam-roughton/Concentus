@@ -170,8 +170,6 @@ public final class ClientProxy {
 		}
 		
 		updateChunkWriter.finish();	
-		
-		Log.warn("Update event " + updateEvent.getBuffer().toString());
 	}
 	
 	public void processActionReceipt(ActionReceiptEvent actionReceiptEvent) {

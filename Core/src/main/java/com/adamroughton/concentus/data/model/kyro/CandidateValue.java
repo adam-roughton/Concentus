@@ -17,6 +17,7 @@ public final class CandidateValue implements Comparable<CandidateValue> {
 	private int _variableId;
 	private int _score;
 	private int _valueDataHash;
+	
 	private long _time;
 	
 	//TODO defensive copy (valueDataHash depends on data remaining the same)
@@ -96,10 +97,19 @@ public final class CandidateValue implements Comparable<CandidateValue> {
 			return other._score - this._score;
 		else if (other._valueDataHash != this._valueDataHash)
 			return other._valueDataHash - this._valueDataHash;
+		else if (other._valueData.length != this._valueData.length)
+			return other._valueData.length - this._valueData.length;
 		else if (other._variableId != this._variableId)
 			return other._variableId - this._variableId;
-		else
-			return (int) (other._time - this._time);
+		else {
+			int otherTimeHi = (int) other._time >>> 32;
+			int thisTimeHi = (int) this._time >>> 32;
+			if (otherTimeHi != thisTimeHi) {
+				return otherTimeHi - thisTimeHi;
+			} else {
+				return (int) (other._time - this._time);
+			}
+		}
 	}
 
 	@Override
@@ -108,7 +118,7 @@ public final class CandidateValue implements Comparable<CandidateValue> {
 		int result = 1;
 		result = prime * result + _score;
 		result = prime * result + (int) (_time ^ (_time >>> 32));
-		result = prime * result + Arrays.hashCode(_valueData);
+		result = prime * result + _valueDataHash;
 		result = prime * result + _variableId;
 		return result;
 	}

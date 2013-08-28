@@ -26,13 +26,11 @@ import com.adamroughton.concentus.data.ResizingBuffer;
 public class OutgoingEventHeader extends EventHeader {
 	
 	private static final int NEXT_SEGMENT_LENGTH = 4;
-	private static final int SENT_TIME_LENGTH = 8;
 	private static final int TARGET_SOCKET_ID_LENGTH = 4;
-	private static final int ADDITIONAL_LENGTH = NEXT_SEGMENT_LENGTH + SENT_TIME_LENGTH + TARGET_SOCKET_ID_LENGTH;
+	private static final int ADDITIONAL_LENGTH = NEXT_SEGMENT_LENGTH + TARGET_SOCKET_ID_LENGTH;
 	private static final int FLAG_COUNT = 2;
 	
 	private final int _nextSegmentOffset;
-	private final int _sentTimeOffset;
 	private final int _targetSocketIdOffset;
 	private final int _isPartiallySentFlagIndex;
 	private final int _isReliableFlagIndex;
@@ -44,8 +42,7 @@ public class OutgoingEventHeader extends EventHeader {
 	protected OutgoingEventHeader(final int startOffset, final int segmentCount, final int additionalLength, final int additionalFlagCount) {
 		super(startOffset, segmentCount, additionalLength + ADDITIONAL_LENGTH, additionalFlagCount + FLAG_COUNT);
 		_nextSegmentOffset = super.getAdditionalOffset();
-		_sentTimeOffset = _nextSegmentOffset + NEXT_SEGMENT_LENGTH;
-		_targetSocketIdOffset = _sentTimeOffset + SENT_TIME_LENGTH;
+		_targetSocketIdOffset = _nextSegmentOffset + NEXT_SEGMENT_LENGTH;
 		_isPartiallySentFlagIndex = super.getAdditionalFlagsStartIndex();
 		_isReliableFlagIndex = _isPartiallySentFlagIndex + 1;
 	}
@@ -90,14 +87,6 @@ public class OutgoingEventHeader extends EventHeader {
 	
 	public final void setTargetSocketId(ResizingBuffer event, int socketId) {
 		event.writeInt(_targetSocketIdOffset, socketId);
-	}
-	
-	public final long getSentTime(ResizingBuffer event) {
-		return event.readLong(_sentTimeOffset);
-	}
-	
-	public final void setSentTime(ResizingBuffer event, long sentTime) {
-		event.writeLong(_sentTimeOffset, sentTime);
 	}
 	
 }

@@ -82,9 +82,6 @@ public final class ArrayBackedResizingBuffer implements ResizingBuffer {
 	
 	@Override
 	public void reset(int offset) {
-		if (offset < _buffer.length) {
-			_overflowBuffer = null;
-		}
 		clear(offset);
 		_contentSize = offset;
 	}

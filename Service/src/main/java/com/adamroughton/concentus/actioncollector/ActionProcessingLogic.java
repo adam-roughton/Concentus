@@ -160,25 +160,31 @@ public final class ActionProcessingLogic {
 			
 			@Override
 			public boolean hasNext() {
-				while (iterator.hasNext()) {
-					ArrayBackedResizingBuffer next = iterator.next();
-					_effect.attachToBuffer(next);
-					_next = _application.apply(_effect, time);
-					_effect.releaseBuffer();
-					if (_next.getScore() > 0) {
-						return true;
-					} else if (_next.getScore() < 0) {
-						iterator.remove();
+				if (_next == null) {
+					while (iterator.hasNext()) {
+						ArrayBackedResizingBuffer next = iterator.next();
+						_effect.attachToBuffer(next);
+						_next = _application.apply(_effect, time);
+						_effect.releaseBuffer();
+						if (_next.getScore() > 0) {
+							return true;
+						} else if (_next.getScore() < 0) {
+							iterator.remove();
+						}
 					}
+					return false;
+				} else {
+					return true;
 				}
-				return false;
 			}
 
 			@Override
 			public CandidateValue next() {
 				if (_next == null)
 					throw new NoSuchElementException();
-				return _next;
+				CandidateValue next = _next;
+				_next = null;
+				return next;
 			}
 
 			@Override

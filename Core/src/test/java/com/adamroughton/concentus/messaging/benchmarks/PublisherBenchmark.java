@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.zeromq.ZMQ;
 import org.zeromq.ZMQ.Context;
 
-import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
@@ -53,7 +52,7 @@ public class PublisherBenchmark extends MessagingBenchmarkBase {
 		_recvSocket = context.socket(ZMQ.DEALER);
 		_recvSocket.setReceiveTimeOut(1000);
 		_recvSocket.bind("tcp://127.0.0.1:" + _port);
-		_messenger = new ZmqStandardSocketMessenger(0, "", _recvSocket, new DefaultClock());
+		_messenger = new ZmqStandardSocketMessenger(0, "", _recvSocket);
 	
 		_header = new IncomingEventHeader(0, 1);
 		_recvBuffer = new ArrayBackedResizingBuffer(Util.nextPowerOf2(messageSize + _header.getEventOffset()));
@@ -75,7 +74,7 @@ public class PublisherBenchmark extends MessagingBenchmarkBase {
 		socket.setLinger(0);
 		socket.setSendTimeOut(1000);
 		socket.connect("tcp://127.0.0.1:" + _port);
-		final ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", socket, new DefaultClock());
+		final ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", socket);
 		
 		OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, 1);
 		int msgSize = Util.nextPowerOf2(messageSize + sendHeader.getEventOffset());

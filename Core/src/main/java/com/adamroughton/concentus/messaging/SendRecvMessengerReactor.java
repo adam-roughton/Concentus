@@ -104,6 +104,7 @@ public final class SendRecvMessengerReactor<TBuffer extends ResizingBuffer> impl
 							
 							TBuffer sendBuffer = _sendQueueReader.get();
 							if (sendBuffer != null && messenger.send(sendBuffer, _sendHeader, false)) {
+								sendBuffer.reset();
 								_sendQueueReader.advance();
 								wasActivity = true;
 							}

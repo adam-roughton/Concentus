@@ -157,7 +157,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 		
 		LogMetricContext metricContext = new LogMetricContext(1000, 10000, new DefaultClock());
 		metricContext.start();
-		ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", dealerSocket, new DefaultClock());
+		ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", dealerSocket);
 		TrackingMessengerDecorator<ArrayBackedResizingBuffer> trackingMessenger = new TrackingMessengerDecorator<>(metricContext, messenger, new DefaultClock());
 		
 		Mutex<Messenger<ArrayBackedResizingBuffer>> mutex = new MessengerMutex<>(trackingMessenger);

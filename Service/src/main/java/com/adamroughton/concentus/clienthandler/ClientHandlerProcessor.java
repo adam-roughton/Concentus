@@ -305,7 +305,8 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 							@Override
 							public void write(OutgoingEventHeader header,
 									ClientUpdateEvent event) throws Exception {
-								client.generateUpdate(inputEvent, _latestCanonicalState, event);								
+								event.setClientId(client.getClientId());
+								client.generateUpdate(inputEvent, _latestCanonicalState, event);	
 							}
 				}));
 				if (client.shouldDrop()) {

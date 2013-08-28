@@ -14,7 +14,7 @@ public class TestChunkIterator extends TestChunkContent {
 			buffer.writeBytes(cursor, chunk.content);
 			cursor += chunk.content.length;
 		}
-		buffer.writeInt(cursor, -1);
+		buffer.writeInt(cursor, 0);
 		
 		int i = 0;
 		ChunkReader reader = new ChunkReader(buffer);

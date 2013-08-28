@@ -21,8 +21,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.zeromq.ZMQ;
 import org.zeromq.ZMQ.Context;
 
-import com.adamroughton.concentus.Clock;
-import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.zmq.HackSocketPollInSet;
@@ -57,13 +55,12 @@ public class PollInBenchmark extends MessagingBenchmarkBase {
 		super.setUp(context);
 		_recvSockets = new ZMQ.Socket[socketCount];
 		ZmqSocketMessenger[] messengers = new ZmqStandardSocketMessenger[socketCount];
-		Clock clock = new DefaultClock();
 		for (int i = 0; i < socketCount; i++) {
 			ZMQ.Socket socket = context.socket(ZMQ.DEALER);
 			socket.setReceiveTimeOut(1000);
 			socket.bind("tcp://127.0.0.1:" + (_startPort + i));
 			_recvSockets[i] = socket;
-			messengers[i] = new ZmqStandardSocketMessenger(i, "", socket, clock);
+			messengers[i] = new ZmqStandardSocketMessenger(i, "", socket);
 		}
 		if (useAlternativePollIn) {
 			_socketPollSet = new HackSocketPollInSet(messengers);

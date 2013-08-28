@@ -35,7 +35,6 @@ import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.MetricGroup;
 import com.adamroughton.concentus.metric.StatsMetric;
 import com.adamroughton.concentus.metric.MetricContext;
-import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.LifecycleAware;
 
 import uk.co.real_logic.intrinsics.StructuredArray;
@@ -119,8 +118,6 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 	public void onEvent(TBuffer event, long sequence, boolean isEndOfBatch)
 			throws Exception {
 		if (!_recvHeader.isValid(event)) return;
-		
-		Log.info("Seq = " + sequence);
 		
 		if (_recvHeader.isMessagingEvent(event)) {
 			_clientSendQueue.send(event, _recvHeader);

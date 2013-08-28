@@ -15,8 +15,6 @@
  */
 package com.adamroughton.concentus.messaging.benchmarks;
 
-import com.adamroughton.concentus.Clock;
-import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
@@ -66,7 +64,7 @@ public class MessagingBenchmarks {
 			_testSocket = context.socket(ZMQ.DEALER);
 			_testSocket.setLinger(0);
 			_testSocket.connect("tcp://127.0.0.1:9080");
-			_messenger = new ZmqStandardSocketMessenger(0, "", _testSocket, new DefaultClock());
+			_messenger = new ZmqStandardSocketMessenger(0, "", _testSocket);
 		}
 		
 		@Override
@@ -182,7 +180,7 @@ public class MessagingBenchmarks {
 			} else {
 				_testSocket.connect("tcp://127.0.0.1:9080");				
 			}
-			_messenger = new ZmqStandardSocketMessenger(0, "", _testSocket, new DefaultClock());
+			_messenger = new ZmqStandardSocketMessenger(0, "", _testSocket);
 		}
 		
 		@Override
@@ -199,7 +197,7 @@ public class MessagingBenchmarks {
 			}
 			
 			if (!recvDirect) {
-				final ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", socket, new DefaultClock());
+				final ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", socket);
 				final IncomingEventHeader header = new IncomingEventHeader(0, msgSegmentCount);
 				
 				return new Runnable() {
@@ -397,8 +395,7 @@ public class MessagingBenchmarks {
 				} else {
 					_testSockets[i].connect("tcp://127.0.0.1:9080");				
 				}
-				Clock clock = new DefaultClock();
-				_messengers[i] = new ZmqStandardSocketMessenger(i, "", _testSockets[i], clock);
+				_messengers[i] = new ZmqStandardSocketMessenger(i, "", _testSockets[i]);
 			}
 		}
 		
@@ -417,7 +414,7 @@ public class MessagingBenchmarks {
 			}
 			
 			if (!recvDirect) {
-				final ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", socket, new DefaultClock());
+				final ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", socket);
 				final IncomingEventHeader header = new IncomingEventHeader(0, 2);
 				
 				return new Runnable() {
@@ -550,8 +547,7 @@ public class MessagingBenchmarks {
 					_testSockets[i].connect("tcp://127.0.0.1:9080");				
 				}
 				
-				Clock clock = new DefaultClock();
-				_messengers[i] = new ZmqStandardSocketMessenger(i, "", _testSockets[i], clock);
+				_messengers[i] = new ZmqStandardSocketMessenger(i, "", _testSockets[i]);
 			}
 		}
 		
@@ -570,7 +566,7 @@ public class MessagingBenchmarks {
 			}
 			
 			if (!recvDirect) {
-				final ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", socket, new DefaultClock());
+				final ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", socket);
 				final IncomingEventHeader header = new IncomingEventHeader(0, 2);
 				
 				return new Runnable() {

@@ -21,7 +21,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 import org.zeromq.ZMQ;
 import org.zeromq.ZMQ.Context;
 
-import com.adamroughton.concentus.DefaultClock;
 import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.data.ArrayBackedResizingBufferFactory;
@@ -95,7 +94,7 @@ public class EventListenerBenchmark extends MessagingBenchmarkBase {
 		final ZMQ.Socket recvSocket = context.socket(ZMQ.DEALER);
 		recvSocket.setReceiveTimeOut(1000);
 		recvSocket.bind("tcp://127.0.0.1:" + _port);
-		ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", recvSocket, new DefaultClock());
+		ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", recvSocket);
 		
 		MessengerMutex<ArrayBackedResizingBuffer, ZmqSocketMessenger> mutex = new MessengerMutex<>(messenger);
 		FatalExceptionCallback exCallback = new FatalExceptionCallback() {

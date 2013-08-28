@@ -106,7 +106,6 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 			int lastSegmentLength = EventHeader.getSegmentLength(lastSegmentMetaData);
 			int requiredLength = lastSegmentOffset + lastSegmentLength;
 			if (requiredLength > bufferContentSize) {
-				header.setSentTime(outgoingBuffer, -1);
 				throw new RuntimeException(String.format("The buffer length is less than the content length (%d < %d)", 
 						bufferContentSize, requiredLength));
 			}
@@ -126,12 +125,10 @@ public final class ZmqDealerSetSocketMessenger implements Messenger<ArrayBackedR
 			int lastSegmentIndex = segmentCount - 1;
 			int currentSegmentIndex = ZmqSocketOperations.sendSegments(socket, outgoingBuffer, header, startSegmentIndex, lastSegmentIndex, false);
 			if (currentSegmentIndex != lastSegmentIndex) {
-				header.setSentTime(outgoingBuffer, -1);
 				header.setNextSegmentToSend(outgoingBuffer, currentSegmentIndex);
 				header.setIsPartiallySent(outgoingBuffer, true);
 				return false;
 			}
-			header.setSentTime(outgoingBuffer, _clock.currentMillis());
 			return true;
 		}
 	}

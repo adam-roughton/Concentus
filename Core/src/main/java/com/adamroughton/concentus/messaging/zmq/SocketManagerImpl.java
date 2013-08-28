@@ -31,7 +31,6 @@ import java.util.concurrent.TimeoutException;
 import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.Clock;
-import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.data.ArrayBackedResizingBufferFactory;
 import com.adamroughton.concentus.data.BufferFactory;
@@ -124,15 +123,7 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 		socket.setReceiveTimeOut(SOCKET_TIMEOUT);
 		socket.setSendTimeOut(SOCKET_TIMEOUT);
 		socket.setLinger(0);
-		ZmqSocketMessenger messenger;
-		if (socketSettings.supportReliable() && socketType == ZMQ.ROUTER) {
-			messenger = new ZmqReliableRouterSocketMessenger(socketId, name, socket, _clock, 
-					socketSettings.getReliableTryAgainMillis(), socketSettings.getReliableBufferLength(), Constants.DEFAULT_MSG_BUFFER_SIZE);
-		} else if (socketSettings.supportReliable() && socketType == ZMQ.DEALER) {
-			messenger = new ZmqReliableDealerSocketMessenger(socketId, name, socket, _clock);
-		} else {			
-			messenger = new ZmqStandardSocketMessenger(socketId, name, socket, _clock);
-		}
+		ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(socketId, name, socket);
 		_socketMutexLookup.put(socketId, new MessengerMutex<>(messenger));
 		configureSocket(socketId, socket, socketSettings);
 		for (String connectionString : _socketConnLookup.get(socketId).getAllConnectionStrings()) {

@@ -2,6 +2,8 @@ package com.adamroughton.concentus.data;
 
 public final class ChunkWriter {
 
+	public static final int EMPTY_MARKER = -1;
+	
 	private final MutableResizingBufferSlice _chunkBuffer = new MutableResizingBufferSlice();
 	private int _currentOffset;
 	
@@ -21,8 +23,13 @@ public final class ChunkWriter {
 	public void commitChunk() {
 		ResizingBuffer backingBuffer = _chunkBuffer.getParentBuffer();
 		int length = _chunkBuffer.getContentSize();
-		backingBuffer.writeInt(_currentOffset, length);
-		_currentOffset += length + ResizingBuffer.INT_SIZE;
+		if (length == 0) {
+			backingBuffer.writeInt(_currentOffset, EMPTY_MARKER);
+		} else {
+			backingBuffer.writeInt(_currentOffset, length);
+			_currentOffset += length;
+		}
+		_currentOffset += ResizingBuffer.INT_SIZE;
 		nextChunk(backingBuffer);
 	}
 	
@@ -39,13 +46,13 @@ public final class ChunkWriter {
 	}
 	
 	/**
-	 * Prepares the next chunk. Also writes {@code -1} into the current chunk
+	 * Prepares the next chunk. Also writes {@code 0} into the current chunk
 	 * length field until the chunk is committed to ensure that the chunked 
-	 * section is always ended correctly (-1 signals the end of the chunked section).
+	 * section is always ended correctly (0 signals the end of the chunked section).
 	 * @param backingBuffer
 	 */
 	private void nextChunk(ResizingBuffer backingBuffer) {
-		backingBuffer.writeInt(_currentOffset, -1);
+		backingBuffer.writeInt(_currentOffset, 0);
 		_chunkBuffer.setBackingBuffer(backingBuffer, _currentOffset + ResizingBuffer.INT_SIZE);
 	}
 	

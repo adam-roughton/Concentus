@@ -32,6 +32,7 @@ public class Publisher<TBuffer extends ResizingBuffer> implements MessengerDepen
 	public void onEvent(TBuffer event, long sequence, boolean endOfBatch, Messenger<TBuffer> messenger)
 			throws Exception {
 		messenger.send(event, _header, true);
+		event.reset();
 	}
 
 }

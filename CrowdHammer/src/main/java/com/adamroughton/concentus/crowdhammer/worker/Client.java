@@ -39,6 +39,7 @@ import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.StatsMetric;
 import com.adamroughton.concentus.util.SlidingWindowLongMap;
 import com.adamroughton.concentus.util.Util;
+import com.esotericsoftware.kryo.util.IntArray;
 import com.esotericsoftware.minlog.Log;
 
 import static com.adamroughton.concentus.Constants.TIME_STEP_IN_MS;
@@ -194,49 +195,74 @@ public final class Client {
 		_connectReqSendTime = _clock.currentMillis();
 	}
 	
+	private long _windowCursor = 0;
+	private ArrayBackedResizingBuffer[] _updateWindow = new ArrayBackedResizingBuffer[5];
+	{
+		for (int i = 0; i < _updateWindow.length; i++) {
+			_updateWindow[i] = new ArrayBackedResizingBuffer(512);
+		}
+	}
+	
 	public void onClientUpdate(ClientUpdateEvent updateEvent) {
 		long updateRecvTime = _clock.currentMillis();
 		
-		Log.info("Update event: " + updateEvent.getBuffer().toString());
+		ResizingBuffer cachedBuffer = _updateWindow[(int)(_windowCursor++ % _updateWindow.length)];
+		cachedBuffer.reset();
+		updateEvent.getBuffer().copyTo(cachedBuffer);
+
+		IntArray intArray = new IntArray();
 		
-		for (byte[] chunk : updateEvent.getChunkedContent()) {
-			ArrayBackedResizingBuffer chunkBuffer = new ArrayBackedResizingBuffer(chunk);
-			int cursor = 0;
-			long reliableSeq = chunkBuffer.readLong(cursor);
-			cursor += ResizingBuffer.LONG_SIZE;
-			
-			// only process chunk if unreliable (-1) or if all previous
-			// reliable chunks have been processed
-			if (reliableSeq == -1 || reliableSeq == _reliableSeq + 1) {
-				int dataType = chunkBuffer.readInt(cursor);
+		try {
+			for (byte[] chunk : updateEvent.getChunkedContent()) {
+				intArray.add(chunk.length);
+				if (intArray.size > 1000) throw new RuntimeException("Over 1000 chunks!");
+				ArrayBackedResizingBuffer chunkBuffer = new ArrayBackedResizingBuffer(chunk);
+				int cursor = 0;
+				long reliableSeq = chunkBuffer.readLong(cursor);
+				cursor += ResizingBuffer.LONG_SIZE;
 				
-				if (dataType == _receipt.getTypeId()) {
-					_receipt.attachToBuffer(chunkBuffer, cursor);
-					try {
-						onActionReceipt(_receipt, updateRecvTime);
-					} finally {
-						_receipt.releaseBuffer();
+				// only process chunk if unreliable (-1) or if all previous
+				// reliable chunks have been processed
+				if (reliableSeq == -1 || reliableSeq == _reliableSeq + 1) {
+					int dataType = chunkBuffer.readInt(cursor);
+					
+					if (dataType == _receipt.getTypeId()) {
+						_receipt.attachToBuffer(chunkBuffer, cursor);
+						try {
+							onActionReceipt(_receipt, updateRecvTime);
+						} finally {
+							_receipt.releaseBuffer();
+						}
+					} else if (dataType == _canonicalStateUpdate.getTypeId()) {
+						_canonicalStateUpdate.attachToBuffer(chunkBuffer, cursor);
+						try {
+							onCanonicalStateUpdate(_canonicalStateUpdate, updateRecvTime);
+						} finally {
+							_canonicalStateUpdate.releaseBuffer();
+						}
+					} else if (dataType == _effect.getTypeId()) {
+						_effect.attachToBuffer(chunkBuffer, cursor);
+						try {
+							onEffectUpdate(_effect, updateRecvTime);
+						} finally {
+							_effect.releaseBuffer();
+						}
 					}
-				} else if (dataType == _canonicalStateUpdate.getTypeId()) {
-					_canonicalStateUpdate.attachToBuffer(chunkBuffer, cursor);
-					try {
-						onCanonicalStateUpdate(_canonicalStateUpdate, updateRecvTime);
-					} finally {
-						_canonicalStateUpdate.releaseBuffer();
+					
+					if (reliableSeq >= 0) {
+						_reliableSeq = reliableSeq;
 					}
-				} else if (dataType == _effect.getTypeId()) {
-					_effect.attachToBuffer(chunkBuffer, cursor);
-					try {
-						onEffectUpdate(_effect, updateRecvTime);
-					} finally {
-						_effect.releaseBuffer();
-					}
-				}
-				
-				if (reliableSeq >= 0) {
-					_reliableSeq = reliableSeq;
 				}
 			}
+		} catch (RuntimeException eRuntime) {
+			Log.error("Error on update for client: " + _clientId);
+			Log.error("Last valid chunk lengths: " + intArray.toString());
+			Log.error("Last updates recved: ");
+			for (long cursor = _windowCursor - 1; cursor >= Math.max(0, _windowCursor - _updateWindow.length); cursor--) {
+				ResizingBuffer cachedUpdateBuffer = _updateWindow[(int)(cursor % _updateWindow.length)];
+				Log.info("Update: (content length = " + cachedUpdateBuffer.getContentSize() + ") " + cachedUpdateBuffer.toString() + '\n');
+			}
+			throw eRuntime;
 		}
 	}
 	

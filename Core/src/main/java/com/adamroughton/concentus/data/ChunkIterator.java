@@ -21,13 +21,19 @@ public final class ChunkIterator implements Iterator<byte[]> {
 	public boolean hasNext() {
 		if (_nextChunk == null) {
 			int chunkLength = _srcBuffer.readInt(_cursor);
-			boolean hasNext = chunkLength >= 0;
-			if (hasNext) {
+			
+			if (chunkLength == ChunkWriter.EMPTY_MARKER) {
+				_cursor += ResizingBuffer.INT_SIZE;
+				_nextChunk = new byte[0];
+				return true;
+			} else if (chunkLength > 0) {
 				_cursor += ResizingBuffer.INT_SIZE;
 				_nextChunk = _srcBuffer.readBytes(_cursor, chunkLength);
 				_cursor += chunkLength;
+				return true;
+			} else {
+				return false;
 			}
-			return hasNext;
 		} else {
 			return true;
 		}

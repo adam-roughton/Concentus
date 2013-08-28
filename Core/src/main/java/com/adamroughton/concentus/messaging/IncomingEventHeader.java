@@ -26,13 +26,10 @@ import com.adamroughton.concentus.data.ResizingBuffer;
 public class IncomingEventHeader extends EventHeader {
 	
 	private final static int SOCKET_ID_LENGTH = 4;
-	private final static int RECV_TIME_LENGTH = 8;
-	private final static int ADDITIONAL_LENGTH = SOCKET_ID_LENGTH + RECV_TIME_LENGTH;
-	private final static int FLAG_COUNT = 1;
+	private final static int ADDITIONAL_LENGTH = SOCKET_ID_LENGTH;
+	private final static int FLAG_COUNT = 0;
 	
 	private final int _socketIdOffset;
-	private final int _recvTimeOffset;
-	private final int _connectionInvalidFlagOffset;
 	
 	public IncomingEventHeader(final int startOffset, final int segmentCount) {
 		this(startOffset, segmentCount, 0, 0);
@@ -41,8 +38,6 @@ public class IncomingEventHeader extends EventHeader {
 	protected IncomingEventHeader(final int startOffset, final int segmentCount, final int additionalLength, final int additionalFlagCount) {
 		super(startOffset, segmentCount, additionalLength + ADDITIONAL_LENGTH, additionalFlagCount + FLAG_COUNT);
 		_socketIdOffset = super.getAdditionalOffset();
-		_recvTimeOffset = _socketIdOffset + SOCKET_ID_LENGTH;
-		_connectionInvalidFlagOffset = super.getAdditionalFlagsStartIndex();
 	}
 	
 	@Override
@@ -54,14 +49,6 @@ public class IncomingEventHeader extends EventHeader {
 	protected int getAdditionalOffset() {
 		return super.getAdditionalOffset() + ADDITIONAL_LENGTH;
 	}
-
-	public final boolean connectionInvalid(ResizingBuffer event) {
-		return getFlag(event, _connectionInvalidFlagOffset);
-	}
-	
-	public final void setConnectionInvalid(ResizingBuffer event, boolean connectionInvalid) {
-		setFlag(event, _connectionInvalidFlagOffset, connectionInvalid);
-	}
 	
 	public final int getSocketId(ResizingBuffer event) {
 		return event.readInt(_socketIdOffset);
@@ -69,14 +56,6 @@ public class IncomingEventHeader extends EventHeader {
 	
 	public final void setSocketId(ResizingBuffer event, int socketId) {
 		event.writeInt(_socketIdOffset, socketId);
-	}
-	
-	public final long getRecvTime(ResizingBuffer event) {
-		return event.readLong(_recvTimeOffset);
-	}
-	
-	public final void setRecvTime(ResizingBuffer event, long recvTime) {
-		event.writeLong(_recvTimeOffset, recvTime);
 	}
 	
 }
