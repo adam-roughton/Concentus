@@ -15,17 +15,16 @@
  */
 package com.adamroughton.concentus.data.events.bufferbacked;
 
-import java.util.UUID;
-
 import com.adamroughton.concentus.data.BufferBackedObject;
 import com.adamroughton.concentus.data.DataType;
 import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.metric.MetricType;
 
 import static com.adamroughton.concentus.data.ResizingBuffer.*;
 
 public final class MetricEvent extends BufferBackedObject {
 
-	private final Field sourceIdField = super.getBaseField().then(UUID_SIZE);
+	private final Field sourceIdField = super.getBaseField().then(INT_SIZE);
 	private final Field metricIdField = sourceIdField.then(INT_SIZE);
 	private final Field metricTypeField = metricIdField.then(INT_SIZE);
 	private final Field metricBucketIdField = metricTypeField.then(LONG_SIZE);
@@ -37,12 +36,12 @@ public final class MetricEvent extends BufferBackedObject {
 		super(DataType.METRIC_EVENT);
 	}
 	
-	public UUID getSourceId() {
-		return getBuffer().readUUID(sourceIdField.offset);
+	public int getSourceId() {
+		return getBuffer().readInt(sourceIdField.offset);
 	}
 	
-	public void setSourceId(UUID sourceId) {
-		getBuffer().writeUUID(sourceIdField.offset, sourceId);
+	public void setSourceId(int sourceId) {
+		getBuffer().writeInt(sourceIdField.offset, sourceId);
 	}
 	
 	public int getMetricId() {
@@ -53,12 +52,13 @@ public final class MetricEvent extends BufferBackedObject {
 		getBuffer().writeInt(metricIdField.offset, metricId);
 	}
 	
-	public int getMetricType() {
-		return getBuffer().readInt(metricTypeField.offset);
+	public MetricType getMetricType() {
+		int metricTypeId = getBuffer().readInt(metricTypeField.offset);
+		return MetricType.reverseLookup(metricTypeId);
 	}
 	
-	public void setMetricType(int metricType) {
-		getBuffer().writeInt(metricTypeField.offset, metricType);
+	public void setMetricType(MetricType metricType) {
+		getBuffer().writeInt(metricTypeField.offset, metricType.getId());
 	}
 	
 	public long getMetricBucketId() {

@@ -13,9 +13,5 @@ public interface MetricContext {
 	MetricBucketInfo getMetricBucketInfo();
 	
 	Clock getClock();
-
-	void start();
-	
-	void halt();
 	
 }

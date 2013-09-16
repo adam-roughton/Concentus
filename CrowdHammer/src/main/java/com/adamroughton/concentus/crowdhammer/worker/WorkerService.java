@@ -15,25 +15,29 @@
  */
 package com.adamroughton.concentus.crowdhammer.worker;
 
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
-import java.util.logging.Logger;
 
 import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.ComponentResolver;
 import com.adamroughton.concentus.ConcentusEndpoints;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
-import com.adamroughton.concentus.cluster.worker.ClusterListenerHandle;
-import com.adamroughton.concentus.config.ConfigurationUtil;
-import com.adamroughton.concentus.crowdhammer.CrowdHammerService;
-import com.adamroughton.concentus.crowdhammer.CrowdHammerServiceState;
-import com.adamroughton.concentus.crowdhammer.config.CrowdHammerConfiguration;
-import com.adamroughton.concentus.data.BytesUtil;
+import com.adamroughton.concentus.CoreServices;
+import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
+import com.adamroughton.concentus.cluster.worker.ClusterHandle;
+import com.adamroughton.concentus.cluster.worker.ClusterService;
+import com.adamroughton.concentus.cluster.worker.ConcentusServiceBase;
+import com.adamroughton.concentus.cluster.worker.ServiceContext;
+import com.adamroughton.concentus.cluster.worker.ServiceDeploymentBase;
+import com.adamroughton.concentus.cluster.worker.StateData;
 import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.EventListener;
@@ -58,15 +62,15 @@ import uk.co.real_logic.intrinsics.StructuredArray;
 
 import static com.adamroughton.concentus.util.Util.*;
 
-public final class WorkerService<TBuffer extends ResizingBuffer> implements CrowdHammerService {
+public final class WorkerService<TBuffer extends ResizingBuffer> extends ConcentusServiceBase {
 
-	public static final String SERVICE_TYPE = "CrowdHammerWorker";
-	private static final Logger LOG = Logger.getLogger(SERVICE_TYPE);
+	public static final String SERVICE_TYPE = "worker";
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	
-	private final ConcentusHandle<? extends CrowdHammerConfiguration, TBuffer> _concentusHandle;
+	private final ConcentusHandle _concentusHandle;
 	private final MetricContext _metricContext;
+	private final int _recvPort;
 	
 	private EventQueue<TBuffer> _clientRecvQueue;
 	private EventQueue<TBuffer> _clientSendQueue;
@@ -89,13 +93,56 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 	private EventListener<TBuffer> _routerListener;
 	private EventProcessor _dealerSetPublisher;
 	
-	//private SendRecvMessengerReactor<TBuffer> _clientSocketReactor;
-	//private int[] _handlerIds;
+	public static class WorkerServiceDeployment extends ServiceDeploymentBase<ServiceState> {
+
+		private int _maxClientCount;
+		private int _recvPort;
+		private int _recvBufferSize;
+		private int _sendBufferSize;
+		
+		// for Kryo
+		@SuppressWarnings("unused")
+		private WorkerServiceDeployment() {
+		}
+		
+		public WorkerServiceDeployment(int maxClientCount, int recvPort, 
+				int recvBufferSize, int sendBufferSize) {
+			super(SERVICE_TYPE, ServiceState.class, CoreServices.CLIENT_HANDLER.getId());
+			_maxClientCount = maxClientCount;
+			_recvPort = recvPort;
+			_recvBufferSize = recvBufferSize;
+			_sendBufferSize = sendBufferSize;
+		}
+		
+		@Override
+		public void onPreStart(StateData<ServiceState> stateData) {
+			stateData.setDataForCoordinator(_maxClientCount);
+		}
+
+		@Override
+		public <TBuffer extends ResizingBuffer> ClusterService<ServiceState> createService(
+				int serviceId, ServiceContext<ServiceState> context, ConcentusHandle handle,
+				MetricContext metricContext, ComponentResolver<TBuffer> resolver) {
+			return new WorkerService<>(_maxClientCount, _recvPort, _recvBufferSize, 
+					_sendBufferSize, context, handle, metricContext, resolver);
+		}
+		
+	}
 	
-	public WorkerService(final ConcentusHandle<? extends CrowdHammerConfiguration, TBuffer> concentusHandle, int maxClientCount, MetricContext metricContext) {
-		_concentusHandle = Objects.requireNonNull(concentusHandle);
+	public WorkerService(
+			int maxClientCount,
+			int recvPort,
+			int recvBufferSize,
+			int sendBufferSize,
+			ServiceContext<ServiceState> serviceContext,
+			ConcentusHandle concentusHandle, 
+			MetricContext metricContext, 
+			ComponentResolver<TBuffer> resolver) {
 		_maxClients = maxClientCount;
+		_recvPort = recvPort;
+		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_metricContext = Objects.requireNonNull(metricContext);
+		
 		_clients = StructuredArray.newInstance(nextPowerOf2(_maxClients), Client.class, new ComponentFactory<Client>() {
 
 			long index = 0;
@@ -107,98 +154,63 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 		});
 		_clientSendHeader = new OutgoingEventHeader(0, 2);
 		_clientRecvHeader = new IncomingEventHeader(0, 2);
-	}
-
-	@Override
-	public void onStateChanged(CrowdHammerServiceState newClusterState,
-			ClusterListenerHandle cluster) throws Exception {
-		LOG.info(String.format("Entering state %s", newClusterState.name()));
-		if (newClusterState == CrowdHammerServiceState.INIT_TEST) {
-			initTest(cluster);
-		} else if (newClusterState == CrowdHammerServiceState.SET_UP_TEST) {
-			setUpTest(cluster);
-		} else if (newClusterState == CrowdHammerServiceState.START_SUT) {
-			startSUT(cluster);
-		} else if (newClusterState == CrowdHammerServiceState.EXEC_TEST) {
-			executeTest(cluster);
-		} else if (newClusterState == CrowdHammerServiceState.STOP_SENDING_EVENTS) {
-			stopSendingInputEvents(cluster);
-		} else if (newClusterState == CrowdHammerServiceState.TEAR_DOWN) {
-			teardown(cluster);
-		} else if (newClusterState == CrowdHammerServiceState.SHUTDOWN) {
-			shutdown(cluster);
-		}
-		LOG.info("Signalling ready for next state");
-		cluster.signalReady();
-	}
-
-	@Override
-	public Class<CrowdHammerServiceState> getStateValueClass() {
-		return CrowdHammerServiceState.class;
+		
+		_socketManager = resolver.newSocketManager(concentusHandle.getClock());
+		
+		MessageQueueFactory<TBuffer> messageQueueFactory = 
+				_socketManager.newMessageQueueFactory(resolver.getEventQueueFactory());
+		
+		_clientRecvQueue = messageQueueFactory.createSingleProducerQueue(
+				"clientRecvQueue", 
+				recvBufferSize,
+				Constants.DEFAULT_MSG_BUFFER_SIZE,
+				new YieldingWaitStrategy());
+		_clientSendQueue = messageQueueFactory.createSingleProducerQueue(
+				"clientSendQueue",
+				sendBufferSize, 
+				Constants.MSG_BUFFER_ENTRY_LENGTH, 
+				new YieldingWaitStrategy());
 	}
 	
-	private void initTest(ClusterListenerHandle cluster) throws Exception {
-		_socketManager = _concentusHandle.newSocketManager();
-		
-		int routerRecvPort = ConfigurationUtil.getPort(_concentusHandle.getConfig(), SERVICE_TYPE, "routerRecv");
-		SocketSettings routerSocketSettings = SocketSettings.create()
-				.bindToPort(routerRecvPort);
-		_routerSocketId = _socketManager.create(ZMQ.ROUTER, routerSocketSettings, "client_recv");
-		
-		SocketSettings dealerSetSettings = SocketSettings.create()
-				.setRecvPairAddress(String.format("tcp://%s:%d",
-						_concentusHandle.getNetworkAddress().getHostAddress(),
-						routerRecvPort));
-		_dealerSetSocketId = _socketManager.create(SocketManager.DEALER_SET, dealerSetSettings, "client_send");
-		
-		// request client allocation
-		byte[] reqBytes = new byte[4];
-		BytesUtil.writeInt(reqBytes, 0, _maxClients);
-		cluster.requestAssignment(SERVICE_TYPE, reqBytes);
-	}
-
-	private void setUpTest(ClusterListenerHandle cluster) throws Exception {
-		// read in the number of clients to test with
-		byte[] res = cluster.getAssignment(SERVICE_TYPE);
-		if (res.length != 4) throw new RuntimeException("Expected an integer value");
-		_clientCountForTest = BytesUtil.readInt(res, 0);
+	@Override
+	protected void onInit(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+		_clientCountForTest = stateData.getData(Integer.class);
 		
 		if (_clientCountForTest > _maxClients)
 			throw new IllegalArgumentException(
 					String.format("The client count was too large: %d > %d", 
 							_clientCountForTest, 
 							_maxClients));
-		
-		CrowdHammerConfiguration config = _concentusHandle.getConfig();
-		int routerRecvBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "routerRecv");
-		int routerSendBufferLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "routerSend");
-		
-		MessageQueueFactory<TBuffer> messageQueueFactory = 
-				_socketManager.newMessageQueueFactory(_concentusHandle.getEventQueueFactory());
-		
-		_clientRecvQueue = messageQueueFactory.createSingleProducerQueue(
-				"clientRecvQueue", 
-				routerRecvBufferLength,
-				Constants.DEFAULT_MSG_BUFFER_SIZE,
-				new YieldingWaitStrategy());
-		_clientSendQueue = messageQueueFactory.createSingleProducerQueue(
-				"clientSendQueue",
-				routerSendBufferLength, 
-				Constants.MSG_BUFFER_ENTRY_LENGTH, 
-				new YieldingWaitStrategy());
 	}
 	
-	private void startSUT(ClusterListenerHandle cluster) throws Exception {
+	@Override
+	protected void onBind(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+		SocketSettings routerSocketSettings = SocketSettings.create()
+				.bindToPort(_recvPort);
+		_routerSocketId = _socketManager.create(ZMQ.ROUTER, routerSocketSettings, "client_recv");
+		
+		SocketSettings dealerSetSettings = SocketSettings.create()
+				.setRecvPairAddress(String.format("tcp://%s:%d",
+						_concentusHandle.getNetworkAddress().getHostAddress(),
+						_recvPort));
+		_dealerSetSocketId = _socketManager.create(SocketManager.DEALER_SET, dealerSetSettings, "client_send");
+	}
+	
+	@Override
+	protected void onConnect(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
 		/*
 		 * connect client socket to all client handlers
-		 */	
-		final String[] clientHandlerConnStrings = cluster.getAllServiceEndpoints(ConcentusEndpoints.CLIENT_HANDLER);
-		for (String connString : clientHandlerConnStrings) {
-			_socketManager.connectSocket(_dealerSetSocketId, connString);
+		 */		
+		List<ServiceEndpoint> clientHandlerEndpoints = cluster.getAllServiceEndpoints(
+				ConcentusEndpoints.CLIENT_HANDLER.getId());
+		final int clientHandlerCount = clientHandlerEndpoints.size();
+		for (ServiceEndpoint endpoint : clientHandlerEndpoints) {
+			_socketManager.connectSocket(_dealerSetSocketId, 
+					String.format("tcp://%s:%d", endpoint.ipAddress(), endpoint.port()));
 		}
 				
 		// process connect events & collect identities
-		final byte[][] handlerIds = new byte[clientHandlerConnStrings.length][];
+		final byte[][] handlerIds = new byte[clientHandlerCount][];
 		Mutex<Messenger<TBuffer>> routerSocketMutex = _socketManager.getSocketMutex(_routerSocketId);
 		final Mutex<Messenger<TBuffer>> dealerSetMutex = _socketManager.getSocketMutex(_dealerSetSocketId);
 		final TBuffer tmpBuffer = _socketManager.getBufferFactory().newInstance(128);
@@ -213,7 +225,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 						Clock clock = _concentusHandle.getClock();
 						long startTime = clock.nanoTime();
 						int i = 0;
-						while (i < clientHandlerConnStrings.length && clock.nanoTime() - startTime < TimeUnit.SECONDS.toNanos(60)) {
+						while (i < clientHandlerCount && clock.nanoTime() - startTime < TimeUnit.SECONDS.toNanos(60)) {
 							routerSocketMessenger.recv(tmpBuffer, _clientRecvHeader, true);
 							if (EventHeader.isValid(tmpBuffer, 0)) {
 								int identitySegmentMetaData = _clientRecvHeader.getSegmentMetaData(tmpBuffer, 0);
@@ -225,7 +237,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 								dealerSetMessenger.send(tmpBuffer, _clientSendHeader, true);
 							}
 						}
-						if (i < clientHandlerConnStrings.length) {
+						if (i < clientHandlerCount) {
 							throw new RuntimeException("Timed out waiting for client handlers to respond to connection requests");
 						}
 					}
@@ -268,21 +280,21 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 		
 		_pipeline = ProcessingPipeline.<TBuffer>build(_routerListener, _concentusHandle.getClock())
 				.thenConnector(_clientRecvQueue)
-				.then(_clientRecvQueue.createEventProcessor("clientProcessor", _clientProcessor, _concentusHandle.getClock(), _concentusHandle))
+				.then(_clientRecvQueue.createEventProcessor("clientProcessor", _clientProcessor, _metricContext, 
+						_concentusHandle.getClock(), _concentusHandle))
 				.thenConnector(_clientSendQueue)
 				.then(_dealerSetPublisher)
 				.createPipeline(_executor);
 	}
 	
-	private void executeTest(ClusterListenerHandle cluster) throws Exception {
+	@Override
+	protected void onStart(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
 		_pipeline.start();
 	}
-	
-	private void stopSendingInputEvents(ClusterListenerHandle cluster) throws Exception {
+		
+	@Override
+	protected void onShutdown(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {	
 		_clientProcessor.stopSendingInput();
-	}
-	
-	private void teardown(ClusterListenerHandle cluster) throws Exception {		
 		_pipeline.halt(60, TimeUnit.SECONDS);
 		_socketManager.close();
 		
@@ -293,9 +305,6 @@ public final class WorkerService<TBuffer extends ResizingBuffer> implements Crow
 				client.reset();
 			}
 		}
-	}
-	
-	private void shutdown(ClusterListenerHandle cluster) throws Exception {
 	}
 	
 }

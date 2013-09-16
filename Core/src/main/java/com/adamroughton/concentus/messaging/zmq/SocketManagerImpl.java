@@ -31,6 +31,7 @@ import java.util.concurrent.TimeoutException;
 import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.data.ArrayBackedResizingBufferFactory;
 import com.adamroughton.concentus.data.BufferFactory;
@@ -230,6 +231,11 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 		}, messengerMutexes);
 	}
 	
+	@Override
+	public int connectSocket(int socketId, ServiceEndpoint endpoint) {
+		return connectSocket(socketId, String.format("tcp://%s:%d", endpoint.ipAddress(), endpoint.port()));
+	}
+	
 	public synchronized int connectSocket(final int socketId, final String address) {
 		assertManagerActive();
 		
@@ -393,6 +399,15 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 		public String removeConnString(int connId) {
 			return _connections.remove(connId);
 		}
+	}
+	
+	@Override
+	public SocketIdentity resolveIdentity(int socketId,
+			ServiceEndpoint endpoint, long timeout, TimeUnit timeUnit)
+			throws InterruptedException, TimeoutException,
+			UnsupportedOperationException {
+		return resolveIdentity(socketId, String.format("tcp://%s:%d", endpoint.ipAddress(), 
+				endpoint.port()), timeout, timeUnit);
 	}
 
 	@Override

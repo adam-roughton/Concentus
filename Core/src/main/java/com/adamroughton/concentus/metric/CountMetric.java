@@ -1,5 +1,6 @@
 package com.adamroughton.concentus.metric;
 
+import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.util.SlidingWindowLongMap;
 import com.adamroughton.concentus.util.Util;
 

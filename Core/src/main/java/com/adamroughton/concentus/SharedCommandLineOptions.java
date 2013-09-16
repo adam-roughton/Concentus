@@ -18,20 +18,19 @@ package com.adamroughton.concentus;
 import java.net.InetAddress;
 import java.net.UnknownHostException;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.OptionBuilder;
 
-import com.adamroughton.concentus.config.Configuration;
-import com.adamroughton.concentus.util.Util;
-
 public class SharedCommandLineOptions {
 
-	public final static String ZOOKEEPER_ADDRESS_OPTION = "z";
-	public final static String PROPERTIES_FILE_OPTION = "p";
-	public final static String NETWORK_ADDRESS_OPTION = "a";
-	public final static String TRACE_OPTION = "t";
+	public final static String ZOOKEEPER_ADDRESS_OPTION = "zkaddr";
+	public final static String ZOOKEEPER_APP_ROOT_OPTION = "zkroot";
+	public final static String NETWORK_ADDRESS_OPTION = "hostaddr";
+	public final static String TRACE_OPTION = "trace";
 	
 	@SuppressWarnings("static-access")
 	public static Iterable<Option> getCommandLineOptions() {
@@ -41,11 +40,11 @@ public class SharedCommandLineOptions {
 					.isRequired(true)
 					.withDescription("the address of the ZooKeeper server")
 					.create(ZOOKEEPER_ADDRESS_OPTION),
-				OptionBuilder.withArgName("file path")
+				OptionBuilder.withArgName("ZooKeeper Application Root")
 					.hasArg()
-					.isRequired(true)
-					.withDescription("path to the properties file")
-					.create(PROPERTIES_FILE_OPTION),
+					.isRequired(false)
+					.withDescription("override the default app root '" + Constants.DEFAULT_ZOO_KEEPER_ROOT + "'")
+					.create(ZOOKEEPER_APP_ROOT_OPTION),
 				OptionBuilder.withArgName("network address")
 					.hasArg()
 					.isRequired(true)
@@ -60,13 +59,16 @@ public class SharedCommandLineOptions {
 			);
 	}
 	
-	public static <TConfig extends Configuration> TConfig readConfig(Class<TConfig> configType, Map<String, String> cmdLineValues) {
-		String configPath = cmdLineValues.get(PROPERTIES_FILE_OPTION);
-		return Util.readConfig(configType, configPath);
-	}
-	
 	public static String readZooKeeperAddress(Map<String, String> cmdLineValues) {
 		return cmdLineValues.get(ZOOKEEPER_ADDRESS_OPTION);
+	}
+	
+	public static String getZooKeeperAppRoot(Map<String, String> cmdLineValues) {
+		if (cmdLineValues.containsKey(ZOOKEEPER_APP_ROOT_OPTION)) {
+			return cmdLineValues.get(ZOOKEEPER_APP_ROOT_OPTION);
+		} else {
+			return Constants.DEFAULT_ZOO_KEEPER_ROOT;
+		}
 	}
 	
 	public static InetAddress readNodeAddress(Map<String, String> cmdLineValues) {
@@ -78,15 +80,14 @@ public class SharedCommandLineOptions {
 		}
 	}
 	
-	public static boolean readTraceOption(String traceName, Map<String, String> cmdLineValues) {
-		if (!cmdLineValues.containsKey(TRACE_OPTION)) return false;
-		
+	public static Set<String> readTraceOption(Map<String, String> cmdLineValues) {
 		String traceArrayString = cmdLineValues.get(TRACE_OPTION);
 		String[] traceOptions = traceArrayString.split(",");
+		Set<String> traceFlagSet = new HashSet<>(traceOptions.length);
 		for (String traceOption : traceOptions) {
-			if (traceOption.equals(traceName)) return true;
+			traceFlagSet.add(traceOption);
 		}
-		return false;
+		return traceFlagSet;
 	}
 
 }

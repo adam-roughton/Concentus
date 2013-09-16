@@ -42,7 +42,6 @@ import com.adamroughton.concentus.messaging.TrackingMessengerDecorator;
 import com.adamroughton.concentus.messaging.zmq.ZmqSocketMessenger;
 import com.adamroughton.concentus.messaging.zmq.ZmqStandardSocketMessenger;
 import com.adamroughton.concentus.metric.LogMetricContext;
-import com.adamroughton.concentus.metric.NullMetricContext;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Util;
 import com.google.caliper.Param;
@@ -82,7 +81,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 		
 		Sequence infiniteGate = new Sequence();
 		LogMetricContext metricContext = new LogMetricContext(1000, 10000, new DefaultClock());
-		metricContext.start();
+		metricContext.start(0);
 		
 		CollocatedBufferEventFactory<ArrayBackedResizingBuffer> recvBufferFactory = new CollocatedBufferEventFactory<>(1, 
 				new ArrayBackedResizingBufferFactory(), 
@@ -90,7 +89,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 		_recvQueue = new EventQueueImpl<>(new SingleProducerQueueStrategy<>("", 
 				recvBufferFactory, 
 				recvBufferFactory.getCount(), 
-				new YieldingWaitStrategy()), metricContext);
+				new YieldingWaitStrategy()));
 		_recvQueue.addGatingSequences(infiniteGate);
 		
 		CollocatedBufferEventFactory<ArrayBackedResizingBuffer> sendBufferFactory = new CollocatedBufferEventFactory<>(1, 
@@ -110,7 +109,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 				return new SingleProducerEventQueuePublisher<>(name, sendBuffer, isBlocking);
 			}
 			
-		}, new NullMetricContext());
+		});
 		
 		_sendQueue.addGatingSequences(infiniteGate);
 		infiniteGate.set(Long.MAX_VALUE);
@@ -156,7 +155,7 @@ public class SendRecvSocketReactorBenchmark extends MessagingBenchmarkBase {
 		dealerSocket.bind("tcp://127.0.0.1:" + _port);
 		
 		LogMetricContext metricContext = new LogMetricContext(1000, 10000, new DefaultClock());
-		metricContext.start();
+		metricContext.start(1);
 		ZmqSocketMessenger messenger = new ZmqStandardSocketMessenger(0, "", dealerSocket);
 		TrackingMessengerDecorator<ArrayBackedResizingBuffer> trackingMessenger = new TrackingMessengerDecorator<>(metricContext, messenger, new DefaultClock());
 		

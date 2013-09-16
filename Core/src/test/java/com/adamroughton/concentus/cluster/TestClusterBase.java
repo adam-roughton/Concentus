@@ -29,10 +29,11 @@ import com.netflix.curator.framework.CuratorFrameworkFactory;
 import com.netflix.curator.retry.ExponentialBackoffRetry;
 import com.netflix.curator.test.InstanceSpec;
 import com.netflix.curator.test.TestingServer;
+import com.netflix.curator.utils.ZKPaths;
 
 public abstract class TestClusterBase {
 
-	public static final String ROOT = "/Consentus";
+	public static final String ROOT = "/Concentus";
 	public static final int DEFAULT_PORT = 5000;
 	
 	private CuratorFramework _client;
@@ -81,6 +82,8 @@ public abstract class TestClusterBase {
 		return _client;
 	}
 	
-	
+	protected String makeTestPath(String name) {
+		return ZKPaths.makePath(ZKPaths.makePath(ROOT, "testPaths"), name);
+	}
 	
 }

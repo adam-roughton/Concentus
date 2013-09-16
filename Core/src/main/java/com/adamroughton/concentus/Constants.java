@@ -17,6 +17,8 @@ package com.adamroughton.concentus;
 
 public final class Constants {
 
+	public static final String DEFAULT_ZOO_KEEPER_ROOT = "Concentus";
+	
 	/**
 	 * The time length for each simulation tick in
 	 * milliseconds. 

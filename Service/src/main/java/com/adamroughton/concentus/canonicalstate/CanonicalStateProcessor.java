@@ -1,11 +1,14 @@
 package com.adamroughton.concentus.canonicalstate;
 
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicBoolean;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
+import com.adamroughton.concentus.data.model.kryo.CollectiveVariable;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.PubSubPattern;
@@ -14,7 +17,6 @@ import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.MetricGroup;
 import com.adamroughton.concentus.model.CollectiveApplication;
-import com.adamroughton.concentus.model.CollectiveVariableSet;
 
 public class CanonicalStateProcessor<TBuffer extends ResizingBuffer> {
 	
@@ -72,7 +74,7 @@ public class CanonicalStateProcessor<TBuffer extends ResizingBuffer> {
 		}
 	}
 	
-	public void onTickCompleted(final long time, final CollectiveVariableSet variableSet) {
+	public void onTickCompleted(final long time, final Int2ObjectMap<CollectiveVariable> variableSet) {
 		_canoncialStatePubQueue.send(PubSubPattern.asTask(_canonicalStateUpdate, new EventWriter<OutgoingEventHeader, CanonicalStateUpdate>() {
 
 			@Override

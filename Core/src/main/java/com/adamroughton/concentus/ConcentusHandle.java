@@ -17,54 +17,34 @@ package com.adamroughton.concentus;
 
 import java.net.InetAddress;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import com.adamroughton.concentus.config.Configuration;
-import com.adamroughton.concentus.data.ResizingBuffer;
-import com.adamroughton.concentus.disruptor.EventQueueFactory;
-import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.esotericsoftware.minlog.Log;
 
-public class ConcentusHandle<TConfig extends Configuration, TBuffer extends ResizingBuffer> implements FatalExceptionCallback {
+public class ConcentusHandle implements FatalExceptionCallback {
 	
 	private final AtomicBoolean _isShuttingDown = new AtomicBoolean(false);
 	
-	private final InstanceFactory<SocketManager<TBuffer>> _socketManager;
-	private final EventQueueFactory _eventQueueFactory;
 	private final Clock _clock;
-	private final TConfig _config;
 	private final InetAddress _networkAddress;
 	private final String _zooKeeperAddress;
 	
+	private final Set<String> _traceFlagLookup;
+	
 	public ConcentusHandle(
-			InstanceFactory<SocketManager<TBuffer>> socketManagerFactory,
-			EventQueueFactory eventQueueFactory,
 			Clock clock, 
-			TConfig config, 
 			InetAddress networkAddress,
-			String zooKeeperAddress) {
-		_socketManager = Objects.requireNonNull(socketManagerFactory);
-		_eventQueueFactory = Objects.requireNonNull(eventQueueFactory);
+			String zooKeeperAddress,
+			Set<String> traceFlagLookup) {
 		_clock = Objects.requireNonNull(clock);
-		_config = Objects.requireNonNull(config);
 		_networkAddress = Objects.requireNonNull(networkAddress);
 		_zooKeeperAddress = Objects.requireNonNull(zooKeeperAddress);
-	}
-	
-	public SocketManager<TBuffer> newSocketManager() {
-		return _socketManager.newInstance();
-	}
-	
-	public EventQueueFactory getEventQueueFactory() {
-		return _eventQueueFactory;
+		_traceFlagLookup = Objects.requireNonNull(traceFlagLookup);
 	}
 	
 	public Clock getClock() {
 		return _clock;
-	}
-	
-	public TConfig getConfig() {
-		return _config;
 	}
 	
 	public InetAddress getNetworkAddress() {
@@ -81,6 +61,10 @@ public class ConcentusHandle<TConfig extends Configuration, TBuffer extends Resi
 		if (!_isShuttingDown.getAndSet(true)) {
 			System.exit(1);
 		}
+	}
+	
+	public boolean shouldTrace(String componentType) {
+		return _traceFlagLookup.contains(componentType);
 	}
 
 	public void shutdown() {

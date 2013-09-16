@@ -16,7 +16,7 @@ import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.model.ClientId;
 import com.adamroughton.concentus.data.model.Effect;
 import com.adamroughton.concentus.data.model.bufferbacked.BufferBackedEffect;
-import com.adamroughton.concentus.data.model.kyro.CandidateValue;
+import com.adamroughton.concentus.data.model.kryo.CandidateValue;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.model.UserEffectSet;
 import com.adamroughton.concentus.util.Util;

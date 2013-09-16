@@ -4,7 +4,7 @@ import java.util.Iterator;
 
 import com.adamroughton.concentus.actioncollector.TickDelegate;
 import com.adamroughton.concentus.data.ResizingBuffer;
-import com.adamroughton.concentus.data.model.kyro.CandidateValue;
+import com.adamroughton.concentus.data.model.kryo.CandidateValue;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueuePublisher;
 

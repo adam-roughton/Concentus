@@ -26,6 +26,7 @@ import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.data.BufferFactory;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
@@ -218,6 +219,20 @@ public class StubSocketManager<TBuffer extends ResizingBuffer> implements Socket
 	@Override
 	public int[] getBoundPorts(int socketId) {
 		return new int[0];
+	}
+
+	@Override
+	public SocketIdentity resolveIdentity(int socketId,
+			ServiceEndpoint endpoint, long timeout, TimeUnit timeUnit)
+			throws InterruptedException, TimeoutException,
+			UnsupportedOperationException {
+		return resolveIdentity(socketId, String.format("tcp://%s:%d", endpoint.ipAddress(), endpoint.port()), 
+				timeout, timeUnit);
+	}
+
+	@Override
+	public int connectSocket(int socketId, ServiceEndpoint endpoint) {
+		return connectSocket(socketId, String.format("tcp://%s:%d", endpoint.ipAddress(), endpoint.port()));
 	}
 
 }

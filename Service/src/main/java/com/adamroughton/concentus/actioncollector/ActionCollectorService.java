@@ -2,21 +2,26 @@ package com.adamroughton.concentus.actioncollector;
 
 import java.io.IOException;
 import java.util.Objects;
-import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
 import org.zeromq.ZMQ;
 
-import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.ComponentResolver;
 import com.adamroughton.concentus.ConcentusEndpoints;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
-import com.adamroughton.concentus.cluster.worker.SimpleClusterWorkerHandle;
-import com.adamroughton.concentus.config.Configuration;
-import com.adamroughton.concentus.config.ConfigurationUtil;
+import com.adamroughton.concentus.CoreServices;
+import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
+import com.adamroughton.concentus.cluster.worker.ClusterHandle;
+import com.adamroughton.concentus.cluster.worker.ClusterService;
+import com.adamroughton.concentus.cluster.worker.ConcentusServiceBase;
+import com.adamroughton.concentus.cluster.worker.ServiceContext;
+import com.adamroughton.concentus.cluster.worker.ServiceDeploymentBase;
+import com.adamroughton.concentus.cluster.worker.StateData;
 import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.data.events.bufferbacked.TickEvent;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.messaging.EventListener;
@@ -31,118 +36,132 @@ import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
+import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.pipeline.PipelineSection;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
-import com.adamroughton.concentus.util.Util;
 import com.lmax.disruptor.BlockingWaitStrategy;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
-/**
- * Service that handles collecting actions from 
- * @author Adam Roughton
- *
- */
-public class ActionCollectorService<TBuffer extends ResizingBuffer> {
+public class ActionCollectorService<TBuffer extends ResizingBuffer> extends ConcentusServiceBase {
 
-	public final static String SERVICE_TYPE = "ActionCollector";
-	
-	private final ExecutorService _executor = Executors.newCachedThreadPool();
-	private final int _id;
-	private final SimpleClusterWorkerHandle _zooKeeperHandle;
-	private final SocketManager<TBuffer> _socketManager;
-	private final ProcessingPipeline<TBuffer> _pipeline;
-	private final String _address;	
-	private final TickEvent _tickEvent = new TickEvent();
-	private final SendQueue<OutgoingEventHeader, TBuffer> _tickSendQueue;
-	
-	public ActionCollectorService(ConcentusHandle<? extends Configuration, TBuffer> concentusHandle,
-			TickDelegate tickDelegate,
-			int id,
-			long startTime,
-			long tickDuration) {
-		_socketManager = Objects.requireNonNull(concentusHandle.newSocketManager());
-		_id = id;
+	public static class ActionCollectorServiceDeployment extends ServiceDeploymentBase<ServiceState> {
+
+		private int _recvPort;
+		private int _recvBufferLength;
+		private int _sendBufferLength;
+		private TickDelegate _tickDelegate;
+		private long _startTime;
+		private long _tickDuration;
 		
-		Configuration config = concentusHandle.getConfig();
-		Clock clock = concentusHandle.getClock();
+		// for Kryo
+		@SuppressWarnings("unused")
+		private ActionCollectorServiceDeployment() {}
 		
-		String zooKeeperAddress = concentusHandle.getZooKeeperAddress();
-		String zooKeeperRoot = config.getZooKeeper().getAppRoot();
-		String hostAddress = concentusHandle.getNetworkAddress().getHostAddress();
-		int port = ConfigurationUtil.getPort(config, SERVICE_TYPE, "input");
-		
-		int recvQueueLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "recv");
-		int sendQueueLength = ConfigurationUtil.getMessageBufferSize(config, SERVICE_TYPE, "send");
-		
-		_zooKeeperHandle = new SimpleClusterWorkerHandle(zooKeeperAddress, zooKeeperRoot, UUID.randomUUID(), concentusHandle);
-		try {
-			_zooKeeperHandle.start();
-		} catch (Exception e) {
-			concentusHandle.signalFatalException(e);
+		public ActionCollectorServiceDeployment(
+				int recvPort,
+				int recvBufferLength,
+				int sendBufferLength,
+				TickDelegate tickDelegate,
+				long startTime,
+				long tickDuration) {
+			super(CoreServices.ACTION_PROCESSOR.getId(), ServiceState.class, 
+					CoreServices.CANONICAL_STATE.getId());
+			_recvPort = recvPort;
+			_recvBufferLength = recvBufferLength;
+			_sendBufferLength = sendBufferLength;
+			_tickDelegate = Objects.requireNonNull(tickDelegate);
+			_startTime = startTime;
+			_tickDuration = tickDuration;
 		}
 		
-		SocketSettings routerSocketSettings = SocketSettings.create()
-				.bindToPort(port)
+		@Override
+		public void onPreStart(StateData<ServiceState> stateData) {
+		}
+
+		@Override
+		public <TBuffer extends ResizingBuffer> ClusterService<ServiceState> createService(
+				int serviceId, ServiceContext<ServiceState> context,
+				ConcentusHandle handle, MetricContext metricContext,
+				ComponentResolver<TBuffer> resolver) {
+			return new ActionCollectorService<>(serviceId, _recvPort, _recvBufferLength, _sendBufferLength, 
+					handle, metricContext, resolver, _tickDelegate, _startTime, _tickDuration);
+		}
+		
+	}
+	
+	private final ExecutorService _executor = Executors.newCachedThreadPool();
+	private final SocketManager<TBuffer> _socketManager;
+	private final int _serviceId;
+	private final ConcentusHandle _concentusHandle;
+	private final TickDelegate _tickDelegate;
+	private final long _startTime;
+	private final long _tickDuration;
+	
+	private final IncomingEventHeader _recvHeader;
+	private final OutgoingEventHeader _sendHeader;
+	
+	private final EventQueue<TBuffer> _recvQueue;
+	private final EventQueue<TBuffer> _sendQueue;
+	
+	private final SocketSettings _routerSocketSettings;
+	
+	private final TickEvent _tickEvent = new TickEvent();
+	private final SendQueue<OutgoingEventHeader, TBuffer> _tickSendQueue;
+	private final EventProcessor _tickEventPublisher;
+	
+	private ProcessingPipeline<TBuffer> _pipeline;
+	private CollectiveApplication _application;
+	
+	public ActionCollectorService(
+			int serviceId,
+			int recvPort,
+			int recvBufferLength,
+			int sendBufferLength,
+			ConcentusHandle concentusHandle,
+			MetricContext metricContext,
+			ComponentResolver<TBuffer> resolver,
+			TickDelegate tickDelegate,
+			long startTime,
+			long tickDuration) {
+		_serviceId = serviceId;
+		_concentusHandle = concentusHandle;
+		_socketManager = Objects.requireNonNull(resolver.newSocketManager(concentusHandle.getClock()));
+		_tickDelegate = Objects.requireNonNull(tickDelegate);
+		_startTime = startTime;
+		_tickDuration = tickDuration;
+		
+		_recvHeader = new IncomingEventHeader(0, 2);
+		_sendHeader = new OutgoingEventHeader(0, 2);
+		
+		_routerSocketSettings = SocketSettings.create()
+				.bindToPort(recvPort)
 				.bindToInprocName("actionCollector");
-		int routerSocketId = _socketManager.create(ZMQ.ROUTER, routerSocketSettings, "routerRecv");
-		int[] boundPorts = _socketManager.getBoundPorts(routerSocketId);
 		
-		_address = String.format("tcp://%s:%d", hostAddress, boundPorts[0]);
+		MessageQueueFactory<TBuffer> messageQueueFactory = _socketManager
+				.newMessageQueueFactory(resolver.getEventQueueFactory());
 		
-		_zooKeeperHandle.registerServiceEndpoint(ConcentusEndpoints.ACTION_PROCESSOR, hostAddress, boundPorts[0]);
-		_zooKeeperHandle.registerAsActionProcessor(_id);
-		
-		int tickSocketId = _socketManager.create(ZMQ.DEALER, "tickSend");
-		_socketManager.connectSocket(tickSocketId, String.format("inproc://actionCollector"));
-		
-		SocketSettings dealerSetSocketSettings = SocketSettings.create()
-				.setRecvPairAddress(_address);
-		int dealerSetSocketId = _socketManager.create(SocketManager.DEALER_SET, dealerSetSocketSettings, "dealerSetSend");
-		
-		MessageQueueFactory<TBuffer> messageQueueFactory = _socketManager.newMessageQueueFactory(concentusHandle.getEventQueueFactory());
-		
-		EventQueue<TBuffer> recvQueue = messageQueueFactory.createSingleProducerQueue(
+		_recvQueue = messageQueueFactory.createSingleProducerQueue(
 				"clientRecvQueue", 
-				recvQueueLength,
+				recvBufferLength,
 				Constants.DEFAULT_MSG_BUFFER_SIZE,
 				new YieldingWaitStrategy());
-		EventQueue<TBuffer> sendQueue = messageQueueFactory.createSingleProducerQueue(
+		_sendQueue = messageQueueFactory.createSingleProducerQueue(
 				"clientSendQueue",
-				sendQueueLength, 
+				sendBufferLength, 
 				Constants.MSG_BUFFER_ENTRY_LENGTH, 
 				new YieldingWaitStrategy());
 		EventQueue<TBuffer> tickQueue = messageQueueFactory
 				.createMultiProducerQueue("tickQueue", 4, 32, new BlockingWaitStrategy());
 		
-		IncomingEventHeader recvHeader = new IncomingEventHeader(0, 2);
-		OutgoingEventHeader sendHeader = new OutgoingEventHeader(0, 2);
+		int tickSocketId = _socketManager.create(ZMQ.DEALER, "tickSend");
+		_socketManager.connectSocket(tickSocketId, String.format("inproc://actionCollector"));
 		
 		Mutex<Messenger<TBuffer>> tickMessenger = _socketManager.getSocketMutex(tickSocketId);
-		EventProcessor tickPublisher = MessagingUtil.asSocketOwner("tickPublisher", tickQueue, new Publisher<TBuffer>(sendHeader), tickMessenger);
-		_tickSendQueue = new SendQueue<>("tickSendQueue", sendHeader, tickQueue);
-		
-		SendQueue<OutgoingEventHeader, TBuffer> sendQueueWrapper = new SendQueue<OutgoingEventHeader, TBuffer>("sendQueue", sendHeader, sendQueue);
-		CollectiveApplication application = Util.newInstance(_zooKeeperHandle.getApplicationClass(), CollectiveApplication.class);
-		ActionCollectorProcessor<TBuffer> processor = new ActionCollectorProcessor<>(recvHeader, application, tickDelegate, sendQueueWrapper, startTime, tickDuration);
-		
-		Mutex<Messenger<TBuffer>> dealerSetMessenger = _socketManager.getSocketMutex(dealerSetSocketId);
-		EventProcessor dealerSetPublisher = MessagingUtil.asSocketOwner("dealerSetPub", sendQueue, new Publisher<TBuffer>(sendHeader), dealerSetMessenger);
-		
-		PipelineSection<TBuffer> tickSection = ProcessingPipeline.<TBuffer>build(tickPublisher, clock)
-				.thenConnector(recvQueue)
-				.asSection();
-		_pipeline = ProcessingPipeline.<TBuffer>build(new EventListener<>("routerListener", recvHeader, 
-						_socketManager.getSocketMutex(routerSocketId), recvQueue, concentusHandle), clock)
-				.thenConnector(recvQueue)
-				.join(tickSection)
-				.into(recvQueue.createEventProcessor("actionProcessor", processor))
-				.thenConnector(sendQueue)
-				.then(dealerSetPublisher)
-				.createPipeline(_executor);
-		_pipeline.start();
+		_tickEventPublisher = MessagingUtil.asSocketOwner("tickPublisher", tickQueue, new Publisher<TBuffer>(_sendHeader), tickMessenger);
+		_tickSendQueue = new SendQueue<>("tickSendQueue", _sendHeader, tickQueue);
 	}
 	
 	public synchronized void tick(final long time) {
@@ -155,8 +174,66 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> {
 			}
 		}));
 	}
-	
-	public void close() {
+
+	@Override
+	protected void onInit(StateData<ServiceState> stateData,
+			ClusterHandle cluster) throws Exception {
+		_application = cluster.getApplicationInstanceFactory().newInstance();
+	}
+
+	@Override
+	protected void onBind(StateData<ServiceState> stateData,
+			ClusterHandle cluster) throws Exception {
+		int routerSocketId = _socketManager.create(ZMQ.ROUTER, _routerSocketSettings, "routerRecv");
+		int[] boundPorts = _socketManager.getBoundPorts(routerSocketId);
+		int recvPort = boundPorts[0];
+		
+		String address = String.format("tcp://%s:%d", 
+				_concentusHandle.getNetworkAddress().getHostAddress(), 
+				recvPort);
+		
+		SocketSettings dealerSetSocketSettings = SocketSettings.create()
+				.setRecvPairAddress(address);
+		int dealerSetSocketId = _socketManager.create(SocketManager.DEALER_SET, 
+				dealerSetSocketSettings, "dealerSetSend");
+		
+		SendQueue<OutgoingEventHeader, TBuffer> sendQueueWrapper = 
+				new SendQueue<OutgoingEventHeader, TBuffer>("sendQueue", _sendHeader, _sendQueue);
+		
+		ActionCollectorProcessor<TBuffer> processor = new ActionCollectorProcessor<>(_recvHeader, 
+				_application, _tickDelegate, sendQueueWrapper, _startTime, _tickDuration);
+		
+		Mutex<Messenger<TBuffer>> dealerSetMessenger = _socketManager.getSocketMutex(dealerSetSocketId);
+		EventProcessor dealerSetPublisher = MessagingUtil.asSocketOwner("dealerSetPub", _sendQueue, 
+				new Publisher<TBuffer>(_sendHeader), dealerSetMessenger);
+		
+		PipelineSection<TBuffer> tickSection = ProcessingPipeline.<TBuffer>build(_tickEventPublisher, _concentusHandle.getClock())
+				.thenConnector(_recvQueue)
+				.asSection();
+		_pipeline = ProcessingPipeline.<TBuffer>build(new EventListener<>("routerListener", _recvHeader, 
+						_socketManager.getSocketMutex(routerSocketId), _recvQueue, _concentusHandle), _concentusHandle.getClock())
+				.thenConnector(_recvQueue)
+				.join(tickSection)
+				.into(_recvQueue.createEventProcessor("actionProcessor", processor))
+				.thenConnector(_sendQueue)
+				.then(dealerSetPublisher)
+				.createPipeline(_executor);
+		
+		ServiceEndpoint endpoint = new ServiceEndpoint(ConcentusEndpoints.ACTION_PROCESSOR.getId(), 
+				_concentusHandle.getNetworkAddress().getHostAddress(), 
+				recvPort);
+		cluster.registerServiceEndpoint(endpoint);
+	}
+
+	@Override
+	protected void onStart(StateData<ServiceState> stateData,
+			ClusterHandle cluster) throws Exception {
+		_pipeline.start();
+	}
+
+	@Override
+	protected void onShutdown(StateData<ServiceState> stateData,
+			ClusterHandle cluster) throws Exception {
 		if (_pipeline != null) {
 			try {
 				_pipeline.halt(60, TimeUnit.SECONDS);
@@ -173,5 +250,5 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> {
 		}
 	}
 	
-
+	
 }

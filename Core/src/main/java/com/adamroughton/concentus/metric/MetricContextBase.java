@@ -1,9 +1,11 @@
 package com.adamroughton.concentus.metric;
 
 import java.util.Objects;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.util.RunningStats;
 import com.adamroughton.concentus.util.Util;
 
@@ -12,8 +14,10 @@ public abstract class MetricContextBase implements MetricContext {
 	private final int _bucketCount;
 	private final Clock _clock;
 	private final MetricBucketInfo _bucketInfo;
+	private int _metricSourceId;
 	
 	private final AtomicInteger _nextMetricId = new AtomicInteger(0);
+	private final AtomicBoolean _hasStarted = new AtomicBoolean(false);
 	
 	public MetricContextBase(
 			long metricTickMillis,
@@ -62,8 +66,11 @@ public abstract class MetricContextBase implements MetricContext {
 	}
 	
 	private MetricMetaData newMetric(MetricType metricType, String reference, String metricName, boolean isCumulative) {
+		if (!_hasStarted.get()) {
+			throw new IllegalStateException("Metrics cannot be created until the metric context has been started.");
+		}
 		int metricId = _nextMetricId.getAndIncrement();
-		MetricMetaData metaData = new MetricMetaData(metricId, reference, metricName, metricType, isCumulative);
+		MetricMetaData metaData = new MetricMetaData(_metricSourceId, metricId, reference, metricName, metricType, isCumulative);
 		onNewMetric(metaData);
 		return metaData;
 	}
@@ -81,6 +88,14 @@ public abstract class MetricContextBase implements MetricContext {
 		return _clock;
 	}
 	
+	public void start(int metricSourceId) {
+		if (!_hasStarted.compareAndSet(false, true))
+			throw new IllegalStateException("The metric context has already been started.");
+		_metricSourceId = metricSourceId;
+	}
+	
+	public void stop() {
+	}
 	
 	
 }

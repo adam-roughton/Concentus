@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.data.BufferFactory;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
@@ -125,6 +126,11 @@ public class TrackingSocketManagerDecorator<TBuffer extends ResizingBuffer> impl
 	}
 
 	@Override
+	public int connectSocket(int socketId, ServiceEndpoint endpoint) {
+		return _decoratedManager.connectSocket(socketId, endpoint);
+	}
+	
+	@Override
 	public int connectSocket(int socketId, String address) {
 		return _decoratedManager.connectSocket(socketId, address);
 	}
@@ -144,6 +150,14 @@ public class TrackingSocketManagerDecorator<TBuffer extends ResizingBuffer> impl
 		_decoratedManager.destroyAllSockets();
 	}
 
+	@Override
+	public SocketIdentity resolveIdentity(int socketId,
+			ServiceEndpoint endpoint, long timeout, TimeUnit timeUnit)
+			throws InterruptedException, TimeoutException,
+			UnsupportedOperationException {
+		return _decoratedManager.resolveIdentity(socketId, endpoint, timeout, timeUnit);
+	}
+	
 	@Override
 	public SocketIdentity resolveIdentity(int socketId,
 			String connectionString, long timeout, TimeUnit timeUnit)

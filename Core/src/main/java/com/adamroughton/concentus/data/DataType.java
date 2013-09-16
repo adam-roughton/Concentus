@@ -15,18 +15,34 @@
  */
 package com.adamroughton.concentus.data;
 
+import java.util.Objects;
+
+import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+
+import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
+import com.adamroughton.concentus.data.cluster.kryo.GuardianDeploymentReturnInfo;
+import com.adamroughton.concentus.data.cluster.kryo.GuardianInit;
+import com.adamroughton.concentus.data.cluster.kryo.GuardianState;
+import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
+import com.adamroughton.concentus.data.cluster.kryo.MetricSourceMetaData;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceInit;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.data.events.bufferbacked.*;
 import com.adamroughton.concentus.data.model.bufferbacked.ActionReceipt;
 import com.adamroughton.concentus.data.model.bufferbacked.BufferBackedEffect;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
-import com.adamroughton.concentus.data.model.kyro.CandidateValue;
+import com.adamroughton.concentus.data.model.kryo.CandidateValue;
 import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.kryo.Serializer;
+import com.esotericsoftware.kryo.io.Input;
+import com.esotericsoftware.kryo.io.Output;
 
 import static com.adamroughton.concentus.data.DataNature.*;
 
 public enum DataType implements KryoRegistratorDelegate {
 	
-	NULL(0, KYRO_AND_BUFFER_BACKED, Object.class),
+	NULL(0, BUFFER_BACKED, Object.class),
 
 	/*
 	 * Events
@@ -46,8 +62,6 @@ public enum DataType implements KryoRegistratorDelegate {
 	PARTIAL_COLLECTIVE_VAR_INPUT_EVENT(10, BUFFER_BACKED, PartialCollectiveVarInputEvent.class),
 	
 	METRIC_EVENT(10, BUFFER_BACKED, MetricEvent.class),
-	METRIC_META_DATA_EVENT(11, BUFFER_BACKED, MetricMetaDataEvent.class),
-	METRIC_META_DATA_REQ_EVENT(12, BUFFER_BACKED, MetricMetaDataRequestEvent.class),
 	
 	/*
 	 * Model types
@@ -56,28 +70,48 @@ public enum DataType implements KryoRegistratorDelegate {
 	EFFECT(101, BUFFER_BACKED, BufferBackedEffect.class),
 	CANDIDATE_VALUE(102, KRYO, CandidateValue.class),
 	CANONICAL_STATE_UPDATE(103, BUFFER_BACKED, CanonicalStateUpdate.class),
-	ACTION_RECEIPT(104, BUFFER_BACKED, ActionReceipt.class)
+	ACTION_RECEIPT(104, BUFFER_BACKED, ActionReceipt.class),
 	
+	/*
+	 * Cluster types
+	 */
+	
+	GUARDIAN_INIT(200, KRYO, GuardianInit.class),
+	GUARDIAN_STATE(201, KRYO, GuardianState.class, new ClusterStateKryoRegistratorDelegate<>(GuardianState.class)),
+	GUARDIAN_DEPLOYMENT_RETURN_INFO(202, KRYO, GuardianDeploymentReturnInfo.class),
+	SERVICE_STATE(203, KRYO, ServiceState.class, new ClusterStateKryoRegistratorDelegate<>(ServiceState.class)),
+	SERVICE_INIT(204, KRYO, ServiceInit.class),
+	METRIC_META_DATA(205, KRYO, MetricMetaData.class),
+	METRIC_SOURCE_META_DATA(206, KRYO, MetricSourceMetaData.class),
 	
 	;	
+	
+	public static int nextFreeId() {
+		int maxId = -1;
+		for (DataType type : DataType.values()) {
+			maxId = Math.max(maxId, type.getId());
+		}
+		return maxId + 1;
+	}
+	
 	private final int _id;
 	private final DataNature _nature;
 	private final Class<?> _associatedClazz;
-	private final KryoRegistratorDelegate _kryoRegistratorDelegate;
+	private final DataTypeKryoRegistratorDelegate _kryoRegistratorDelegate;
 	
 	private DataType(int id, DataNature nature, Class<?> associatedClazz) {
 		this(id, nature, associatedClazz, null);
 	}
 	
-	private DataType(final int id, DataNature nature, final Class<?> associatedClazz, KryoRegistratorDelegate registratorDelegate) {
+	private DataType(final int id, DataNature nature, final Class<?> associatedClazz, DataTypeKryoRegistratorDelegate registratorDelegate) {
 		_id = id;
 		_nature = nature;
 		_associatedClazz = associatedClazz;
 		if ((nature == KRYO || nature == KYRO_AND_BUFFER_BACKED) && registratorDelegate == null) {
-			_kryoRegistratorDelegate = new KryoRegistratorDelegate() {
+			_kryoRegistratorDelegate = new DataTypeKryoRegistratorDelegate() {
 				
 				@Override
-				public void register(Kryo kryo) {
+				public void register(int id, Kryo kryo) {
 					kryo.register(associatedClazz, id);
 				}
 			};
@@ -101,7 +135,52 @@ public enum DataType implements KryoRegistratorDelegate {
 	@Override
 	public void register(Kryo kryo) {
 		if (_kryoRegistratorDelegate != null) {
-			_kryoRegistratorDelegate.register(kryo);
+			_kryoRegistratorDelegate.register(_id, kryo);
 		}
+	}
+	
+	/*
+	 * Helper classes
+	 */
+	
+	private static interface DataTypeKryoRegistratorDelegate {
+		void register(int id, Kryo kryo);
+	}
+	
+	private static class ClusterStateKryoRegistratorDelegate<TState extends Enum<TState> & ClusterState> 
+			implements DataTypeKryoRegistratorDelegate {
+
+		private final Class<TState> _type;
+		private final Int2ObjectMap<TState> _clusterStateLookup;
+		
+		public ClusterStateKryoRegistratorDelegate(Class<TState> type) {
+			_type = Objects.requireNonNull(type);
+			TState[] values = type.getEnumConstants();
+			_clusterStateLookup = new Int2ObjectArrayMap<>(values.length);
+			for (TState value : values) {
+				_clusterStateLookup.put(value.code(), value);
+			}
+		}
+		
+		@Override
+		public void register(int id, Kryo kryo) {
+			kryo.register(_type, new Serializer<TState>(false) {
+
+				@Override
+				public void write(Kryo kryo, Output output, TState state) {
+					// nulls are handled by kryo
+					output.writeInt(state.code());
+				}
+
+				@Override
+				public TState read(Kryo kryo, Input input,
+						Class<TState> type) {
+					// nulls are handled by kryo
+					int stateCode = input.readInt();
+					return _clusterStateLookup.get(stateCode);
+				}
+			}, id);			
+		}
+		
 	}
 }

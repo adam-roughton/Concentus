@@ -157,6 +157,7 @@ project(':Core') {
 		compile 'commons-io:commons-io:2.4'
 		compile 'it.unimi.dsi:fastutil:6.5.1'
 		compile 'org.yaml:snakeyaml:1.11'
+		compile 'org.javatuples:javatuples:1.2'
 		compile files(getLocalLib('asg.cliche-020310.jar')) // simple interactive shell
 	}
 	
@@ -202,7 +203,7 @@ project(':SparkStreamingDriver') {
 	}
 	
 	dependencies {
-		compile project(':Core')
+		compile project(':Service')
 		compile 'org.spark-project:spark-streaming_2.9.3:0.7.3'
 		testCompile project(path: ':Core', configuration: 'tests')
 	}

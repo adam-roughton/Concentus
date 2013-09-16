@@ -3,6 +3,7 @@ package com.adamroughton.concentus.metric;
 import uk.co.real_logic.intrinsics.ComponentFactory;
 
 import com.adamroughton.concentus.InitialiseDelegate;
+import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.util.RunningStats;
 import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
 

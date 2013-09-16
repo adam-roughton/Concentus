@@ -13,6 +13,7 @@ import it.unimi.dsi.fastutil.longs.Long2ObjectMap;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.Constants;
+import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.util.RunningStats;
 import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.BlockingWaitStrategy;
@@ -24,7 +25,6 @@ import com.lmax.disruptor.dsl.ProducerType;
 
 public class LogMetricContext extends MetricContextBase {
 	
-	private final AtomicBoolean _isRunning = new AtomicBoolean(false);
 	private final Clock _clock;
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
@@ -101,9 +101,8 @@ public class LogMetricContext extends MetricContextBase {
 	}
 	
 	@Override
-	public void start() {
-		if (!_isRunning.compareAndSet(false, true))
-			throw new IllegalStateException("The log metric context can only be started once.");
+	public void start(int metricSourceId) {
+		super.start(metricSourceId);
 		_pubQueue.start();
 		
 		long waitTime = Constants.METRIC_TICK;
@@ -115,7 +114,6 @@ public class LogMetricContext extends MetricContextBase {
 	public void halt() {
 		_printTimer.halt();
 		_pubQueue.halt();
-		_isRunning.set(false);
 	}
 	
 	/*

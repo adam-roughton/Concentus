@@ -17,7 +17,7 @@ package com.adamroughton.concentus.crowdhammer.config;
 
 import java.util.Map;
 
-import com.adamroughton.concentus.config.Service;
+import com.adamroughton.concentus.config.ServiceConfig;
 import com.adamroughton.concentus.config.ZooKeeper;
 import com.adamroughton.concentus.configuration.StubConfiguration;
 
@@ -61,12 +61,12 @@ public class StubCrowdHammerConfiguration extends CrowdHammerConfiguration {
 	}
 
 	@Override
-	public Map<String, Service> getServices() {
+	public Map<String, ServiceConfig> getServices() {
 		return _stubConfiguration.getServices();
 	}
 
 	@Override
-	public void setServices(Map<String, Service> services) {
+	public void setServices(Map<String, ServiceConfig> services) {
 		_stubConfiguration.setServices(services);
 	}
 }

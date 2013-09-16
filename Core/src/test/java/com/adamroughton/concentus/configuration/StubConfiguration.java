@@ -22,7 +22,7 @@ import java.util.Map;
 import java.util.Set;
 
 import com.adamroughton.concentus.config.Configuration;
-import com.adamroughton.concentus.config.Service;
+import com.adamroughton.concentus.config.ServiceConfig;
 import com.adamroughton.concentus.config.ZooKeeper;
 
 public class StubConfiguration extends Configuration {
@@ -41,11 +41,11 @@ public class StubConfiguration extends Configuration {
 	}
 
 	@Override
-	public Map<String, Service> getServices() {
-		return new StubMap<Service>(_stubService);
+	public Map<String, ServiceConfig> getServices() {
+		return new StubMap<ServiceConfig>(_stubService);
 	}
 	
-	private static class StubService extends Service {
+	private static class StubService extends ServiceConfig {
 
 		@Override
 		public String getName() {

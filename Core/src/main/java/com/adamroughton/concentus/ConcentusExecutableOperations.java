@@ -15,15 +15,12 @@
  */
 package com.adamroughton.concentus;
 
-import static com.adamroughton.concentus.Constants.METRIC_BUFFER_SECONDS;
-
 import java.net.InetAddress;
 import java.util.HashMap;
 import java.util.ListIterator;
 import java.util.Map;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
+import java.util.Set;
+import java.util.UUID;
 
 import org.apache.commons.cli.CommandLine;
 import org.apache.commons.cli.CommandLineParser;
@@ -32,50 +29,43 @@ import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Option;
 import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
+import org.javatuples.Pair;
 
-import com.adamroughton.concentus.cluster.coordinator.ClusterCoordinatorHandle;
-import com.adamroughton.concentus.cluster.worker.ClusterListener;
-import com.adamroughton.concentus.cluster.worker.ClusterStateValue;
-import com.adamroughton.concentus.cluster.worker.ClusterListenerContainer;
-import com.adamroughton.concentus.config.Configuration;
-import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
-import com.adamroughton.concentus.metric.LogMetricContext;
-import com.adamroughton.concentus.metric.MetricContext;
-import com.adamroughton.concentus.metric.NullMetricContext;
+import com.adamroughton.concentus.cluster.ClusterParticipant;
+import com.adamroughton.concentus.cluster.worker.ClusterHandle;
+import com.adamroughton.concentus.cluster.worker.ServiceContainer;
+import com.adamroughton.concentus.cluster.worker.ServiceDeployment;
+import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
+import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.minlog.Log;
 
 public class ConcentusExecutableOperations {
 	
-	public static <TConfig extends Configuration, TClusterState extends Enum<TClusterState> & ClusterStateValue> 
-			void executeClusterWorker(String[] args, ConcentusWorkerNode<TConfig, TClusterState> workerNode) {
+	public static interface ClusterHandleFactory<TClusterHandle extends ClusterParticipant> {
+		TClusterHandle create(String zooKeeperAddress, 
+				String root,
+				UUID clusterId,
+				FatalExceptionCallback exHandler);
+	}
+	
+	public static <TState extends Enum<TState> & ClusterState> void executeClusterService(String[] args, ServiceDeployment<TState> serviceDeployment) {
+		Pair<ClusterHandle, ConcentusHandle> coreComponents = createCoreComponents("ClusterService", args, 
+				new ClusterHandleFactory<ClusterHandle>() {
+
+					@Override
+					public ClusterHandle create(String zooKeeperAddress,
+							String root, UUID clusterId,
+							FatalExceptionCallback exHandler) {
+						return new ClusterHandle(zooKeeperAddress, root, clusterId, exHandler);
+					}
+			
+				});
+
+		ClusterHandle clusterHandle = coreComponents.getValue0();
+		ConcentusHandle concentusHandle = coreComponents.getValue1();
 		
-		Clock clock = new DefaultClock();
-		
-		Map<String, String> commandLineArgs = parseCommandLineForNode(args, workerNode);	
-		TConfig config = SharedCommandLineOptions.readConfig(workerNode.getConfigType(), commandLineArgs);
-		String zooKeeperAddress = SharedCommandLineOptions.readZooKeeperAddress(commandLineArgs);
-		InetAddress nodeAddress = SharedCommandLineOptions.readNodeAddress(commandLineArgs);
-		boolean traceMessengers = SharedCommandLineOptions.readTraceOption("messengers", commandLineArgs);
-		boolean traceQueues = SharedCommandLineOptions.readTraceOption("queues", commandLineArgs);
-		
-		long metricBufferMillis = TimeUnit.SECONDS.toMillis(METRIC_BUFFER_SECONDS);
-		MetricContext metricContext = new LogMetricContext(Constants.METRIC_TICK, metricBufferMillis, clock);
-		metricContext.start();
-		
-		ConcentusHandle<TConfig, ArrayBackedResizingBuffer> concentusHandle = ConcentusHandleFactory.createHandle(clock, 
-				config, zooKeeperAddress, nodeAddress, metricContext, traceMessengers, traceQueues);
-		
-		ClusterListener<TClusterState> concentusWorkerService = workerNode.createService(commandLineArgs, concentusHandle, metricContext);
-		
-		ExecutorService executor = Executors.newCachedThreadPool();
-		
-		try (ClusterListenerContainer cluster = new ClusterListenerContainer(
-				concentusHandle.getZooKeeperAddress(), 
-				concentusHandle.getConfig().getZooKeeper().getAppRoot(), 
-				concentusWorkerService, 
-				executor, 
-				concentusHandle)) {
-			cluster.start();
+		try (ServiceContainer<TState> container = new ServiceContainer<>(concentusHandle, clusterHandle, serviceDeployment, concentusHandle)) {
+			container.start();
 			
 			// Wait for exit
 			Object waitMonitor = new Object();
@@ -84,33 +74,34 @@ public class ConcentusExecutableOperations {
 			}
 			
 		} catch (Exception e) {
-			Log.error("Error thrown from the cluster participant", e);
+			Log.error("Error thrown from the cluster service container", e);
 		}
 	}
 	
-	public static <TConfig extends Configuration> void executeClusterCoordinator(
-			String[] args, ConcentusCoordinatorNode<TConfig> coordinatorNode) {
+	public static <TClusterHandle extends ClusterParticipant> Pair<TClusterHandle, ConcentusHandle> 
+			createCoreComponents(String name, String[] args, ClusterHandleFactory<TClusterHandle> clusterHandleFactory) {
+		Map<String, String> commandLineArgs = parseCommandLine("ClusterService", SharedCommandLineOptions.getCommandLineOptions(), args, false);
+		
+		String zooKeeperAddress = SharedCommandLineOptions.readZooKeeperAddress(commandLineArgs);
+		String zooKeeperAppRoot = SharedCommandLineOptions.getZooKeeperAppRoot(commandLineArgs);
+		InetAddress hostAddress = SharedCommandLineOptions.readNodeAddress(commandLineArgs);
+		Set<String> traceFlagSet = SharedCommandLineOptions.readTraceOption(commandLineArgs);
+		
 		Clock clock = new DefaultClock();
 		
-		Map<String, String> commandLineArgs = parseCommandLineForNode(args, coordinatorNode);
-		TConfig config = SharedCommandLineOptions.readConfig(coordinatorNode.getConfigType(), commandLineArgs);
-		String zooKeeperAddress = SharedCommandLineOptions.readZooKeeperAddress(commandLineArgs);
-		InetAddress nodeAddress = SharedCommandLineOptions.readNodeAddress(commandLineArgs);
-		boolean traceMessengers = SharedCommandLineOptions.readTraceOption("messengers", commandLineArgs);
-		boolean traceQueues = SharedCommandLineOptions.readTraceOption("queues", commandLineArgs);
+		if (!Util.isValidZKRoot(zooKeeperAppRoot)) {
+			throw new RuntimeException(
+					String.format("The ZooKeeper App Root '%s' was not a valid root path " +
+							"(can be '/' or '/[A-Za-z0-9]+')", zooKeeperAppRoot));
+		}	
+		ConcentusHandle concentusHandle = new ConcentusHandle(clock, hostAddress, zooKeeperAddress, traceFlagSet);
+		UUID clusterId = UUID.randomUUID();
+		TClusterHandle clusterHandle = clusterHandleFactory.create(zooKeeperAddress, zooKeeperAppRoot, clusterId, concentusHandle);
 		
-		MetricContext metricContext = new NullMetricContext();
-		
-		ConcentusHandle<TConfig, ArrayBackedResizingBuffer> concentusHandle = ConcentusHandleFactory.createHandle(clock, 
-				config, zooKeeperAddress, nodeAddress, metricContext, traceMessengers, traceQueues);
-		ClusterCoordinatorHandle coordinatorClusterHandle = new ClusterCoordinatorHandle(
-				concentusHandle.getZooKeeperAddress(), 
-				concentusHandle.getConfig().getZooKeeper().getAppRoot(), 
-				concentusHandle);
-		coordinatorNode.run(commandLineArgs, concentusHandle, coordinatorClusterHandle);
+		return new Pair<>(clusterHandle, concentusHandle);
 	}
-	
-	private static Map<String, String> parseCommandLineForNode(String[] args, ConcentusNode<?> node) {
+		
+	public static Map<String, String> parseCommandLineForNode(String[] args, ConcentusProcess node) {
 		Options cliOptions = new Options();
 		addTo(cliOptions, SharedCommandLineOptions.getCommandLineOptions());
 		addTo(cliOptions, node.getCommandLineOptions());
@@ -181,10 +172,6 @@ public class ConcentusExecutableOperations {
 				super.processOption(arg, iter);
 			}
 		}
-	}
-	
-	public interface FactoryDelegate<TProcess, TConfig extends Configuration> {
-		TProcess create(ConcentusHandle<? extends TConfig, ?> concentusHandle);
 	}
 	
 }

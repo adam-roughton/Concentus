@@ -23,7 +23,7 @@ import com.esotericsoftware.minlog.Log;
 public class ConfigurationUtil {
 
 	public static int getMessageBufferSize(Configuration config, String serviceType, String bufferName) {
-		Service service = getService(config, serviceType, false);
+		ServiceConfig service = getService(config, serviceType, false);
 		if (service != null) {
 			Map<String, Integer> bufferSizes = service.getMessageBufferSizes();
 			if (bufferSizes != null && bufferSizes.containsKey(bufferName)) {
@@ -34,7 +34,7 @@ public class ConfigurationUtil {
 	}
 	
 	public static int getPort(Configuration config, String serviceType, String portName) {
-		Service service = getService(config, serviceType, true);
+		ServiceConfig service = getService(config, serviceType, true);
 		Map<String, Integer> portAssignments = service.getPorts();
 		if (portAssignments == null || !portAssignments.containsKey(portName)) {
 			Log.info(String.format("Allowing any port for port ID '%s' of service '%s'.", portName, serviceType));
@@ -43,8 +43,8 @@ public class ConfigurationUtil {
 		return portAssignments.get(portName);
 	}
 	
-	private static Service getService(Configuration config, String serviceType, boolean assertExists) {
-		Service service = config.getServices().get(serviceType);
+	private static ServiceConfig getService(Configuration config, String serviceType, boolean assertExists) {
+		ServiceConfig service = config.getServices().get(serviceType);
 		if (assertExists && service == null)
 			throw new RuntimeException(String.format("No such service '%s'", serviceType));
 		return service;

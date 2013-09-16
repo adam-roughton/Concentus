@@ -2,6 +2,7 @@ package com.adamroughton.concentus.metric;
 
 import java.util.Objects;
 
+import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.util.SlidingWindowMap;
 
 public abstract class Metric<T> {

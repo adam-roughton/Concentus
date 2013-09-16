@@ -21,7 +21,7 @@ public class Configuration {
 
 	private String _workingDir;
 	private ZooKeeper _zooKeeper;
-	private Map<String, Service> _services;
+	private Map<String, ServiceConfig> _services;
 	
 	public String getWorkingDir() {		
 		return _workingDir;
@@ -39,11 +39,11 @@ public class Configuration {
 		_zooKeeper = zooKeeper;
 	}
 	
-	public Map<String, Service> getServices() {
+	public Map<String, ServiceConfig> getServices() {
 		return _services;
 	}
 	
-	public void setServices(Map<String, Service> services) {
+	public void setServices(Map<String, ServiceConfig> services) {
 		_services = services;
 	}
 

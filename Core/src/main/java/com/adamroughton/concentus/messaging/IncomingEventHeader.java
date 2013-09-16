@@ -58,4 +58,18 @@ public class IncomingEventHeader extends EventHeader {
 		event.writeInt(_socketIdOffset, socketId);
 	}
 	
+	/**
+	 * Checks the source of the event to determine if this message
+	 * was enqueued internally rather than from a messenger.
+	 * @param event
+	 * @return true if this message was enqueued internally, false otherwise
+	 */
+	public final boolean isFromInternal(ResizingBuffer event) {
+		return getSocketId(event) == -1;
+	}
+	
+	public final void setFromInternal(ResizingBuffer event) {
+		setSocketId(event, -1);
+	}
+	
 }

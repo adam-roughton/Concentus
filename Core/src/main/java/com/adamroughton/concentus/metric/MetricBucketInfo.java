@@ -1,6 +1,7 @@
 package com.adamroughton.concentus.metric;
 
 import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 import com.adamroughton.concentus.Clock;
 
@@ -24,6 +25,16 @@ public final class MetricBucketInfo {
 	
 	public long getBucketEndTime(long metricBucketId) {
 		return (metricBucketId + 1) * getBucketDuration();
+	}
+	
+	public long getBucketIdForTime(long time, TimeUnit unit) {
+		return unit.toMillis(time) / getBucketDuration();
+	}
+	
+	public int getBucketCount(long duration, TimeUnit unit) {
+		long bucketDuration = getBucketDuration();
+		long durationMillis = unit.toMillis(duration);
+		return (int) (durationMillis / bucketDuration + (durationMillis % bucketDuration > 0? 1 : 0));
 	}
 	
 	public long getBucketDuration() {

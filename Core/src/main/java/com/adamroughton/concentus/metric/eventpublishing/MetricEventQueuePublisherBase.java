@@ -3,27 +3,30 @@ package com.adamroughton.concentus.metric.eventpublishing;
 import java.util.Objects;
 
 import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.data.events.bufferbacked.MetricEvent;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueuePublisher;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.PubSubPattern;
-import com.adamroughton.concentus.metric.MetricMetaData;
 import com.adamroughton.concentus.metric.MetricType;
 
 abstract class MetricEventQueuePublisherBase<TBuffer extends ResizingBuffer> {
 
 	private final MetricEvent _metricEvent = new MetricEvent();
+	private final int _metricSourceId;
 	private final MetricType _metricType;
 	private final EventQueuePublisher<TBuffer> _eventPublisher;
 	private final OutgoingEventHeader _pubEventHeader;
 	
 	public MetricEventQueuePublisherBase(
+			int metricSourceId,
 			String metricName, 
 			MetricType metricType,
 			EventQueue<TBuffer> pubQueue, 
 			OutgoingEventHeader pubEventHeader) {
+		_metricSourceId = metricSourceId;
 		_metricType = Objects.requireNonNull(metricType);
 		_eventPublisher = pubQueue.createPublisher(metricName, true);
 		_pubEventHeader = Objects.requireNonNull(pubEventHeader);
@@ -40,8 +43,9 @@ abstract class MetricEventQueuePublisherBase<TBuffer extends ResizingBuffer> {
 			@Override
 			public void write(OutgoingEventHeader header, MetricEvent event)
 					throws Exception {
+				event.setSourceId(_metricSourceId);
 				event.setMetricId(metricMetaData.getMetricId());
-				event.setMetricType(_metricType.getId());
+				event.setMetricType(_metricType);
 				event.setMetricBucketId(bucketId);
 				writerDelegate.write(event.getMetricValueSlice());
 			}

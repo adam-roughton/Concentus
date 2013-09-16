@@ -19,6 +19,7 @@ import java.io.Closeable;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.data.BufferFactory;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueue;
@@ -57,7 +58,7 @@ public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable
 	 * @param name a name for the socket
 	 * @return the socketID which refers to the created socket
 	 */
-	int create(final int socketType, String name);
+	int create(int socketType, String name);
 	
 	/**
 	 * Creates a new managed socket. The socket is opened immediately if
@@ -70,14 +71,14 @@ public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable
 	 * 
 	 * @return the socketID which refers to the created socket
 	 */
-	int create(final int socketType, SocketSettings socketSettings, String name);
+	int create(int socketType, SocketSettings socketSettings, String name);
 	
 	/**
 	 * Get the settings associated with the given socket ID.
 	 * @param socketId the socket ID
 	 * @return the socket settings
 	 */
-	SocketSettings getSettings(final int socketId);
+	SocketSettings getSettings(int socketId);
 	
 	int[] getBoundPorts(int socketId);
 	
@@ -91,7 +92,7 @@ public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable
 	 * @param socketSettings the new settings for the socket
 	 * @throws IllegalStateException if the socket is in use by another thread
 	 */
-	void updateSettings(final int socketId, final SocketSettings socketSettings);
+	void updateSettings(int socketId, SocketSettings socketSettings);
 	
 	Mutex<Messenger<TBuffer>> getSocketMutex(int socketId);
 	
@@ -100,9 +101,14 @@ public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable
 	SocketIdentity resolveIdentity(int socketId, String connectionString, long timeout, TimeUnit timeUnit) 
 			throws InterruptedException, TimeoutException, UnsupportedOperationException;
 	
-	int connectSocket(final int socketId, final String address);
+	SocketIdentity resolveIdentity(int socketId, ServiceEndpoint endpoint, long timeout, TimeUnit timeUnit) 
+			throws InterruptedException, TimeoutException, UnsupportedOperationException;
 	
-	String disconnectSocket(final int socketId, final int connId);
+	int connectSocket(int socketId, String address);
+	
+	int connectSocket(int socketId, ServiceEndpoint endpoint);
+	
+	String disconnectSocket(int socketId, int connId);
 	
 	void destroySocket(int socketId);
 	

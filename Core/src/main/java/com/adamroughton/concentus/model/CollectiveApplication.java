@@ -1,8 +1,11 @@
 package com.adamroughton.concentus.model;
 
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.model.Effect;
-import com.adamroughton.concentus.data.model.kyro.CandidateValue;
+import com.adamroughton.concentus.data.model.kryo.CandidateValue;
+import com.adamroughton.concentus.data.model.kryo.CollectiveVariable;
 
 public interface CollectiveApplication {
 
@@ -28,8 +31,8 @@ public interface CollectiveApplication {
 	
 	long getTickDuration();
 	
-	CollectiveVariableDefinition[] getCollectiveVariableDefinitions();
+	CollectiveVariableDefinition[] variableDefinitions();
 	
-	void createUpdate(ResizingBuffer updateData, long time, CollectiveVariableSet collectiveVariableSet);
+	void createUpdate(ResizingBuffer updateData, long time, Int2ObjectMap<CollectiveVariable> variables);
 	
 }

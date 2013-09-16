@@ -22,7 +22,7 @@ public class MetricTrackingEventQueueFactory implements EventQueueFactory {
 			String queueName,
 			EventFactory<T> eventFactory, int size, WaitStrategy waitStrategy) {
 		return new EventQueueImpl<>(new QueueMetricStrategy<>(_metricContext, 
-				new SingleProducerQueueStrategy<>(queueName, eventFactory, size, waitStrategy), _clock), _metricContext);
+				new SingleProducerQueueStrategy<>(queueName, eventFactory, size, waitStrategy), _clock));
 	}
 
 	@Override
@@ -31,7 +31,7 @@ public class MetricTrackingEventQueueFactory implements EventQueueFactory {
 			EventEntryHandler<T> eventEntryHandler, int size,
 			WaitStrategy waitStrategy) {
 		return new EventQueueImpl<>(new QueueMetricStrategy<>(_metricContext, 
-				new MultiProducerQueueStrategy<>(queueName, eventEntryHandler, size, waitStrategy), _clock), _metricContext);
+				new MultiProducerQueueStrategy<>(queueName, eventEntryHandler, size, waitStrategy), _clock));
 	}
 
 }

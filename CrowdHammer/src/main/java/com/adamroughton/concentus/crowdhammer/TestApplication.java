@@ -1,12 +1,13 @@
 package com.adamroughton.concentus.crowdhammer;
 
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
+
 import com.adamroughton.concentus.data.ChunkWriter;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.model.Effect;
-import com.adamroughton.concentus.data.model.kyro.CandidateValue;
-import com.adamroughton.concentus.data.model.kyro.CollectiveVariable;
+import com.adamroughton.concentus.data.model.kryo.CandidateValue;
+import com.adamroughton.concentus.data.model.kryo.CollectiveVariable;
 import com.adamroughton.concentus.model.CollectiveVariableDefinition;
-import com.adamroughton.concentus.model.CollectiveVariableSet;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.model.UserEffectSet;
 
@@ -35,7 +36,7 @@ public class TestApplication implements CollectiveApplication {
 			score = (int) Math.ceil(100 * (timeActive - 10000) / 900);
 		else
 		 	score = 0;
-		return new CandidateValue(effect.getVariableId(), score, time, effect.getData());
+		return new CandidateValue(effect.getVariableId(), score, effect.getData());
 	}
 
 	@Override
@@ -44,7 +45,7 @@ public class TestApplication implements CollectiveApplication {
 	}
 
 	@Override
-	public CollectiveVariableDefinition[] getCollectiveVariableDefinitions() {
+	public CollectiveVariableDefinition[] variableDefinitions() {
 		return new CollectiveVariableDefinition[] {
 				new CollectiveVariableDefinition(0, 50)
 		};
@@ -52,11 +53,11 @@ public class TestApplication implements CollectiveApplication {
 
 	@Override
 	public void createUpdate(ResizingBuffer updateData, long time,
-			CollectiveVariableSet collectiveVariableSet) {
+			Int2ObjectMap<CollectiveVariable> collectiveVariableSet) {
 		ChunkWriter chunkWriter = new ChunkWriter(updateData);
 		ResizingBuffer chunkBuffer = chunkWriter.getChunkBuffer();
 		
-		CollectiveVariable topN = collectiveVariableSet.getVariable(0);
+		CollectiveVariable topN = collectiveVariableSet.get(0);
 		for (int i = 0; i < topN.getValueCount(); i++) {
 			CandidateValue val = topN.getValue(i);
 			chunkBuffer.writeInt(0, val.getScore());

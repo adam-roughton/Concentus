@@ -16,5 +16,7 @@
 package com.adamroughton.concentus;
 
 public interface InstanceFactory<TInstance> {
+	
 	TInstance newInstance();
+	
 }

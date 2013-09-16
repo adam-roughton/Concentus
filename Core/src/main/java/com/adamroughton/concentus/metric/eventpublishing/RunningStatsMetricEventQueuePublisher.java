@@ -1,9 +1,9 @@
 package com.adamroughton.concentus.metric.eventpublishing;
 
 import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
-import com.adamroughton.concentus.metric.MetricMetaData;
 import com.adamroughton.concentus.metric.MetricPublisher;
 import com.adamroughton.concentus.metric.MetricType;
 import com.adamroughton.concentus.util.RunningStats;
@@ -11,9 +11,9 @@ import com.adamroughton.concentus.util.RunningStats;
 final class RunningStatsMetricEventQueuePublisher<TBuffer extends ResizingBuffer> 
 		extends MetricEventQueuePublisherBase<TBuffer> implements MetricPublisher<RunningStats> {
 
-	public RunningStatsMetricEventQueuePublisher(String metricName, MetricType metricType,
+	public RunningStatsMetricEventQueuePublisher(int metricSourceId, String metricName, MetricType metricType,
 			EventQueue<TBuffer> pubQueue, OutgoingEventHeader pubEventHeader) {
-		super(metricName, metricType, pubQueue, pubEventHeader);
+		super(metricSourceId, metricName, metricType, pubQueue, pubEventHeader);
 	}
 
 	@Override

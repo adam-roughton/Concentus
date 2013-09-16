@@ -32,12 +32,10 @@ import com.lmax.disruptor.SequenceBarrier;
 public class EventQueueImpl<T> implements EventQueue<T> {
 
 	protected final EventQueueStrategy<T> _queueStrategy;
-	private final MetricContext _metricContext;
 	private final Set<Sequence> _gatingSequences = new HashSet<Sequence>();
 
-	public EventQueueImpl(EventQueueStrategy<T> queueStrategy, MetricContext metricContext) {
+	public EventQueueImpl(EventQueueStrategy<T> queueStrategy) {
 		_queueStrategy = Objects.requireNonNull(queueStrategy);
-		_metricContext = Objects.requireNonNull(metricContext);
 	}
 
 	@Override
@@ -82,6 +80,7 @@ public class EventQueueImpl<T> implements EventQueue<T> {
 	public EventProcessor createEventProcessor(
 			String processorName,
 			final DeadlineBasedEventHandler<T> eventHandler, 
+			final MetricContext metricContext,
 			final Clock clock,
 			final FatalExceptionCallback exceptionCallback, 
 			Sequence... sequencesToTrack) {
@@ -90,7 +89,7 @@ public class EventQueueImpl<T> implements EventQueue<T> {
 			@Override
 			public DeadlineBasedEventProcessor<T> createProcessor(DataProvider<T> eventProvider,
 					SequenceBarrier barrier) {
-				return new DeadlineBasedEventProcessor<>(_metricContext, clock, eventHandler, eventProvider, barrier, exceptionCallback);
+				return new DeadlineBasedEventProcessor<>(metricContext, clock, eventHandler, eventProvider, barrier, exceptionCallback);
 			}
 		}, sequencesToTrack);
 	}

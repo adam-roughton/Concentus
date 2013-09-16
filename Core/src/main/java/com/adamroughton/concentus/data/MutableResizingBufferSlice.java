@@ -5,7 +5,7 @@ import java.util.Objects;
 public final class MutableResizingBufferSlice extends ResizingBufferSlice {
 
 	public MutableResizingBufferSlice() {
-		_decoratedBuffer = NullResizingBufferSlice.INSTANCE;
+		_decoratedBuffer = NullResizingBuffer.INSTANCE;
 		_offset = 0;
 	}
 	
@@ -16,7 +16,7 @@ public final class MutableResizingBufferSlice extends ResizingBufferSlice {
 	}
 	
 	public void unsetBackingBuffer() {
-		_decoratedBuffer = NullResizingBufferSlice.INSTANCE;
+		_decoratedBuffer = NullResizingBuffer.INSTANCE;
 		_offset = 0;
 		reset();
 	}

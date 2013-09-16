@@ -1,6 +1,7 @@
 package com.adamroughton.concentus.metric;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.util.RunningStats;
 
 public class NullMetricContext implements MetricContext {
@@ -27,7 +28,7 @@ public class NullMetricContext implements MetricContext {
 	@Override
 	public StatsMetric newStatsMetric(String reference, String metricName,
 			boolean isCumulative) {
-		return new StatsMetric(new MetricMetaData(0, reference, metricName, MetricType.STATS, isCumulative), _bucketInfo, 
+		return new StatsMetric(new MetricMetaData(0, 0, reference, metricName, MetricType.STATS, isCumulative), _bucketInfo, 
 				new MetricPublisher<RunningStats>() {
 			
 			@Override
@@ -51,7 +52,7 @@ public class NullMetricContext implements MetricContext {
 	
 	private CountMetric nullCountMetric(MetricType type, String reference, String metricName,
 			boolean isCumulative) {
-		return new CountMetric(new MetricMetaData(0, reference, metricName, type, isCumulative), _bucketInfo, new LongValueMetricPublisher() {
+		return new CountMetric(new MetricMetaData(0, 0, reference, metricName, type, isCumulative), _bucketInfo, new LongValueMetricPublisher() {
 			
 			@Override
 			public void publish(long bucketId, MetricMetaData metricMetaData,
@@ -68,14 +69,6 @@ public class NullMetricContext implements MetricContext {
 	@Override
 	public MetricBucketInfo getMetricBucketInfo() {
 		return _bucketInfo;
-	}
-
-	@Override
-	public void start() {
-	}
-
-	@Override
-	public void halt() {
 	}
 
 	@Override

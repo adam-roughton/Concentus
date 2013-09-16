@@ -1,9 +1,9 @@
-# Configuration file for Consentus
+# Configuration file for Concentus
 
-workingDir: /tmp/consentus
+workingDir: /tmp/concentus
 
 zooKeeper:
-  appRoot: /consentus
+  appRoot: /concentus
     
 services:
   ActionCollector:

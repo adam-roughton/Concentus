@@ -2,7 +2,7 @@ package com.adamroughton.concentus.canonicalstate.direct;
 
 import java.util.ArrayList;
 
-import com.adamroughton.concentus.data.model.kyro.CandidateValue;
+import com.adamroughton.concentus.data.model.kryo.CandidateValue;
 
 final class ComputeStateEvent {
 
