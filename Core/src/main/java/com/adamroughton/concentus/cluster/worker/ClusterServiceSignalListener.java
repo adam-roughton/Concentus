@@ -20,7 +20,8 @@ import java.io.IOException;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
+import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;
@@ -29,30 +30,27 @@ import com.netflix.curator.framework.recipes.cache.ChildData;
 import com.netflix.curator.framework.recipes.cache.NodeCache;
 import com.netflix.curator.framework.recipes.cache.NodeCacheListener;
 
-class ClusterServiceStateSignalListener<TState> implements NodeCacheListener, Closeable {
+class ClusterServiceSignalListener<TState extends Enum<TState> & ClusterState> implements NodeCacheListener, Closeable {
 
-	public interface ListenerDelegate<TState> {
-		void onStateChanged(TState newState) throws Exception;
+	public interface ListenerDelegate<TState extends Enum<TState> & ClusterState> {
+		void onSignalChanged(StateEntry<TState> newSignalEntry) throws Exception;
 	}
 	
 	private final Class<TState> _stateType;
 	private final AtomicInteger _lastSeenVersion = new AtomicInteger(-1);
 	private final ListenerDelegate<TState> _listenerDelegate;
 	private final NodeCache _stateSignalNode;
-	private final FatalExceptionCallback _exCallback;
 	private final Kryo _kryo;
 	
-	public ClusterServiceStateSignalListener(
+	public ClusterServiceSignalListener(
 			Class<TState> stateType,
 			CuratorFramework client, 
 			String stateSignalPath,
-			ListenerDelegate<TState> listenerDelegate,
-			FatalExceptionCallback exCallback) {
+			ListenerDelegate<TState> listenerDelegate) {
 		_stateType = Objects.requireNonNull(stateType);
 		_stateSignalNode = new NodeCache(client, stateSignalPath);
 		_stateSignalNode.getListenable().addListener(this);
 		_listenerDelegate = Objects.requireNonNull(listenerDelegate);
-		_exCallback = exCallback;
 		_kryo = Util.newKryoInstance();
 	}
 
@@ -64,22 +62,19 @@ class ClusterServiceStateSignalListener<TState> implements NodeCacheListener, Cl
 			int newVersion = node.getStat().getVersion();
 			final byte[] data = node.getData();
 			Input input = new Input(data);
-			Object newStateObj = _kryo.readClassAndObject(input);
+			Object newSignalEntryObj = _kryo.readClassAndObject(input);
 			input.close();
 			
-			TState newState;
-			if (_stateType.isAssignableFrom(newStateObj.getClass())) {
-				newState = (TState) newStateObj;				
+			StateEntry<TState> newSignalEntry;
+			if (StateEntry.class.isAssignableFrom(newSignalEntryObj.getClass()) && 
+					_stateType.equals(((StateEntry<?>) newSignalEntryObj).stateType())) {
+				newSignalEntry = (StateEntry<TState>) newSignalEntryObj;				
 			} else {
-				newState = null;
+				newSignalEntry = null;
 			}
 			
-			if (newState != null && tryClaimLatestVersion(newVersion)) {
-				try {
-					_listenerDelegate.onStateChanged(newState);
-				} catch (Exception e) {
-					_exCallback.signalFatalException(e);
-				}
+			if (newSignalEntry != null && newSignalEntry.getState() != null && tryClaimLatestVersion(newVersion)) {
+				_listenerDelegate.onSignalChanged(newSignalEntry);
 			}
 		}		
 	}

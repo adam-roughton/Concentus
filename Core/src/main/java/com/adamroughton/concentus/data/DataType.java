@@ -17,6 +17,9 @@ package com.adamroughton.concentus.data;
 
 import java.util.Objects;
 
+import org.javatuples.Pair;
+import org.javatuples.Tuple;
+
 import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
@@ -28,6 +31,7 @@ import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.data.cluster.kryo.MetricSourceMetaData;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInit;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
+import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.data.events.bufferbacked.*;
 import com.adamroughton.concentus.data.model.bufferbacked.ActionReceipt;
 import com.adamroughton.concentus.data.model.bufferbacked.BufferBackedEffect;
@@ -80,9 +84,23 @@ public enum DataType implements KryoRegistratorDelegate {
 	GUARDIAN_STATE(201, KRYO, GuardianState.class, new ClusterStateKryoRegistratorDelegate<>(GuardianState.class)),
 	GUARDIAN_DEPLOYMENT_RETURN_INFO(202, KRYO, GuardianDeploymentReturnInfo.class),
 	SERVICE_STATE(203, KRYO, ServiceState.class, new ClusterStateKryoRegistratorDelegate<>(ServiceState.class)),
-	SERVICE_INIT(204, KRYO, ServiceInit.class),
-	METRIC_META_DATA(205, KRYO, MetricMetaData.class),
-	METRIC_SOURCE_META_DATA(206, KRYO, MetricSourceMetaData.class),
+	STATE_ENTRY(204, KRYO, StateEntry.class),
+	SERVICE_INIT(205, KRYO, ServiceInit.class),
+	METRIC_META_DATA(206, KRYO, MetricMetaData.class),
+	METRIC_SOURCE_META_DATA(207, KRYO, MetricSourceMetaData.class),
+	
+	/*
+	 * Utility types
+	 */
+	@SuppressWarnings("rawtypes")
+	PAIR(1000, KRYO, Pair.class, new TupleKryoRegistratorDelegate<Pair>(Pair.class, new TupleCreateDelegate<Pair>() {
+
+		@Override
+		public Pair newInstance(Object[] array) {
+			return Pair.fromArray(array);
+		}
+	})),
+	
 	
 	;	
 	
@@ -180,6 +198,48 @@ public enum DataType implements KryoRegistratorDelegate {
 					return _clusterStateLookup.get(stateCode);
 				}
 			}, id);			
+		}
+		
+	}
+	
+	public static interface TupleCreateDelegate<TTuple extends Tuple> {
+		TTuple newInstance(Object[] array);
+	}
+	
+	private static class TupleSerializer<TTuple extends Tuple> extends Serializer<TTuple> {
+		
+		private final TupleCreateDelegate<TTuple> _createDelegate;
+		
+		public TupleSerializer(TupleCreateDelegate<TTuple> createDelegate) {
+			_createDelegate = Objects.requireNonNull(createDelegate);
+		}
+		
+		@Override
+		public void write(Kryo kryo, Output output, TTuple tuple) {
+			kryo.writeObject(output, tuple.toArray());
+		}
+
+		@Override
+		public TTuple read(Kryo kryo, Input input, Class<TTuple> type) {
+			Object[] values = kryo.readObject(input, Object[].class);
+			return _createDelegate.newInstance(values);
+		}
+		
+	}
+	
+	private static class TupleKryoRegistratorDelegate<TTuple extends Tuple> implements DataTypeKryoRegistratorDelegate {
+		
+		private final Class<TTuple> _tupleType;
+		private final TupleSerializer<TTuple> _serializer;
+		
+		public TupleKryoRegistratorDelegate(Class<TTuple> tupleType, TupleCreateDelegate<TTuple> registratorDelegate) {
+			_tupleType = Objects.requireNonNull(tupleType);
+			_serializer = new TupleSerializer<>(registratorDelegate);
+		}
+		
+		@Override
+		public void register(int id, Kryo kryo) {
+			kryo.register(_tupleType, _serializer, id);
 		}
 		
 	}

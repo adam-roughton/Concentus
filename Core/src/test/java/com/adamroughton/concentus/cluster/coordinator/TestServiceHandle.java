@@ -17,9 +17,9 @@ import com.adamroughton.concentus.cluster.TestClusterBase;
 import com.adamroughton.concentus.cluster.coordinator.ServiceHandle.ServiceHandleEvent;
 import com.adamroughton.concentus.cluster.coordinator.ServiceHandle.ServiceHandleEvent.EventType;
 import com.adamroughton.concentus.cluster.coordinator.ServiceHandle.ServiceHandleListener;
-import com.adamroughton.concentus.cluster.coordinator.ServiceHandle.StateEntry;
 import com.adamroughton.concentus.cluster.worker.ValueCollector;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
+import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.Kryo;
 import com.netflix.curator.utils.ZKPaths;
@@ -84,10 +84,10 @@ public class TestServiceHandle extends TestClusterBase {
 		assertNull(initialState.getStateData(Object.class));
 	
 		// set signal data
-		signalState(getTestClient(), _kryo, _testServicePath, ServiceState.INIT, null);
+		int signalVersion = signalState(getTestClient(), _kryo, _testServicePath, ServiceState.class, ServiceState.INIT, null);
 		
 		// change the state (simulate service)
-		setServiceState(getTestClient(), _kryo, _testServicePath, ServiceState.INIT, null);
+		setServiceState(getTestClient(), _kryo, _testServicePath, ServiceState.class, ServiceState.INIT, signalVersion, null);
 		
 		// wait for update
 		_listenerInvocationCollector.waitForCount(1, 5000, TimeUnit.MILLISECONDS);
@@ -95,7 +95,9 @@ public class TestServiceHandle extends TestClusterBase {
 		assertEquals(1, values.size());
 		
 		ServiceHandleEvent<ServiceState> expected = new ServiceHandleEvent<ServiceState>(
-				EventType.STATE_CHANGED, ServiceState.INIT, ServiceState.INIT, null, null);
+				EventType.STATE_CHANGED, 
+				new StateEntry<>(ServiceState.class, ServiceState.INIT, null, 0), 
+				new StateEntry<>(ServiceState.class, ServiceState.INIT, null, 0));
 		ServiceHandleEvent<ServiceState> actual = values.get(0).getValue1();
 		assertEventMatches(expected, actual);
 	}
@@ -107,7 +109,7 @@ public class TestServiceHandle extends TestClusterBase {
 		assertNull(initialState.getStateData(Object.class));
 		
 		// change the state
-		setServiceState(getTestClient(), _kryo, _testServicePath, ServiceState.INIT, null);
+		setServiceState(getTestClient(), _kryo, _testServicePath, ServiceState.class, ServiceState.INIT, -1, null);
 		
 		// wait for update
 		_listenerInvocationCollector.waitForCount(1, 5000, TimeUnit.MILLISECONDS);
@@ -115,7 +117,9 @@ public class TestServiceHandle extends TestClusterBase {
 		assertEquals(1, values.size());
 		
 		ServiceHandleEvent<ServiceState> expected = new ServiceHandleEvent<ServiceState>(
-				EventType.STATE_CHANGED, ServiceState.INIT, null, null, null);
+				EventType.STATE_CHANGED, 
+				new StateEntry<>(ServiceState.class, ServiceState.INIT, null, 0), 
+				null);
 		ServiceHandleEvent<ServiceState> actual = values.get(0).getValue1();
 		assertEventMatches(expected, actual);
 	}
@@ -128,11 +132,11 @@ public class TestServiceHandle extends TestClusterBase {
 		
 		// set signal data
 		String signalData = "SignalData";
-		signalState(getTestClient(), _kryo, _testServicePath, ServiceState.INIT, signalData);
+		int signalVersion = signalState(getTestClient(), _kryo, _testServicePath, ServiceState.class, ServiceState.INIT, signalData);
 		
 		// change the state
 		String stateData = "StateData";
-		setServiceState(getTestClient(), _kryo, _testServicePath, ServiceState.INIT, stateData);
+		setServiceState(getTestClient(), _kryo, _testServicePath, ServiceState.class, ServiceState.INIT, signalVersion, stateData);
 		
 		// wait for update
 		_listenerInvocationCollector.waitForCount(1, 5000, TimeUnit.MILLISECONDS);
@@ -140,7 +144,9 @@ public class TestServiceHandle extends TestClusterBase {
 		assertEquals(1, values.size());
 		
 		ServiceHandleEvent<ServiceState> expected = new ServiceHandleEvent<ServiceState>(
-				EventType.STATE_CHANGED, ServiceState.INIT, ServiceState.INIT, stateData, signalData);
+				EventType.STATE_CHANGED, 
+				new StateEntry<>(ServiceState.class, ServiceState.INIT, stateData, 0), 
+				new StateEntry<>(ServiceState.class, ServiceState.INIT, signalData, 0));
 		ServiceHandleEvent<ServiceState> actual = values.get(0).getValue1();
 		assertEventMatches(expected, actual);
 	}
@@ -157,14 +163,16 @@ public class TestServiceHandle extends TestClusterBase {
 				ServiceState.CONNECT, ServiceState.START}) {
 			// set signal data
 			String signalData = "SignalData" + state;
-			signalState(getTestClient(), _kryo, _testServicePath, state, signalData);
+			int signalVersion = signalState(getTestClient(), _kryo, _testServicePath, ServiceState.class, state, signalData);
 			
 			// change the state
 			String stateData = "StateData" + state;
-			setServiceState(getTestClient(), _kryo, _testServicePath, state, stateData);
+			setServiceState(getTestClient(), _kryo, _testServicePath, ServiceState.class, state, signalVersion, stateData);
 			
 			expectedList.add(new ServiceHandleEvent<ServiceState>(
-					EventType.STATE_CHANGED, state, state, stateData, signalData));
+					EventType.STATE_CHANGED, 
+					new StateEntry<>(ServiceState.class, state, stateData, 0), 
+					new StateEntry<>(ServiceState.class, state, signalData, 0)));
 			
 			// wait for update
 			_listenerInvocationCollector.waitForCount(++count, 5000, TimeUnit.MILLISECONDS);

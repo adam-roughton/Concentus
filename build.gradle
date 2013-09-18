@@ -244,3 +244,9 @@ project(':CrowdHammer') {
 	}
 	
 }
+
+project(':Tests') {
+	dependencies {
+		compile project(':CrowdHammer')
+	}
+}

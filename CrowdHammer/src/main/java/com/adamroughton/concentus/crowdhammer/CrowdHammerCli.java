@@ -45,7 +45,7 @@ public class CrowdHammerCli<TBuffer extends ResizingBuffer> {
 		@SuppressWarnings("static-access")
 		Option resDirOption = OptionBuilder.withArgName("result directory path")
 			.hasArg()
-			.isRequired(true)
+			.isRequired(false)
 			.withDescription("the director to store results in")
 			.create(RES_DIR_OPTION);
 		
@@ -69,18 +69,19 @@ public class CrowdHammerCli<TBuffer extends ResizingBuffer> {
 						return new CoordinatorClusterHandle(zooKeeperAddress, root, clusterId, exHandler);
 					}
 				});
-		CoordinatorClusterHandle clusterHandle = coreComponents.getValue0();
+		
 		ConcentusHandle handle = coreComponents.getValue1();
 		
-		try {
+		try (CoordinatorClusterHandle clusterHandle = coreComponents.getValue0()) {
 			System.out.println("Starting CrowdHammer Coordinator");
+			clusterHandle.start();
 			CrowdHammerCli<?> coordinator = new CrowdHammerCli<>(clusterHandle, handle, resDirPath);
 			Shell shell = ShellFactory.createConsoleShell(">", "CrowdHammer", coordinator);
 			coordinator.help();
 			shell.commandLoop();
 		} catch (Exception e) {
 			Log.error("Error creating console shell", e);
-		}		
+		}
 	}
 	
 	private final CrowdHammer _crowdHammer;

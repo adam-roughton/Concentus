@@ -21,8 +21,8 @@ public final class Test {
 	private final int _workerCount;
 	private final int[] _clientCounts;
 	private final long _testDurationMillis;
-	private final InstanceFactory<ClientAgent> _clientAgentFactory;
-	private final InstanceFactory<CollectiveApplication> _applicationFactory;
+	private final InstanceFactory<? extends ClientAgent> _clientAgentFactory;
+	private final InstanceFactory<? extends CollectiveApplication> _applicationFactory;
 	private final ComponentResolver<? extends ResizingBuffer> _componentResolver;
 	
 	Test(String name,
@@ -31,8 +31,8 @@ public final class Test {
 			int[] clientCounts,
 			long testDuration,
 			TimeUnit unit,
-			InstanceFactory<ClientAgent> clientAgentFactory,
-			InstanceFactory<CollectiveApplication> applicationFactory,
+			InstanceFactory<? extends ClientAgent> clientAgentFactory,
+			InstanceFactory<? extends CollectiveApplication> applicationFactory,
 			ComponentResolver<? extends ResizingBuffer> componentResolver) {
 		_name = name;
 		_serviceDeployments = serviceDeployments;
@@ -54,11 +54,11 @@ public final class Test {
 		return _name;
 	}
 	
-	public InstanceFactory<ClientAgent> getClientAgentFactory() {
+	public InstanceFactory<? extends ClientAgent> getClientAgentFactory() {
 		return _clientAgentFactory;
 	}
 	
-	public InstanceFactory<CollectiveApplication> getApplicationFactory() {
+	public InstanceFactory<? extends CollectiveApplication> getApplicationFactory() {
 		return _applicationFactory;
 	}
 

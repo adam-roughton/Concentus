@@ -23,8 +23,8 @@ public class TestBuilder {
 	private int[] _clientCounts = new int[] { 1000, 2000, 3000, 4000, 5000 };
 	private long _testDuration = 2;
 	private TimeUnit _unit = TimeUnit.MINUTES;
-	private InstanceFactory<ClientAgent> _agentFactory = null;
-	private InstanceFactory<CollectiveApplication> _applicationFactory = null;
+	private InstanceFactory<? extends ClientAgent> _agentFactory = null;
+	private InstanceFactory<? extends CollectiveApplication> _applicationFactory = null;
 	private ComponentResolver<? extends ResizingBuffer> _componentResolver = new ArrayBackedComponentResolver();
 	
 	public TestBuilder usingName(String testName) {
@@ -48,12 +48,12 @@ public class TestBuilder {
 		return this;
 	}
 	
-	public TestBuilder withAgentFactory(InstanceFactory<ClientAgent> agentFactory) {
+	public TestBuilder withAgentFactory(InstanceFactory<? extends ClientAgent> agentFactory) {
 		_agentFactory = agentFactory;
 		return this;
 	}
 	
-	public TestBuilder withApplicationFactory(InstanceFactory<CollectiveApplication> applicationFactory) {
+	public TestBuilder withApplicationFactory(InstanceFactory<? extends CollectiveApplication> applicationFactory) {
 		_applicationFactory = applicationFactory;
 		return this;
 	}

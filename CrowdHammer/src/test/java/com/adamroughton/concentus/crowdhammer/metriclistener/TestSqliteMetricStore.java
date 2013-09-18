@@ -29,9 +29,9 @@ import org.junit.Test;
 import com.adamroughton.concentus.crowdhammer.ClientAgent;
 import com.adamroughton.concentus.crowdhammer.metriccollector.SqliteMetricStore;
 import com.adamroughton.concentus.data.ResizingBuffer;
-import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
-import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ActionEvent;
 import com.adamroughton.concentus.data.model.Effect;
+import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 import com.adamroughton.concentus.data.model.kryo.CandidateValue;
 import com.adamroughton.concentus.data.model.kryo.CollectiveVariable;
 import com.adamroughton.concentus.model.CollectiveApplication;
@@ -195,16 +195,15 @@ public class TestSqliteMetricStore {
 	private static class TestAgentClass implements ClientAgent {
 
 		@Override
-		public long nextInputDeadline() {
-			return 0;
+		public boolean onInputGeneration(ActionEvent actionEvent) {
+			// TODO Auto-generated method stub
+			return false;
 		}
 
 		@Override
-		public void createInputEvent(ClientInputEvent inputEvent) {
-		}
-
-		@Override
-		public void processUpdate(ClientUpdateEvent updateEvent) {
+		public void onUpdate(CanonicalStateUpdate update) {
+			// TODO Auto-generated method stub
+			
 		}
 		
 	}

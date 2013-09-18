@@ -27,6 +27,7 @@ import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 
+import org.apache.zookeeper.CreateMode;
 import org.apache.zookeeper.KeeperException;
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher.Event.EventType;
@@ -46,9 +47,9 @@ import static java.lang.Math.*;
 public class ClusterUtil {
 
 	public static void ensurePathCreated(
-			final CuratorFramework client, 
-			final String path, 
-			final FatalExceptionCallback exHandler) {
+			CuratorFramework client, 
+			String path, 
+			FatalExceptionCallback exHandler) {
 		try {
 			ensurePathCreated(client, path);
 		} catch (Exception e) {
@@ -57,11 +58,35 @@ public class ClusterUtil {
 	}
 	
 	public static void ensurePathCreated(
-			final CuratorFramework client, 
-			final String path) throws Exception {
+			CuratorFramework client, 
+			String path) throws Exception {
+		ensurePathCreated(client, path, CreateMode.PERSISTENT);
+	}
+	
+	public static void ensureEphemeralPathCreated(
+			CuratorFramework client, 
+			String path, 
+			FatalExceptionCallback exHandler) {
+		try {
+			ensurePathCreated(client, path, CreateMode.EPHEMERAL);
+		} catch (Exception e) {
+			exHandler.signalFatalException(e);
+		}
+	}
+	
+	public static void ensureEphemeralPathCreated(
+			CuratorFramework client, 
+			String path) throws Exception {
+		ensurePathCreated(client, path, CreateMode.EPHEMERAL);
+	}
+	
+	private static void ensurePathCreated(
+			CuratorFramework client, 
+			String path,
+			CreateMode mode) throws Exception {
 		if (client.checkExists().forPath(path) == null) {
 			try {
-				client.create().creatingParentsIfNeeded().forPath(path, null);
+				client.create().creatingParentsIfNeeded().withMode(mode).forPath(path, null);
 			} catch (KeeperException eKeeper) {
 				if (eKeeper.code() != KeeperException.Code.NODEEXISTS) {
 					throw eKeeper;
@@ -101,8 +126,25 @@ public class ClusterUtil {
 		return exists.get();
 	}
 	
+	public static interface DataComparisonDelegate<TData> {
+		boolean matches(TData expected, byte[] actual);
+	}
+	
 	public static boolean waitForData(final CuratorFramework client, 
 			final String path, final byte[] expectedData, long timeout, TimeUnit unit) throws Exception {
+		DataComparisonDelegate<byte[]> compDelegate = new DataComparisonDelegate<byte[]>() {
+
+			@Override
+			public boolean matches(byte[] expected, byte[] actual) {
+				return Arrays.equals(expected, actual);
+			}
+		};
+		return waitForData(client, path, expectedData, compDelegate, timeout, unit);
+	}
+	
+	public static <TData> boolean waitForData(final CuratorFramework client, 
+			final String path, final TData expectedData, final DataComparisonDelegate<TData> compDelegate, 
+			long timeout, TimeUnit unit) throws Exception {
 		long startTime = System.currentTimeMillis();
 		long deadline = startTime + unit.toMillis(timeout);
 		if (!waitForExistence(client, path, timeout, unit)) {
@@ -118,7 +160,7 @@ public class ClusterUtil {
 			public void processResult(CuratorFramework client, CuratorEvent event)
 					throws Exception {
 				if (event.getType() == CuratorEventType.GET_DATA && 
-						Arrays.equals(expectedData, event.getData())) {
+						compDelegate.matches(expectedData, event.getData())) {
 					matched.set(true);
 					latch.countDown();
 				}

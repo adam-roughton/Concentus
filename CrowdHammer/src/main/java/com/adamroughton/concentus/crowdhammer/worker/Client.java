@@ -20,6 +20,7 @@ import java.util.concurrent.TimeUnit;
 
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.crowdhammer.ClientAgent;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.data.ChunkReader;
 import com.adamroughton.concentus.data.ResizingBuffer;
@@ -55,6 +56,7 @@ public final class Client {
 	
 	private final SlidingWindowLongMap _actionIdToSentTimeLookup = new SlidingWindowLongMap(WINDOW_SIZE);
 	private final SlidingWindowLongMap _actionIdToStartTimeLookup = new SlidingWindowLongMap(WINDOW_SIZE);
+	private final ClientAgent _agent;
 	private long _simTime = 0;
 		
 	private final long _index;
@@ -87,9 +89,10 @@ public final class Client {
 	private boolean _isActive = false;
 	private boolean _isConnecting = false;
 	
-	public Client(long index, Clock clock) {
+	public Client(long index, Clock clock, ClientAgent agent) {
 		_index = index;
 		_clock = Objects.requireNonNull(clock);
+		_agent = Objects.requireNonNull(agent);
 	}
 	
 	public void setMetricCollectors(
@@ -168,12 +171,11 @@ public final class Client {
 				long actionId = nextActionId(sendTime);
 				event.setClientId(_clientId);
 				event.setReliableSeqAck(_reliableSeq);
-				event.setHasAction(true);
 				_actionEvent.attachToBuffer(event.getActionSlice());
 				_actionEvent.writeTypeId();
 				_actionEvent.setActionId(actionId);
-				_actionEvent.setActionTypeId(0);
 				_actionEvent.setClientIdBits(_clientId);
+				event.setHasAction(_agent.onInputGeneration(_actionEvent));
 				_actionEvent.releaseBuffer();
 			}
 			
@@ -306,6 +308,7 @@ public final class Client {
 				}
 			}
 		}
+		_agent.onUpdate(update);
 		
 		if (_clientId == 0) {
 			ChunkReader updateChunkReader = new ChunkReader(update.getData());

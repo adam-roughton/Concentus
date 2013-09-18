@@ -23,6 +23,9 @@ import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.zookeeper.CreateMode;
+import org.apache.zookeeper.KeeperException;
+import org.apache.zookeeper.KeeperException.Code;
+import org.apache.zookeeper.ZKUtil;
 
 import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.data.KryoRegistratorDelegate;
@@ -30,6 +33,7 @@ import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.Kryo;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.CuratorFrameworkFactory;
+import com.netflix.curator.framework.api.UnhandledErrorListener;
 import com.netflix.curator.retry.ExponentialBackoffRetry;
 import com.netflix.curator.utils.ZKPaths;
 
@@ -55,9 +59,16 @@ public class ClusterParticipant implements Closeable {
 			String root,
 			UUID clusterId,
 			KryoRegistratorDelegate kryoRegistrator,
-			FatalExceptionCallback exHandler) {
+			final FatalExceptionCallback exHandler) {
 		_exHandler = Objects.requireNonNull(exHandler);
 		_client = CuratorFrameworkFactory.newClient(zooKeeperAddress, new ExponentialBackoffRetry(1000, 3));
+		_client.getUnhandledErrorListenable().addListener(new UnhandledErrorListener() {
+			
+			@Override
+			public void unhandledError(String message, Throwable e) {
+				exHandler.signalFatalException(e);
+			}
+		});
 		_clusterParticipantId = Objects.requireNonNull(clusterId);
 		_root = Objects.requireNonNull(root);
 		
@@ -130,43 +141,80 @@ public class ClusterParticipant implements Closeable {
 		return data;
 	}
 	
-	public final void waitForData(String path, Object object, long timeout, TimeUnit unit) throws Exception {
+	public final void waitForData(String path, Object expected, long timeout, TimeUnit unit) throws Exception {
 		synchronized (_kryo) {			
-			ClusterUtil.waitForData(_client, path, Util.toKryoBytes(_kryo, object), timeout, unit);
+			ClusterUtil.waitForData(_client, path, Util.toKryoBytes(_kryo, expected), timeout, unit);
+		}
+	}
+	
+	public final byte[] toKryoBytes(Object data) {
+		synchronized (_kryo) {
+			return Util.toKryoBytes(_kryo, data);
+		}
+	}
+	
+	public final <T> T fromKryoBytes(byte[] data, Class<T> expectedType) {
+		synchronized(_kryo) {
+			return Util.fromKryoBytes(_kryo, data, expectedType);
 		}
 	}
 	
 	public final void createOrSetEphemeral(String path, Object object) {
 		synchronized (_kryo) {
-			createOrSetInternal(path, Util.toKryoBytes(_kryo, object), CreateMode.EPHEMERAL);
+			createOrSetInternal(path, Util.toKryoBytes(_kryo, object), CreateMode.EPHEMERAL, -1);
 		}
 	}
 	
-	public final void createOrSetPersistent(String path, Object object) {
+	public final boolean createOrSetEphemeral(String path, Object object, int expectedVersion) {
 		synchronized (_kryo) {
-			createOrSetInternal(path, Util.toKryoBytes(_kryo, object), CreateMode.PERSISTENT);
+			return createOrSetInternal(path, Util.toKryoBytes(_kryo, object), CreateMode.EPHEMERAL, expectedVersion);
 		}
 	}
 	
-	private void createOrSetInternal(String path, byte[] data, CreateMode createMode) {
+	public final void createOrSet(String path, Object object) {
+		synchronized (_kryo) {
+			createOrSetInternal(path, Util.toKryoBytes(_kryo, object), CreateMode.PERSISTENT, -1);
+		}
+	}
+	
+	public final boolean createOrSet(String path, Object object, int expectedVersion) {
+		synchronized (_kryo) {
+			return createOrSetInternal(path, Util.toKryoBytes(_kryo, object), CreateMode.PERSISTENT, expectedVersion);
+		}
+	}
+	
+	private boolean createOrSetInternal(String path, byte[] data, CreateMode createMode, int version) {
 		try {
 			if (_client.checkExists().forPath(path) == null) {
+				if (version != -1 && version != 0) {
+					return false;
+				}
 				_client.create()
 					.creatingParentsIfNeeded()
 					.withMode(createMode)
 					.forPath(path, data);
 			} else {
-				_client.setData().forPath(path, data);
+				try {
+					_client.setData().withVersion(version).forPath(path, data);
+				} catch (KeeperException eKeeper) {
+					if (eKeeper.code() == Code.BADVERSION) {
+						return false;
+					} else {
+						throw eKeeper;
+					}
+				}
 			}
+			return true;
 		} catch (Exception e) {
 			_exHandler.signalFatalException(e);
+			return false;
 		}
 	}
 	
 	public final void delete(String path) {
 		try {
 			if (_client.checkExists().forPath(path) != null) {
-				_client.delete().forPath(path);
+				ZKUtil.deleteRecursive(_client.getZookeeperClient().getZooKeeper(), path);
 			}
 		} catch (Exception e) {
 			_exHandler.signalFatalException(e);
@@ -178,7 +226,7 @@ public class ClusterParticipant implements Closeable {
 			if (_client.checkExists().forPath(path) != null) {
 				List<String> childPaths = _client.getChildren().forPath(path);
 				for (String child : childPaths) {
-					_client.delete().forPath(ZKPaths.makePath(path, child));
+					delete(ZKPaths.makePath(path, child));
 				}
 			}
 		} catch (Exception e) {
@@ -190,4 +238,7 @@ public class ClusterParticipant implements Closeable {
 		ClusterUtil.ensurePathCreated(_client, path, _exHandler);
 	}
 	
+	public final void ensureEphemeralPathCreated(String path) {
+		ClusterUtil.ensureEphemeralPathCreated(_client, path, _exHandler);
+	}
 }

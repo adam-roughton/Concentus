@@ -22,7 +22,6 @@ public enum CorePath implements ClusterPath {
 	APP_ROOT				(null, true),
 	
 	APPLICATION   			(APP_ROOT, "application"),
-	COMPONENT_RESOLVER		(APP_ROOT, "componentResolver"),
 	
 	/*
 	 * ========
@@ -33,10 +32,8 @@ public enum CorePath implements ClusterPath {
 	 * 	 - services
 	 *      - type1 [SERVICE_ROOT]
 	 *         - instance1
-	 *            - stateSignal
-	 *               - data {Object}
-	 *            - state
-	 *               - data {Object}
+	 *            - stateSignal {StateEntry}
+	 *            - state {StateEntry}
 	 *            - serviceInitData: {ServiceInit}
 	 *        - instance2
 	 *            ...
@@ -49,9 +46,7 @@ public enum CorePath implements ClusterPath {
 	SERVICE_INIT_DATA		(SERVICE_ROOT, "serviceInitData"),
 	SERVICE_STATE_TYPE		(SERVICE_ROOT, "stateType"),
 	SERVICE_STATE_SIGNAL	(SERVICE_ROOT, "stateSignal"),
-	SIGNAL_STATE_DATA		(SERVICE_STATE_SIGNAL, "data"),
 	SERVICE_STATE			(SERVICE_ROOT, "state"),
-	SERVICE_STATE_DATA		(SERVICE_STATE, "data"),
 	
 	/*
 	 * =================

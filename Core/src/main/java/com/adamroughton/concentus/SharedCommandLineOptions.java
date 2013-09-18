@@ -82,6 +82,9 @@ public class SharedCommandLineOptions {
 	
 	public static Set<String> readTraceOption(Map<String, String> cmdLineValues) {
 		String traceArrayString = cmdLineValues.get(TRACE_OPTION);
+		if (traceArrayString == null) {
+			traceArrayString = "";
+		}
 		String[] traceOptions = traceArrayString.split(",");
 		Set<String> traceFlagSet = new HashSet<>(traceOptions.length);
 		for (String traceOption : traceOptions) {

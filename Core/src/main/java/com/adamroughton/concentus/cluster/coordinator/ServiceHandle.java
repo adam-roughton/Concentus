@@ -12,6 +12,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 
 import com.adamroughton.concentus.cluster.CorePath;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
+import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.util.IdentityWrapper;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.Kryo;
@@ -30,18 +31,15 @@ public final class ServiceHandle<TState extends Enum<TState> & ClusterState> imp
 		}
 		
 		private final EventType _eventType;
-		private final TState _currentState;
-		private final TState _signalState;
-		private final Object _stateData;
-		private final Object _signalData;
+		private final StateEntry<TState> _serviceStateEntry; 
+		private final StateEntry<TState> _signalStateEntry;
 		
-		public ServiceHandleEvent(EventType eventType, TState currentState, TState signalState, 
-				Object stateData, Object signalData) {
+		public ServiceHandleEvent(EventType eventType, 
+				StateEntry<TState> serviceState, 
+				StateEntry<TState> signalState) {
 			_eventType = eventType;
-			_currentState = currentState;
-			_signalState = signalState;
-			_stateData = stateData;
-			_signalData = signalData;
+			_serviceStateEntry = serviceState;
+			_signalStateEntry = signalState;
 		}
 		
 		public EventType getEventType() {
@@ -49,20 +47,29 @@ public final class ServiceHandle<TState extends Enum<TState> & ClusterState> imp
 		}
 		
 		public <TData> TData getStateData(Class<TData> expectedType) {
-			return Util.checkedCast(_stateData, expectedType);
+			if (_serviceStateEntry == null) return null;
+			return _serviceStateEntry.getStateData(expectedType);
 		}
 		
 		public <TData> TData getLastSignalData(Class<TData> expectedType) {
-			return Util.checkedCast(_signalData, expectedType);
+			if (_signalStateEntry == null) return null;
+			return _signalStateEntry.getStateData(expectedType);
 		}
 		
 		public TState getLastSignal() {
-			return _signalState;
+			if (_signalStateEntry == null) return null;
+			return _signalStateEntry.getState();
 		}
 		
 		public TState getCurrentState() {
-			return _currentState;
+			if (_serviceStateEntry == null) return null;
+			return _serviceStateEntry.getState();
 		}
+		
+		public boolean wasInternalEvent() {
+			return _serviceStateEntry != null && _signalStateEntry == null;
+		}
+		
 	}
 	
 	public interface ServiceHandleListener<TState extends Enum<TState> & ClusterState> {
@@ -113,27 +120,30 @@ public final class ServiceHandle<TState extends Enum<TState> & ClusterState> imp
 			if (nodeState == null) {
 				// service state node has been deleted; assume service death
 				event = new ServiceHandleEvent<TState>(
-						ServiceHandleEvent.EventType.SERVICE_DEATH, null, null, null, null);
+						ServiceHandleEvent.EventType.SERVICE_DEATH, null, null);
 			} else {
 				int version = nodeState.getStat().getVersion();
 				if (!tryClaimLatestVersion(version)) return;
 				
-				TState state = Util.fromKryoBytes(_listenerKryo, nodeState.getData(), _stateType);
-				
+				StateEntry<?> stateEntryObj = Util.fromKryoBytes(_listenerKryo, nodeState.getData(), StateEntry.class);
 				// ignore null states (should only happen if nodes are created without state)
-				if (state == null) return;
+				if (stateEntryObj == null) return;
 				
-				Object stateData = _clusterHandle.read(CorePath.SERVICE_STATE_DATA.getAbsolutePath(_servicePath), Object.class);
-				
-				TState lastSignal = _clusterHandle.read(CorePath.SERVICE_STATE_SIGNAL.getAbsolutePath(_servicePath), _stateType);
-				Object signalData = _clusterHandle.read(CorePath.SIGNAL_STATE_DATA.getAbsolutePath(_servicePath), Object.class);
-				
-				// ensure that the state hasn't changed in the meantime - if it has, skip this event
-				nodeState = _serviceStateCache.getCurrentData();
-				if (nodeState == null || nodeState.getStat().getVersion() != version) return;
-				
+				StateEntry<TState> stateEntry = _clusterHandle.castStateEntry(stateEntryObj, _stateType);
+				StateEntry<TState> lastSignalEntry = null;
+				if (stateEntry.version() != -1) {
+					lastSignalEntry = _clusterHandle.readServiceSignal(_servicePath, _stateType);
+					/* 
+					 * ensure that the current signal was the cause of this state entry - if not
+					 * we cannot provide a consistent view for this state change: instead, we can
+					 * wait for the next state change which should be on its way given the inconsistency
+					 */
+					if (lastSignalEntry.version() != stateEntry.version()) {
+						return;
+					}
+				}
 				event = new ServiceHandleEvent<TState>(ServiceHandleEvent.EventType.STATE_CHANGED, 
-						state, lastSignal, stateData, signalData);
+						stateEntry, lastSignalEntry);
 			}
 			
 			for (Entry<IdentityWrapper<ServiceHandleListener<TState>>, Executor> entry : _listeners.entrySet()) {
@@ -189,12 +199,17 @@ public final class ServiceHandle<TState extends Enum<TState> & ClusterState> imp
 		_serviceStateCache.close();
 	}
 	
+	public void clearFromZooKeeper() throws Exception {
+		close();
+		_clusterHandle.delete(_servicePath);
+	}
+	
 	public Listenable<ServiceHandleListener<TState>> getListenable() {
 		return _listenable;
 	}
 	
 	public void setState(TState state, Object stateData) {
-		_clusterHandle.signalStateChange(_servicePath, state, stateData);
+		_clusterHandle.setServiceSignal(_servicePath, _stateType, state, stateData);
 	}
 	
 	public String getServicePath() {
@@ -205,49 +220,15 @@ public final class ServiceHandle<TState extends Enum<TState> & ClusterState> imp
 		return _serviceType;
 	}
 	
-	public StateEntry<TState> getCurrentState() {
-		boolean hasConsistentView = false;
-		StateEntry<TState> entry;
-		do {
-			ChildData nodeData = _serviceStateCache.getCurrentData();
-			if (nodeData == null) {
-				entry = new StateEntry<TState>(null, null);
-				break;
-			}
-			
-			int version = nodeData.getStat().getVersion();
-			
-			TState state;
-			synchronized (_kryo) {
-				state = Util.fromKryoBytes(_kryo, nodeData.getData(), _stateType);
-			}
-			Object stateData = _clusterHandle.read(CorePath.SERVICE_STATE_DATA.getAbsolutePath(_servicePath), Object.class);
-			entry = new StateEntry<TState>(state, stateData);
-			
-			nodeData = _serviceStateCache.getCurrentData();
-			hasConsistentView = nodeData != null && nodeData.getStat().getVersion() == version;
-		} while (!hasConsistentView);
-		
-		return entry;
-	}
-	
-	public static class StateEntry<TState> {
-		
-		private final TState _state;
-		private final Object _stateData;
-		
-		public StateEntry(TState state, Object stateData) {
-			_state = state;
-			_stateData = stateData;
+	public StateEntry<TState> getCurrentState() throws Exception {
+		ChildData nodeData = _serviceStateCache.getCurrentData();
+		if (nodeData == null) {
+			return new StateEntry<TState>(_stateType, null, null, -1);
 		}
-		
-		public TState getState() {
-			return _state;
+		StateEntry<?> stateEntryObj;
+		synchronized (_kryo) {
+			stateEntryObj = Util.fromKryoBytes(_kryo, nodeData.getData(), StateEntry.class);
 		}
-		
-		public <TData> TData getStateData(Class<TData> expectedType) {
-			return Util.checkedCast(_stateData, expectedType);
-		}
-		
+		return _clusterHandle.castStateEntry(stateEntryObj, _stateType);
 	}
 }

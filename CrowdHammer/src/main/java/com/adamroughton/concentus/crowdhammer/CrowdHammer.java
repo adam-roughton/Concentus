@@ -29,6 +29,7 @@ import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketManagerImpl;
 import com.adamroughton.concentus.util.IdentityWrapper;
+import com.esotericsoftware.minlog.Log;
 import com.netflix.curator.framework.listen.Listenable;
 
 public final class CrowdHammer implements Closeable {
@@ -135,7 +136,7 @@ public final class CrowdHammer implements Closeable {
 	private final TestTaskListener _testListener = new TestTaskListener() {
 		
 		@Override
-		public void onTestTaskEvent(TestTask task, final TestTaskEvent event) {
+		public void onTestTaskEvent(final TestTask task, final TestTaskEvent event) {
 			for (Entry<IdentityWrapper<CrowdHammerListener>, Executor> entry : _listeners.entrySet()) {
 				final CrowdHammerListener listener = entry.getKey().get();
 				Executor executor = entry.getValue();
@@ -144,7 +145,7 @@ public final class CrowdHammer implements Closeable {
 					@Override
 					public void run() {
 						listener.onCrowdHammerEvent(CrowdHammer.this, new CrowdHammerEvent(
-								CrowdHammerEvent.EventType.TEST_EVENT, _currentTask, event));
+								CrowdHammerEvent.EventType.TEST_EVENT, task, event));
 					}
 					
 				});
@@ -183,6 +184,12 @@ public final class CrowdHammer implements Closeable {
 		} catch (InterruptedException e) {
 		}
 		try {
+			Log.info("Closing metric collector");
+			_metricCollector.close();
+		} catch (IOException e) {
+		}
+		try {
+			Log.info("Closing guardian manager");
 			_guardianManager.close();
 		} catch (IOException e) {
 		}
@@ -207,7 +214,8 @@ public final class CrowdHammer implements Closeable {
 	
 	private void stopAnyCurrentTest() throws InterruptedException {
 		if (_currentTask != null) {
-			System.out.println("Stopping current test run");
+			Log.info("Stopping current test run");
+			System.out.println();
 			_currentTask.stop();
 			try {
 				_currentTask.waitForState(State.STOPPED, 10, TimeUnit.SECONDS);

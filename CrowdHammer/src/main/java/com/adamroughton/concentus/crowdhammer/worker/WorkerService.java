@@ -29,6 +29,7 @@ import com.adamroughton.concentus.ConcentusEndpoints;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.CoreServices;
+import com.adamroughton.concentus.InstanceFactory;
 import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.cluster.worker.ClusterHandle;
 import com.adamroughton.concentus.cluster.worker.ClusterService;
@@ -36,6 +37,7 @@ import com.adamroughton.concentus.cluster.worker.ConcentusServiceBase;
 import com.adamroughton.concentus.cluster.worker.ServiceContext;
 import com.adamroughton.concentus.cluster.worker.ServiceDeploymentBase;
 import com.adamroughton.concentus.cluster.worker.StateData;
+import com.adamroughton.concentus.crowdhammer.ClientAgent;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.disruptor.EventQueue;
@@ -95,6 +97,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 	
 	public static class WorkerServiceDeployment extends ServiceDeploymentBase<ServiceState> {
 
+		private InstanceFactory<? extends ClientAgent> _agentFactory;
 		private int _maxClientCount;
 		private int _recvPort;
 		private int _recvBufferSize;
@@ -105,7 +108,9 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 		private WorkerServiceDeployment() {
 		}
 		
-		public WorkerServiceDeployment(int maxClientCount, int recvPort, 
+		public WorkerServiceDeployment(
+				InstanceFactory<? extends ClientAgent> agentFactory,
+				int maxClientCount, int recvPort, 
 				int recvBufferSize, int sendBufferSize) {
 			super(SERVICE_TYPE, ServiceState.class, CoreServices.CLIENT_HANDLER.getId());
 			_maxClientCount = maxClientCount;
@@ -123,13 +128,14 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 		public <TBuffer extends ResizingBuffer> ClusterService<ServiceState> createService(
 				int serviceId, ServiceContext<ServiceState> context, ConcentusHandle handle,
 				MetricContext metricContext, ComponentResolver<TBuffer> resolver) {
-			return new WorkerService<>(_maxClientCount, _recvPort, _recvBufferSize, 
+			return new WorkerService<>(_agentFactory, _maxClientCount, _recvPort, _recvBufferSize, 
 					_sendBufferSize, context, handle, metricContext, resolver);
 		}
 		
 	}
 	
 	public WorkerService(
+			final InstanceFactory<? extends ClientAgent> agentFactory,
 			int maxClientCount,
 			int recvPort,
 			int recvBufferSize,
@@ -149,7 +155,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 			
 			@Override
 			public Client newInstance(Object[] initArgs) {
-				return new Client(index++, _concentusHandle.getClock());
+				return new Client(index++, _concentusHandle.getClock(), agentFactory.newInstance());
 			}
 		});
 		_clientSendHeader = new OutgoingEventHeader(0, 2);

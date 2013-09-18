@@ -15,15 +15,13 @@
  */
 package com.adamroughton.concentus.crowdhammer;
 
-import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
-import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ActionEvent;
+import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 
 public interface ClientAgent {
 	
-	long nextInputDeadline();
+	boolean onInputGeneration(ActionEvent actionEvent);
 	
-	void createInputEvent(ClientInputEvent inputEvent);
-	
-	void processUpdate(ClientUpdateEvent updateEvent);
+	void onUpdate(CanonicalStateUpdate update);
 	
 }

@@ -9,11 +9,15 @@ import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
+import org.apache.zookeeper.data.Stat;
+
 import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.cluster.CorePath;
 import com.adamroughton.concentus.cluster.worker.ClusterHandle;
 import com.adamroughton.concentus.data.KryoRegistratorDelegate;
+import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInit;
+import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.util.TimeoutTracker;
 
 public class CoordinatorClusterHandle extends ClusterHandle {
@@ -65,13 +69,55 @@ public class CoordinatorClusterHandle extends ClusterHandle {
 		}
 	}
 	
-	public <TState> void signalStateChange(String servicePath, TState newState, Object data) {
-		String signalPath = CorePath.SERVICE_STATE_SIGNAL.getAbsolutePath(servicePath);
-		String signalDataPath = CorePath.SERVICE_STATE_DATA.getAbsolutePath(servicePath);
-		
-		createOrSetEphemeral(signalDataPath, data);
-		createOrSetEphemeral(signalPath, newState);
+	public <TState extends Enum<TState> & ClusterState> void setServiceSignal(String servicePath, Class<TState> stateType, TState newState, Object data) {
+		try {
+			String signalPath = CorePath.SERVICE_STATE_SIGNAL.getAbsolutePath(servicePath);
+			StateEntry<TState> signalEntry;
+			int version;
+			do {
+				Stat stat = getClient().checkExists().forPath(signalPath);
+				if (stat == null) {
+					version = -1;
+				} else {
+					version = stat.getVersion();
+				}
+				signalEntry = new StateEntry<TState>(stateType, newState, data, version + 1);
+			} while (!createOrSet(signalPath, signalEntry, version));
+		} catch (Exception e) {
+			getExHandler().signalFatalException(e);
+		}
 	}
+	
+	public <TState extends Enum<TState> & ClusterState> StateEntry<TState> readServiceState(String servicePath, Class<TState> stateType) throws Exception {
+		String serviceStatePath = CorePath.SERVICE_STATE.getAbsolutePath(servicePath);
+		return readStateEntry(serviceStatePath, stateType);
+	}
+
+	public <TState extends Enum<TState> & ClusterState> StateEntry<TState> readServiceSignal(String servicePath, Class<TState> stateType) throws Exception {
+		String serviceStatePath = CorePath.SERVICE_STATE_SIGNAL.getAbsolutePath(servicePath);
+		return readStateEntry(serviceStatePath, stateType);
+	}
+	
+	private <TState extends Enum<TState> & ClusterState> StateEntry<TState> readStateEntry(String path, Class<TState> stateType) throws Exception {
+		return castStateEntry(read(path, StateEntry.class), stateType);
+	}
+	
+	@SuppressWarnings("unchecked")
+	public <TState extends Enum<TState> & ClusterState> StateEntry<TState> castStateEntry(StateEntry<?> stateEntryObj, Class<TState> stateType) throws Exception {
+		try {
+			if (stateEntryObj == null) 
+				return new StateEntry<TState>(stateType, null, null, -1);
+			
+			if (!stateType.equals(stateEntryObj.stateType())) {
+				throw new RuntimeException("The state set by the service does not match the expected state (expected " 
+						+ stateType.getCanonicalName() + ", got " + stateEntryObj.stateType() + ")");
+			}
+			return (StateEntry<TState>) stateEntryObj;
+		} catch (Exception e) {
+			getExHandler().signalFatalException(e);
+			return new StateEntry<TState>(stateType, null, null, -1);
+		}
+	} 
 	
 	public void setServiceInitData(ServiceIdAllocator serviceIdAllocator, String servicePath, String serviceType, Object initData) {
 		int nextIndex;
@@ -88,6 +134,6 @@ public class CoordinatorClusterHandle extends ClusterHandle {
 		ServiceInit init = new ServiceInit(metricSourceId, initData);
 		
 		String initDataPath = CorePath.SERVICE_INIT_DATA.getAbsolutePath(servicePath);
-		createOrSetEphemeral(initDataPath, init);
+		createOrSet(initDataPath, init);
 	}
 }

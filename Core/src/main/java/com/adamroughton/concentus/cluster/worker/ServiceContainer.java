@@ -28,10 +28,11 @@ import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.cluster.ClusterPath;
 import com.adamroughton.concentus.cluster.ClusterUtil;
-import com.adamroughton.concentus.cluster.worker.ClusterServiceStateSignalListener.ListenerDelegate;
+import com.adamroughton.concentus.cluster.worker.ClusterServiceSignalListener.ListenerDelegate;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInit;
+import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.disruptor.FailFastExceptionHandler;
 import com.adamroughton.concentus.metric.eventpublishing.EventPublishingMetricContext;
 import com.adamroughton.concentus.util.Util;
@@ -49,34 +50,33 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 	private final ConcentusHandle _concentusHandle;
 	private final ClusterHandle _cluster;
 	private final ServiceDeployment<TState> _deployment;
+	private final ComponentResolver<? extends ResizingBuffer> _componentResolver;
 	private final FatalExceptionCallback _exCallback;
 	private final String _serviceType;
 	private final Class<TState> _stateType;
 	private final TState _createdState;	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	
-	private ClusterServiceStateSignalListener<TState> _listener;
+	private ClusterServiceSignalListener<TState> _listener;
 	
 	private static class StateChangeEntry<TState extends Enum<TState> & ClusterState> {
-		public TState newState;
-		public Object stateData;
+		public StateEntry<TState> signalEntry;
 		public TState expectedState;
 	}
 	
 	private final Disruptor<StateChangeEntry<TState>> _serviceDisruptor;
-	private ServiceExecutionContext<?> _serviceContext;
+	private final ServiceExecutionContext<?> _serviceContext;
 	
 	private final ServiceContext<TState> _context = new ServiceContext<TState>() {
 
 		@Override
-		public void enterState(final TState newState, final Object stateData, final TState expectedCurrentState) {
+		public void enterState(final TState newState, final Object signalData, final TState expectedCurrentState) {
 			_serviceDisruptor.publishEvent(new EventTranslator<StateChangeEntry<TState>>() {
 
 				@Override
 				public void translateTo(StateChangeEntry<TState> event,
 						long sequence) {
-					event.newState = newState;
-					event.stateData = stateData;
+					event.signalEntry = new StateEntry<TState>(_stateType, newState, signalData, -1);
 					event.expectedState = expectedCurrentState;
 				}
 			});
@@ -98,25 +98,27 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 				_service = _serviceContext.createService(initData.getServiceId(), _context, _deployment);
 			}
 			
-			StateDataHandle dataHandle = new StateDataHandle(event.stateData);
+			StateDataHandle dataHandle = new StateDataHandle(event.signalEntry.getStateData(Object.class));
 			
 			if (event.expectedState != null && event.expectedState != _currentState) {
 				return;
 			}
 			
 			// update the service
-			Log.info("Entering service state: " + event.newState);
-			_service.onStateChanged(event.newState, dataHandle, _cluster);
-			Log.info("Entered state: " + event.newState);
-			_currentState = event.newState;
+			TState newState = event.signalEntry.getState();
+			Log.info("Entering service state: " + newState);
+			_service.onStateChanged(newState, dataHandle, _cluster);
+			Log.info("Entered state: " + newState);
+			_currentState = newState;
 			
-			// write any data for the coordinator
-			String stateDataPath = makeServicePath(SERVICE_STATE_DATA);
-			_cluster.createOrSetEphemeral(stateDataPath, dataHandle.getDataForCoordinator());
-			
+			// carry the signal version over to the new state
+			StateEntry<TState> stateEntry = new StateEntry<TState>(_stateType, newState, 
+					dataHandle.getDataForCoordinator(), 
+					event.signalEntry.version());
+						
 			// confirm that the service is now in the new state, allow coordinator to proceed
 			String statePath = makeServicePath(SERVICE_STATE);
-			_cluster.createOrSetEphemeral(statePath, event.newState);
+			_cluster.createOrSetEphemeral(statePath, stateEntry);
 		}
 		
 	};
@@ -124,24 +126,18 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 	private final ListenerDelegate<TState> _signalListener = new ListenerDelegate<TState>() {
 
 		@Override
-		public void onStateChanged(final TState newState) throws Exception {
+		public void onSignalChanged(final StateEntry<TState> newSignalEntry) throws Exception {
 			_serviceDisruptor.publishEvent(new EventTranslator<StateChangeEntry<TState>>() {
 
 				@Override
 				public void translateTo(StateChangeEntry<TState> event,
 						long sequence) {
-					// get any state data
-					String signalDataPath = makeServicePath(SIGNAL_STATE_DATA);
-					Object data = _cluster.read(signalDataPath, Object.class);
-					
-					event.newState = newState;
-					event.stateData = data;
+					event.signalEntry = newSignalEntry;
 					event.expectedState = null;
 				}
 			});
 		}
 	};
-	
 
 	
 	@SuppressWarnings("unchecked")
@@ -149,15 +145,20 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 			ConcentusHandle concentusHandle,
 			ClusterHandle clusterHandle,
 			ServiceDeployment<TState> serviceDeployment,
+			ComponentResolver<? extends ResizingBuffer> componentResolver,
 			FatalExceptionCallback exCallback) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_cluster = Objects.requireNonNull(clusterHandle);
 		_deployment = Objects.requireNonNull(serviceDeployment);
+		_componentResolver = Objects.requireNonNull(componentResolver);
 		_exCallback = Objects.requireNonNull(exCallback);
-		_serviceType = Objects.requireNonNull(serviceDeployment.serviceType());
-		_stateType = Objects.requireNonNull(serviceDeployment.stateType());
+		_serviceType = Objects.requireNonNull(_deployment.serviceType());
+		_stateType = Objects.requireNonNull(_deployment.stateType());
 		
 		_createdState = ClusterUtil.validateStateType(_stateType).getValue0();
+		
+		_serviceContext = new ServiceExecutionContext<>(_componentResolver, 
+				_cluster, _concentusHandle);
 		
 		_serviceDisruptor = new Disruptor<>(new EventFactory<StateChangeEntry<TState>>() {
 
@@ -171,7 +172,6 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 		_serviceDisruptor.handleEventsWith(_serviceStateChangeHandler);
 	}
 
-	@SuppressWarnings("unchecked")
 	public void start() {
 		/*
 		 * Register the service with the coordinator.
@@ -187,34 +187,26 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 			
 			// write the expected state type
 			String stateTypePath = makeServicePath(SERVICE_STATE_TYPE);
-			_cluster.createOrSetEphemeral(stateTypePath, _stateType);
-			
-			// write any data for the coordinator
-			String stateDataPath = makeServicePath(SERVICE_STATE_DATA);
-			_cluster.createOrSetEphemeral(stateDataPath, dataHandle.getDataForCoordinator());
+			_cluster.createOrSet(stateTypePath, _stateType);
 			
 			_serviceDisruptor.start();
 			
 			// create the listener for the signal path (node that the coordinator
 			// uses to signal the service to enter a new state)
 			String signalPath = makeServicePath(SERVICE_STATE_SIGNAL);
-			_listener = new ClusterServiceStateSignalListener<>(
+			_listener = new ClusterServiceSignalListener<>(
 					_stateType,
 					_cluster.getClient(), 
 					signalPath, 
-					_signalListener, 
-					_exCallback);
+					_signalListener);
 			_listener.start();
 			
 			// confirm that the service is now created, allow coordinator to proceed
+			StateEntry<TState> stateEntry = new StateEntry<TState>(_stateType, _createdState, 
+					dataHandle.getDataForCoordinator(), -1);			
 			String statePath = makeServicePath(SERVICE_STATE);
-			_cluster.createOrSetEphemeral(statePath, _createdState);
-			
-			// get component resolver instance
-			String componentResolverPath = _cluster.resolvePathFromRoot(COMPONENT_RESOLVER);
-			_serviceContext = new ServiceExecutionContext<>(_cluster.read(componentResolverPath, ComponentResolver.class), 
-					_cluster, _concentusHandle);
-			
+			_cluster.createOrSetEphemeral(statePath, stateEntry);
+			Log.info("Registered with cluster");
 		} catch (Exception e) {
 			_exCallback.signalFatalException(e);
 		}

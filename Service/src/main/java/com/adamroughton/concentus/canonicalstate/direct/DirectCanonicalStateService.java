@@ -24,6 +24,7 @@ import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.ComponentResolver;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.ConcentusEndpoints;
+import com.adamroughton.concentus.CoreServices;
 import com.adamroughton.concentus.actioncollector.ActionCollectorService;
 import com.adamroughton.concentus.actioncollector.ActionCollectorService.ActionCollectorServiceDeployment;
 import com.adamroughton.concentus.canonicalstate.TickTimer;
@@ -33,6 +34,7 @@ import com.adamroughton.concentus.cluster.worker.ClusterService;
 import com.adamroughton.concentus.cluster.worker.ConcentusServiceBase;
 import com.adamroughton.concentus.cluster.worker.ServiceContainer;
 import com.adamroughton.concentus.cluster.worker.ServiceContext;
+import com.adamroughton.concentus.cluster.worker.ServiceDeploymentBase;
 import com.adamroughton.concentus.cluster.worker.StateData;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
@@ -60,8 +62,49 @@ import static com.adamroughton.concentus.Constants.MSG_BUFFER_ENTRY_LENGTH;
 
 public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends ConcentusServiceBase {
 	
+	public static class DirectCanonicalStateServiceDeployment extends ServiceDeploymentBase<ServiceState> {
+
+		private int _actionCollectorPort;
+		private int _actionCollectorRecvBufferLength;
+		private int _actionCollectorSendBufferLength;
+		private int _pubPort;
+		private int _pubBufferLength;
+		
+		// for Kryo
+		@SuppressWarnings("unused")
+		private DirectCanonicalStateServiceDeployment() { }
+		
+		public DirectCanonicalStateServiceDeployment(int actionCollectorPort,
+				int actionCollectorRecvBufferLength,
+				int actionCollectorSendBufferLength,
+				int pubPort,
+				int pubBufferLength) {
+			super(CoreServices.CANONICAL_STATE.getId(), ServiceState.class);
+			_actionCollectorPort = actionCollectorPort;
+			_actionCollectorRecvBufferLength = actionCollectorRecvBufferLength;
+			_actionCollectorSendBufferLength = actionCollectorSendBufferLength;
+			_pubPort = pubPort;
+			_pubBufferLength = pubBufferLength;
+		}
+		
+		@Override
+		public void onPreStart(StateData<ServiceState> stateData) {
+		}
+
+		@Override
+		public <TBuffer extends ResizingBuffer> ClusterService<ServiceState> createService(
+				int serviceId, ServiceContext<ServiceState> context,
+				ConcentusHandle handle, MetricContext metricContext,
+				ComponentResolver<TBuffer> resolver) {
+			return new DirectCanonicalStateService<>(_actionCollectorPort, _actionCollectorRecvBufferLength, 
+					_actionCollectorSendBufferLength, _pubPort, _pubBufferLength, handle, metricContext, resolver);
+		}
+		
+	}
+	
 	private final ConcentusHandle _concentusHandle;
 	private final MetricContext _metricContext;
+	private final ComponentResolver<? extends ResizingBuffer> _componentResolver;
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	private final SocketManager<TBuffer> _socketManager;
@@ -99,6 +142,8 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 		
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_metricContext = Objects.requireNonNull(metricContext);
+		_componentResolver = Objects.requireNonNull(resolver);
+		
 		_socketManager = resolver.newSocketManager(concentusHandle.getClock());
 
 		EventQueueFactory eventQueueFactory = resolver.getEventQueueFactory();
@@ -154,7 +199,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 					}
 			
 		};
-		_actionProcessorContainer = new ServiceContainer<>(_concentusHandle, cluster, actionCollector, _concentusHandle);
+		_actionProcessorContainer = new ServiceContainer<>(_concentusHandle, cluster, actionCollector, _componentResolver, _concentusHandle);
 		_actionProcessorContainer.start();
 	}
 	

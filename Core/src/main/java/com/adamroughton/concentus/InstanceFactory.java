@@ -19,4 +19,6 @@ public interface InstanceFactory<TInstance> {
 	
 	TInstance newInstance();
 	
+	Class<TInstance> instanceType();
+	
 }

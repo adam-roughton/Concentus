@@ -50,7 +50,7 @@ public final class GuardianDeploymentReturnInfo implements KryoSerializable {
 
 	@Override
 	public String toString() {
-		return "GuardianDeploymentReturnInfo [_returnType=" + _returnType
-				+ ", _reason=" + _reason + "]";
+		return "GuardianDeploymentReturnInfo [returnType=" + _returnType
+				+ ", reason=" + _reason + "]";
 	}
 }

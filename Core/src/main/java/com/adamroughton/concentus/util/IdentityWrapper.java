@@ -21,8 +21,13 @@ public final class IdentityWrapper<T> {
 	}
 
 	@Override
-	public boolean equals(Object obj) {
-		return _obj == obj;
+	public boolean equals(Object other) {
+		if (other instanceof IdentityWrapper<?>) {
+			IdentityWrapper<?> otherWrapper = (IdentityWrapper<?>) other;
+			return this._obj == otherWrapper._obj;
+		} else {
+			return false;
+		}
 	}
 	
 	public T get() {

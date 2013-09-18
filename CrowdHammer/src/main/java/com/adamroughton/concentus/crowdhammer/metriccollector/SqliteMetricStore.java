@@ -132,7 +132,6 @@ public class SqliteMetricStore implements MetricStore {
 				_insertRunDeploymentDataStatement.setInt(3, deployment.getValue1());
 				_insertRunDeploymentDataStatement.execute();
 			}
-			
 		} catch (SQLException eSql) {
 			throw new RuntimeException(eSql);
 		}

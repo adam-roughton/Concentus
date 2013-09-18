@@ -35,7 +35,6 @@ import com.adamroughton.concentus.cluster.coordinator.ServiceGroup.ServiceGroupE
 import com.adamroughton.concentus.cluster.coordinator.ServiceGroup.ServiceGroupListener;
 import com.adamroughton.concentus.cluster.coordinator.ServiceHandle;
 import com.adamroughton.concentus.cluster.worker.ServiceDeployment;
-import com.adamroughton.concentus.crowdhammer.cluster.CrowdHammerPath;
 import com.adamroughton.concentus.crowdhammer.metriccollector.MetricCollector;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService.WorkerServiceDeployment;
@@ -73,7 +72,7 @@ public class ClusterTestTask implements TestTask {
 	private final Condition _backgroundUpdateCondition = _backgroundUpdateLock.newCondition();
 	
 	private final Lock _testStateLock = new ReentrantLock();
-	private final Condition _testStateCondition = _backgroundUpdateLock.newCondition();
+	private final Condition _testStateCondition = _testStateLock.newCondition();
 	
 	private final AtomicReference<Exception> _exceptionRef = new AtomicReference<>();
 	
@@ -125,8 +124,9 @@ public class ClusterTestTask implements TestTask {
 				GuardianDeploymentState newState,
 				GuardianDeploymentReturnInfo retInfo) {
 			if (newState != GuardianDeploymentState.RUNNING) {
-				_exceptionRef.compareAndSet(null, new RuntimeException("The guardian " + guardianDeployment.getGuardianPath() + 
-							" entered state " + newState + " with ret info: " + 
+				_exceptionRef.compareAndSet(null, new RuntimeException("The deployment " + guardianDeployment.getDeployment().serviceType() + 
+						" on guardian " + guardianDeployment.getGuardianPath() + 
+							" entered deployment state " + newState + " with ret info: " + 
 							((retInfo == null)? "null" : retInfo.toString())));
 			}
 		}
@@ -221,20 +221,12 @@ public class ClusterTestTask implements TestTask {
 			CollectiveApplication application = _test.getApplicationFactory().newInstance();
 			ClientAgent agent = _test.getClientAgentFactory().newInstance();
 			
-			// put component resolver into ZooKeeper
-			String componentResolverPath = _clusterHandle.resolvePathFromRoot(COMPONENT_RESOLVER);
-			_clusterHandle.createOrSetEphemeral(componentResolverPath, _test.getComponentResolver());
-			
 			// put application into ZooKeeper
 			String applicationPath = _clusterHandle.resolvePathFromRoot(APPLICATION);
 			_clusterHandle.createOrSetEphemeral(applicationPath, _test.getApplicationFactory());
 			
-			// put client agent into ZooKeeper
-			String agentPath = _clusterHandle.resolvePathFromRoot(CrowdHammerPath.CLIENT_AGENT);
-			_clusterHandle.createOrSetEphemeral(agentPath, _test.getClientAgentFactory());
-			
 			// prepare worker deployment
-			ServiceDeployment<ServiceState> workerDeployment = new WorkerServiceDeployment(32000, -1, 2048, 2048);
+			ServiceDeployment<ServiceState> workerDeployment = new WorkerServiceDeployment(_test.getClientAgentFactory(), 32000, -1, 2048, 2048);
 			
 			// prepare dependency info
 			List<Pair<ServiceDeployment<ServiceState>, Integer>> deploymentCountPairs = _test.getServiceDeployments();
@@ -265,10 +257,11 @@ public class ClusterTestTask implements TestTask {
 						serviceTypeAndCountList);
 				
 				Log.info("Deploying services...");
-				assertRunning();
-				for (Pair<ServiceDeployment<ServiceState>, Integer> deploymentCountPair : _test.getServiceDeployments()) {
+				for (Pair<ServiceDeployment<ServiceState>, Integer> deploymentCountPair : deploymentCountPairs) {
 					for (int i = 0; i < deploymentCountPair.getValue1(); i++) {
-						GuardianDeployment<ServiceState> guardianDeployment = _guardianManager.deploy(deploymentCountPair.getValue0(),  
+						assertRunning();
+						GuardianDeployment<ServiceState> guardianDeployment = _guardianManager.deploy(deploymentCountPair.getValue0(),
+								_test.getComponentResolver(),
 								timeoutTracker.getTimeout(), 
 								timeoutTracker.getUnit());
 						guardianDeployment.getListenable().addListener(_deploymentListener, _backgroundExecutor);
@@ -279,15 +272,18 @@ public class ClusterTestTask implements TestTask {
 				}
 				
 				// wait for the required number of each service type to enter the created state
-				assertRunning();
+				Log.info("Waiting for services...");
 				for (Pair<String, Integer> serviceTypeAndCount : serviceTypeAndCountList) {
+					assertRunning();
 					String serviceType = serviceTypeAndCount.getValue0();
 					int count = serviceTypeAndCount.getValue1();
 					String serviceTypePath = ZKPaths.makePath(_clusterHandle.resolvePathFromRoot(SERVICES), serviceType);
+					Log.info("Waiting for " + count + " instance" + (count == 1? "": "s") +" of " + serviceType + " to register...");
 					List<String> serviceIds = ClusterUtil.waitForChildren(_clusterHandle.getClient(), serviceTypePath, count, 
 							timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 					List<String> servicePaths = ClusterUtil.toPaths(serviceTypePath, serviceIds);
 					
+					Log.info("Creating service group for " + serviceType + "...");
 					ServiceGroup<ServiceState> serviceGroup = new ServiceGroup<>();
 					serviceGroup.getListenable().addListener(_serviceGroupListener, _backgroundExecutor);
 					for (String path : servicePaths) {
@@ -300,9 +296,11 @@ public class ClusterTestTask implements TestTask {
 				}
 				
 				// start the services (incl. workers)
+				Log.info("Starting services...");
 				for (ServiceState state : new ServiceState[] { CREATED, INIT, BIND, CONNECT, START }) {
 					// iterate through the services in order of dependency
 					for (String serviceType : dependencySet) {
+						assertRunning();
 						ServiceGroup<ServiceState> group = _groupsByType.get(serviceType);
 						
 						// we need to initialise the workers with the client count they will
@@ -323,9 +321,11 @@ public class ClusterTestTask implements TestTask {
 						
 						// we just wait for the services to enter the created state
 						if (state != CREATED) {
+							Log.info("Setting state to " + state + " for services of type " + serviceType + "...");
 							group.enterStateInBackground(state, timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 						}
 						
+						Log.info("Waiting for services of type " + serviceType + " to enter state " + state + "...");
 						// wait for the group to enter the state
 						ServiceState groupState = _groupStateLookup.get(group);
 						while (groupState != state) {
@@ -335,6 +335,8 @@ public class ClusterTestTask implements TestTask {
 					}
 				}
 				
+				assertRunning();
+				Log.info("Starting test...");
 				setTestState(TestTask.State.RUNNING_TEST);
 				
 				// get the bucketId 5 seconds into the future
@@ -346,8 +348,10 @@ public class ClusterTestTask implements TestTask {
 				_metricCollector.startCollectingFrom(startBucketId, bucketCount);
 				
 				// wait for test time
+				assertRunning();
 				Thread.sleep(metricBucketInfo.getBucketEndTime(startBucketId + bucketCount));
 				
+				Log.info("Stopping test...");
 				setTestState(TestTask.State.TEARING_DOWN);
 				
 				// tear down services (shutdown)
@@ -366,13 +370,14 @@ public class ClusterTestTask implements TestTask {
 		} catch (InterruptedException eInterrupted) {
 			
 		} catch (Exception eTest) {
-			_exceptionRef.set(eTest);
+			_exceptionRef.compareAndSet(null, eTest);
 		} finally {
 			try {
 				// stop guardian deployments (ready)
 				cleanUp();
 			} finally {
 				setTestState(TestTask.State.STOPPED);
+				Log.info("Finished test");
 			}
 		}
 	}
@@ -403,22 +408,15 @@ public class ClusterTestTask implements TestTask {
 		}
 	}
 	
-	private void cleanUp() {
-		// remove component resolver from ZooKeeper
-		String componentResolverPath = _clusterHandle.resolvePathFromRoot(COMPONENT_RESOLVER);
-		_clusterHandle.delete(componentResolverPath);
+	private void cleanUp() {	
+		for (GuardianDeployment<ServiceState> deployment : _guardianDeployments) {
+			deployment.getListenable().removeListener(_deploymentListener);
+			deployment.stop();
+		}
 		
 		// remove application from ZooKeeper
 		String applicationPath = _clusterHandle.resolvePathFromRoot(APPLICATION);
 		_clusterHandle.delete(applicationPath);
-		
-		// remove client agent from ZooKeeper
-		String agentPath = _clusterHandle.resolvePathFromRoot(CrowdHammerPath.CLIENT_AGENT);
-		_clusterHandle.delete(agentPath);
-		
-		for (GuardianDeployment<ServiceState> deployment : _guardianDeployments) {
-			deployment.stop();
-		}
 	}
 	
 	private void setTestState(TestTask.State newState) {

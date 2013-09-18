@@ -22,8 +22,6 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
-import java.lang.reflect.ParameterizedType;
-import java.lang.reflect.Type;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -362,50 +360,14 @@ public class Util {
 		try {
 			Class<?> clazz = Class.forName(className);
 			Method main = clazz.getMethod("main", String[].class);
-			main.invoke(null);
+			main.invoke(null, (Object) null);
 		} catch (ClassNotFoundException eNotFound){
 			throw new RuntimeException(String.format("Could not find the class '%1$s'.", className), eNotFound);
-		} catch (IllegalArgumentException | NoSuchMethodException e) {
+		} catch (NoSuchMethodException e) {
 			throw new RuntimeException(String.format("Could not find the main method for the class %1$s.", className), e);
-		} catch (InvocationTargetException | IllegalAccessException | SecurityException e) {
+		} catch (IllegalArgumentException | InvocationTargetException | IllegalAccessException | SecurityException e) {
 			throw new RuntimeException(String.format("Could not invoke the main method for the class %1$s.", className), e);
 		}
-	}
-	
-	public static Class<?> getGenericParameter(Object object, Class<?> genericClass, int parameterIndex) {
-		ParameterizedType parameterizedType = null;
-		
-		if (genericClass.isInterface()) {
-			for (Type type : object.getClass().getGenericInterfaces()) {
-				if (type.getClass().equals(genericClass)) {
-					parameterizedType = (ParameterizedType) type;
-					break;
-				}
-			}
-		} else {
-			Type type = object.getClass().getGenericSuperclass();
-			if (type.getClass().equals(genericClass)) {
-				parameterizedType = (ParameterizedType) type;
-			}
-		}
-		
-		if (parameterizedType == null) {
-			throw new RuntimeException(String.format("Object %s did not implement or subclass genericType %s",
-					object.getClass().getName(),
-					genericClass.getName()));
-		}
-		
-		Type[] typeArgs = parameterizedType.getActualTypeArguments();
-		if (typeArgs.length < parameterIndex + 1) {
-			throw new RuntimeException(String.format(
-					"Requested generic type at index %d, but only found %d types. " +
-					"Object type: %s, GenericClass: %s",
-					parameterIndex, 
-					typeArgs.length, 
-					object.getClass().getName(), 
-					genericClass.getName()));
-		}
-		return typeArgs[parameterIndex].getClass();
 	}
 	
 }

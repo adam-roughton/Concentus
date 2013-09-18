@@ -16,14 +16,15 @@
 package com.adamroughton.concentus;
 
 import java.net.InetAddress;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.ListIterator;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
 import org.apache.commons.cli.CommandLine;
-import org.apache.commons.cli.CommandLineParser;
 import org.apache.commons.cli.GnuParser;
 import org.apache.commons.cli.HelpFormatter;
 import org.apache.commons.cli.Option;
@@ -35,9 +36,9 @@ import com.adamroughton.concentus.cluster.ClusterParticipant;
 import com.adamroughton.concentus.cluster.worker.ClusterHandle;
 import com.adamroughton.concentus.cluster.worker.ServiceContainer;
 import com.adamroughton.concentus.cluster.worker.ServiceDeployment;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
 import com.adamroughton.concentus.util.Util;
-import com.esotericsoftware.minlog.Log;
 
 public class ConcentusExecutableOperations {
 	
@@ -48,7 +49,8 @@ public class ConcentusExecutableOperations {
 				FatalExceptionCallback exHandler);
 	}
 	
-	public static <TState extends Enum<TState> & ClusterState> void executeClusterService(String[] args, ServiceDeployment<TState> serviceDeployment) {
+	public static <TState extends Enum<TState> & ClusterState> void executeClusterService(String[] args, ServiceDeployment<TState> serviceDeployment, 
+			ComponentResolver<? extends ResizingBuffer> componentResolver) throws Exception {
 		Pair<ClusterHandle, ConcentusHandle> coreComponents = createCoreComponents("ClusterService", args, 
 				new ClusterHandleFactory<ClusterHandle>() {
 
@@ -64,17 +66,15 @@ public class ConcentusExecutableOperations {
 		ClusterHandle clusterHandle = coreComponents.getValue0();
 		ConcentusHandle concentusHandle = coreComponents.getValue1();
 		
-		try (ServiceContainer<TState> container = new ServiceContainer<>(concentusHandle, clusterHandle, serviceDeployment, concentusHandle)) {
+		try (ServiceContainer<TState> container = new ServiceContainer<>(concentusHandle, clusterHandle, serviceDeployment, 
+				componentResolver, concentusHandle)) {
 			container.start();
 			
 			// Wait for exit
 			Object waitMonitor = new Object();
 			synchronized (waitMonitor) {
 				waitMonitor.wait();
-			}
-			
-		} catch (Exception e) {
-			Log.error("Error thrown from the cluster service container", e);
+			}	
 		}
 	}
 	
@@ -114,17 +114,39 @@ public class ConcentusExecutableOperations {
 		}
 	}
 	
-	public static Map<String, String> parseCommandLine(String processName, Iterable<Option> options, String[] args, boolean ignoreUnknownOptions) {
+	public static Map<String, String> parseCommandLine(String processName, Iterable<Option> options, 
+			String[] args, boolean ignoreUnknownOptions) {
+		return parseCommandLine(processName, toOptions(options), args, ignoreUnknownOptions);
+	}
+	
+	public static Map<String, String> parseCommandLine(String processName, Options cliOptions, 
+			String[] args, boolean ignoreUnknownOptions) { 
+		return parseCommandLineInternal(processName, cliOptions, args, ignoreUnknownOptions).getValue0();
+	}
+	
+	public static Pair<Map<String, String>, String[]> parseCommandLineKeepRemaining(String processName, 
+			Iterable<Option> options, String[] args, boolean ignoreUnknownOptions) {
+		return parseCommandLineKeepRemaining(processName, toOptions(options), args, ignoreUnknownOptions);
+	}
+	
+	public static Pair<Map<String, String>, String[]> parseCommandLineKeepRemaining(String processName, 
+			Options cliOptions, String[] args, boolean ignoreUnknownOptions) {
+		return parseCommandLineInternal(processName, cliOptions, args, ignoreUnknownOptions);
+	}
+	
+	private static Options toOptions(Iterable<Option> options) {
 		Options cliOptions = new Options();
 		for (Option option : options) {
 			cliOptions.addOption(option);
 		}
-		return parseCommandLine(processName, cliOptions, args, ignoreUnknownOptions);
+		return cliOptions;
 	}
 	
-	public static Map<String, String> parseCommandLine(String processName, Options cliOptions, String[] args, boolean ignoreUnknownOptions) { 
+	private static Pair<Map<String, String>, String[]> parseCommandLineInternal(String processName, Options cliOptions, String[] args, 
+			boolean ignoreUnknownOptions) { 
 		Map<String, String> parsedCommandLine = new HashMap<>();
-		CommandLineParser parser = new TolerantParser(ignoreUnknownOptions);
+		TolerantParser parser = new TolerantParser(ignoreUnknownOptions);
+		String[] leftOverArgs = new String[0];
 		try {
 			CommandLine commandLine = parser.parse(cliOptions, args);
 			for (Object optionObjRef : cliOptions.getOptions()) {
@@ -148,17 +170,19 @@ public class ConcentusExecutableOperations {
 					}
 				}
 			}
+			leftOverArgs = parser.getUnrecognisedArgs();
 		} catch (ParseException eParse) {
 			HelpFormatter helpFormatter = new HelpFormatter();
 			helpFormatter.printHelp(String.format("%s [options]", processName), cliOptions);
 			System.exit(1);
 		}
-		return parsedCommandLine;
+		return new Pair<>(parsedCommandLine, leftOverArgs);
 	}
 	
 	private static class TolerantParser extends GnuParser {
 
 		private final boolean _ignoreUnrecognisedOptions;
+		private final List<String> _unrecognisedArgs = new ArrayList<>();
 		
 		public TolerantParser(boolean ignoreUnrecognisedOptions) {
 			_ignoreUnrecognisedOptions = ignoreUnrecognisedOptions;
@@ -170,7 +194,18 @@ public class ConcentusExecutableOperations {
 				throws ParseException {
 			if (getOptions().hasOption(arg) || !_ignoreUnrecognisedOptions) {
 				super.processOption(arg, iter);
+			} else {
+				_unrecognisedArgs.add(arg);
+				String nextUnrecogArg;
+				while (iter.hasNext() && !getOptions().hasOption((nextUnrecogArg = (String) iter.next()))) {
+					_unrecognisedArgs.add(nextUnrecogArg);
+				}
+				iter.previous();
 			}
+		}
+		
+		public String[] getUnrecognisedArgs() {
+			return _unrecognisedArgs.toArray(new String[_unrecognisedArgs.size()]);
 		}
 	}
 	

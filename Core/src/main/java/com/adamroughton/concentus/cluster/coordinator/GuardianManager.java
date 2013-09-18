@@ -16,14 +16,18 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher.Event.EventType;
+import org.javatuples.Pair;
 
+import com.adamroughton.concentus.ComponentResolver;
 import com.adamroughton.concentus.cluster.CorePath;
 import com.adamroughton.concentus.cluster.worker.Guardian;
 import com.adamroughton.concentus.cluster.worker.ServiceDeployment;
+import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
 import com.adamroughton.concentus.data.cluster.kryo.GuardianDeploymentReturnInfo;
 import com.adamroughton.concentus.data.cluster.kryo.GuardianDeploymentReturnInfo.ReturnType;
 import com.adamroughton.concentus.data.cluster.kryo.GuardianState;
+import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.util.IdentityWrapper;
 import com.adamroughton.concentus.util.TimeoutTracker;
 import com.adamroughton.concentus.util.Util;
@@ -49,6 +53,7 @@ public final class GuardianManager implements Closeable {
 	private final PathChildrenCache _guardianCache;
 	
 	private enum GuardianTrackerState {
+		CREATED,
 		READY,
 		WAITING,
 		RUNNING
@@ -70,27 +75,26 @@ public final class GuardianManager implements Closeable {
 		public void processResult(CuratorFramework client, CuratorEvent event)
 				throws Exception {
 			if (event.getType() == CuratorEventType.GET_DATA) { 
-				GuardianState state;
+				StateEntry<?> stateEntryObj;
 				synchronized(_kryo) {
-					state = Util.fromKryoBytes(_kryo, event.getData(), GuardianState.class);
+					stateEntryObj = Util.fromKryoBytes(_kryo, event.getData(), StateEntry.class);
 				}
-				if (state != null) {
+				if (stateEntryObj != null) {
+					StateEntry<GuardianState> stateEntry = _clusterHandle.castStateEntry(stateEntryObj, GuardianState.class);
 					String guardianPath = ZKPaths.getPathAndNode(event.getPath()).getPath();
-					switch (state) {
+					switch (stateEntry.getState()) {
 						case CREATED:
 							_clusterHandle.setServiceInitData(_serviceIdAllocator, guardianPath, Guardian.SERVICE_TYPE, null);
-							_clusterHandle.signalStateChange(guardianPath, GuardianState.READY, null);
+							_clusterHandle.setServiceSignal(guardianPath, GuardianState.class, GuardianState.READY, null);
+							_guardians.put(guardianPath, GuardianTrackerState.CREATED);
 							break;
 						case READY:
 							GuardianDeployment<?> guardianDeployment = _deployments.remove(guardianPath);
 							if (guardianDeployment != null) {
 								// check if we have return info from the last deployment
-								String stateDataPath = CorePath.SERVICE_STATE_DATA.getAbsolutePath(guardianPath);
-								GuardianDeploymentReturnInfo depRetInfo = _clusterHandle.read(stateDataPath, 
-										GuardianDeploymentReturnInfo.class);
+								GuardianDeploymentReturnInfo depRetInfo = stateEntry.getStateData(GuardianDeploymentReturnInfo.class);
 								GuardianDeploymentState deploymentState;
 								if (depRetInfo != null) {
-									_clusterHandle.delete(stateDataPath);
 									if (depRetInfo.getReturnType() == ReturnType.OK) {
 										deploymentState = GuardianDeploymentState.RET_OK;
 									} else {
@@ -101,11 +105,11 @@ public final class GuardianManager implements Closeable {
 								}
 								guardianDeployment.changeState(deploymentState, depRetInfo);
 							}
-							_guardians.replace(guardianPath, GuardianTrackerState.READY);
+							_guardians.put(guardianPath, GuardianTrackerState.READY);
 							_readyHintQueue.add(guardianPath);
 							break;
 						case RUN:
-							_guardians.replace(guardianPath, GuardianTrackerState.RUNNING);
+							_guardians.put(guardianPath, GuardianTrackerState.RUNNING);
 						default:
 					}
 				}
@@ -137,6 +141,7 @@ public final class GuardianManager implements Closeable {
 			if (eventType == CHILD_ADDED) {
 				// new guardian added
 				String statePath = CorePath.SERVICE_STATE.getAbsolutePath(guardianPath);
+				_clusterHandle.ensureEphemeralPathCreated(statePath);
 				client.getData().usingWatcher(_guardianStateWatcher)
 					.inBackground(_guardianStateCallback)
 					.forPath(statePath);
@@ -173,6 +178,7 @@ public final class GuardianManager implements Closeable {
 	}
 	
 	public <TState extends Enum<TState> & ClusterState> GuardianDeployment<TState> deploy(ServiceDeployment<TState> deployment, 
+				ComponentResolver<? extends ResizingBuffer> componentResolver, 
 				long timeout, TimeUnit unit) throws InterruptedException, 
 			TimeoutException {
 		TimeoutTracker timeoutTracker = new TimeoutTracker(timeout, unit);
@@ -187,7 +193,7 @@ public final class GuardianManager implements Closeable {
 					
 					// check that the state hasn't been updated in the meantime
 					if (_guardians.get(availableGuardian) == GuardianTrackerState.WAITING) {
-						_clusterHandle.signalStateChange(availableGuardian, GuardianState.RUN, deployment);
+						_clusterHandle.setServiceSignal(availableGuardian, GuardianState.class, GuardianState.RUN, new Pair<>(deployment, componentResolver));
 						return guardianDeployment;
 					} else {
 						_deployments.remove(availableGuardian, guardianDeployment);
@@ -248,7 +254,7 @@ public final class GuardianManager implements Closeable {
 		
 		private final Executor _defaultListenerExecutor = Executors.newSingleThreadExecutor();
 		private final ConcurrentMap<IdentityWrapper<GuardianDeploymentListener<TState>>, ListenerEntry> _listeners = new ConcurrentHashMap<>();
-		private Listenable<GuardianDeploymentListener<TState>> _listenable = new Listenable<GuardianDeploymentListener<TState>>() {
+		private final Listenable<GuardianDeploymentListener<TState>> _listenable = new Listenable<GuardianDeploymentListener<TState>>() {
 			
 			@Override
 			public void removeListener(GuardianDeploymentListener<TState> listener) {
@@ -357,7 +363,7 @@ public final class GuardianManager implements Closeable {
 		
 		public void stop() {
 			_deployments.remove(_guardianPath);
-			_clusterHandle.signalStateChange(_guardianPath, GuardianState.READY, null);
+			_clusterHandle.setServiceSignal(_guardianPath, GuardianState.class, GuardianState.READY, null);
 		}
 		
 		public String getGuardianPath() {

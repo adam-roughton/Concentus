@@ -15,7 +15,6 @@ import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.data.KryoRegistratorDelegate;
 import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.model.CollectiveApplication;
-import com.adamroughton.concentus.util.Util;
 import com.netflix.curator.utils.ZKPaths;
 
 public class ClusterHandle extends ClusterParticipant implements Closeable {
@@ -31,16 +30,16 @@ public class ClusterHandle extends ClusterParticipant implements Closeable {
 	}	
 
 	@SuppressWarnings("unchecked")
-	public InstanceFactory<CollectiveApplication> getApplicationInstanceFactory() {
-		InstanceFactory<?> factory = read(resolvePathFromRoot(APPLICATION), InstanceFactory.class);
-		Class<?> instanceClass = Util.getGenericParameter(factory, InstanceFactory.class, 0);
+	public InstanceFactory<? extends CollectiveApplication> getApplicationInstanceFactory() {
+		InstanceFactory<?> factoryObj = read(resolvePathFromRoot(APPLICATION), InstanceFactory.class);
+		Class<?> instanceClass = factoryObj.instanceType();
 		if (!instanceClass.isAssignableFrom(CollectiveApplication.class)) {
 			throw new RuntimeException(String.format(
 					"The InstanceFactory found does not create" +
 					" instances of type CollectiveApplication (was %s)", 
 					instanceClass.getName()));
 		}
-		return (InstanceFactory<CollectiveApplication>) factory;
+		return (InstanceFactory<? extends CollectiveApplication>) factoryObj;
 	}
 
 	public ServiceEndpoint getMetricCollectorEndpoint() {
@@ -54,7 +53,7 @@ public class ClusterHandle extends ClusterParticipant implements Closeable {
 		// metric naming {sourceId_metricId}
 		String newMetricPath = ZKPaths.makePath(metricsPath, 
 				metricMetaData.getMetricSourceId() + "_" + metricMetaData.getMetricId());
-		createOrSetPersistent(newMetricPath, metricMetaData);
+		createOrSet(newMetricPath, metricMetaData);
 	}
 	
 	public ServiceEndpoint getServiceEndpointAtRandom(String endpointType) {

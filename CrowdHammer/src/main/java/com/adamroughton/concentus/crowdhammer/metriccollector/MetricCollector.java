@@ -145,6 +145,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 				.thenConnector(_inputQueue)
 				.then(_inputQueue.createEventProcessor("metricEventHandler", metricEventHandler))
 				.createPipeline(_executor);
+		_pipeline.start();
 		
 		// create ZK node listener for metrics
 		_metricRegistrationListener = new MetricRegistrationCallback() {
@@ -157,6 +158,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 				_internalWriter.writeEvent(metricMetaData);
 			}
 		};
+		_clusterHandle.addMetricRegistrationListener(_metricRegistrationListener);
 		
 		// advertise collector endpoint
 		String metricCollectorEndpointPath = _clusterHandle.resolvePathFromRoot(CorePath.METRIC_COLLECTOR);
@@ -257,7 +259,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 			
 			try {
 				if (_header.isFromInternal(event)) {
-					onInternalEvent(Util.fromKryoBytes(_kryo, event, Object.class));
+					onInternalEvent(Util.fromKryoBytes(_kryo, event.slice(_header.getEventOffset()), Object.class));
 				} else  {
 					EventPattern.readContent(event, _header, _metricEvent, new EventReader<IncomingEventHeader, MetricEvent>() {
 
@@ -267,6 +269,9 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 							onMetricEvent(event);
 						}
 					});
+				}
+				if (endOfBatch) {
+					_metricStore.onEndOfBatch();
 				}
 			} catch (Exception e) {
 				_exCallback.signalFatalException(e);
@@ -296,6 +301,8 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 				onNewMetric((MetricMetaData) internalEvent);
 			} else if (internalEvent instanceof CollectWindow) {
 				onStartCollectingEvent((CollectWindow) internalEvent);
+			} else if (internalEvent == null) {
+				Log.warn("Null internal event");
 			} else {
 				Log.warn("Unknown internal event type " + internalEvent.getClass().getName());
 			}
@@ -384,6 +391,10 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 		public Class<? extends ClientAgent> agentClass;
 		public List<Pair<String, Integer>> deploymentInfo;
 		
+		// for Kryo
+		@SuppressWarnings("unused")
+		private NewTestRunEvent() { }
+		
 		public NewTestRunEvent(String testName, int runId, int clientCount, 
 			long durationMillis, Class<? extends CollectiveApplication> applicationClass, 
 			Class<? extends ClientAgent> agentClass, List<Pair<String, Integer>> deploymentInfo) {
@@ -401,6 +412,10 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 	private static class CollectWindow {
 		public long startBucketId;
 		public long lastBucketId;
+		
+		// for Kryo
+		@SuppressWarnings("unused")
+		private CollectWindow() { }
 		
 		public CollectWindow(long startBucketId, int bucketCount) {
 			this.startBucketId = startBucketId;

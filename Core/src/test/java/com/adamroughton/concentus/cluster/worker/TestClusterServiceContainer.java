@@ -8,7 +8,6 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
-import org.apache.zookeeper.CreateMode;
 import org.javatuples.Quartet;
 import org.javatuples.Triplet;
 import org.junit.Before;
@@ -29,6 +28,7 @@ import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInit;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
+import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
 import com.adamroughton.concentus.messaging.zmq.SocketManager;
@@ -52,12 +52,6 @@ public class TestClusterServiceContainer extends TestClusterBase {
 	public void before() throws Exception {
 		_exCallback = new ExceptionCallback();
 		_kryo = Util.newKryoInstance();
-		
-		String resolverPath = CorePath.COMPONENT_RESOLVER.getAbsolutePath(ROOT);
-		getTestClient().create()
-			.creatingParentsIfNeeded()
-			.withMode(CreateMode.EPHEMERAL)
-			.forPath(resolverPath, Util.toKryoBytes(_kryo, new TestComponentResolver()));
 	}
 	
 	private static class TestComponentResolver implements ComponentResolver<ResizingBuffer> {
@@ -106,9 +100,9 @@ public class TestClusterServiceContainer extends TestClusterBase {
 		Class<?> stateType = Util.fromKryoBytes(_kryo, stateTypeBytes, Class.class);
 		assertEquals(ServiceState.class, stateType);
 		
-		byte[] stateBytes = getTestClient().getData().forPath(statePath);
-		assertNotNull("State was null", stateBytes);
-		assertEquals(ServiceState.CREATED, Util.fromKryoBytes(_kryo, stateBytes, ServiceState.class));
+		StateEntry<ServiceState> stateEntry = getServiceState(getTestClient(), _kryo, serviceRootPath, ServiceState.class);
+		assertNotNull("State entry was null", stateEntry);
+		assertEquals(ServiceState.CREATED, stateEntry.getState());
 	}
 	
 	@Test
@@ -118,7 +112,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 		String serviceRootPath = containerTuple.getValue0();
 		ClusterServiceCollector<ServiceState> collector = containerTuple.getValue2();
 		
-		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.INIT, null);
+		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.class, ServiceState.INIT, null);
 		waitForState(getTestClient(), _kryo, _exCallback, serviceRootPath, ServiceState.INIT, 5000, TimeUnit.MILLISECONDS);
 		
 		List<StateChange<ServiceState>> stateChanges = collector.valueCollector().getValues();
@@ -136,7 +130,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 		
 		long signalData = 5000;
 		
-		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.INIT, signalData);
+		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.class, ServiceState.INIT, signalData);
 		waitForState(getTestClient(), _kryo, _exCallback, serviceRootPath, ServiceState.INIT, 5000, TimeUnit.MILLISECONDS);
 		
 		List<StateChange<ServiceState>> stateChanges = collector.valueCollector().getValues();
@@ -155,7 +149,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 		ClusterServiceCollector<ServiceState> collector = containerTuple.getValue2();
 		AtomicReference<ServiceContext<ServiceState>> serviceContextRef = containerTuple.getValue3();
 		
-		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.INIT, null);
+		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.class, ServiceState.INIT, null);
 		waitForState(getTestClient(), _kryo, _exCallback, serviceRootPath, ServiceState.INIT, 5000, TimeUnit.MILLISECONDS);
 		
 		// get the service context
@@ -194,7 +188,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 		ClusterServiceCollector<ServiceState> collector = containerTuple.getValue2();
 		AtomicReference<ServiceContext<ServiceState>> serviceContextRef = containerTuple.getValue3();
 		
-		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.INIT, null);
+		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.class, ServiceState.INIT, null);
 		barrier.await();
 		barrier.await();
 		waitForState(getTestClient(), _kryo, _exCallback, serviceRootPath, ServiceState.INIT, 5000, TimeUnit.MILLISECONDS);
@@ -204,13 +198,13 @@ public class TestClusterServiceContainer extends TestClusterBase {
 		assertNotNull(serviceContext);
 		
 		// interrupt this signal with change that expects the previous state (should be ignored)
-		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.BIND, null);
+		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.class, ServiceState.BIND, null);
 		barrier.await();
 		serviceContext.enterState(ServiceState.START, null, ServiceState.INIT);
 		barrier.await();
 		
 		// do another change to ensure the interrupt was ignored
-		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.SHUTDOWN, null);
+		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.class, ServiceState.SHUTDOWN, null);
 		barrier.await();
 		barrier.await();
 		waitForState(getTestClient(), _kryo, _exCallback, serviceRootPath, ServiceState.SHUTDOWN, 5000, TimeUnit.MILLISECONDS);
@@ -241,21 +235,14 @@ public class TestClusterServiceContainer extends TestClusterBase {
 			containerTuple = newContainer(CLUSTER_ID, service, ServiceState.class, "Test", null);
 		String serviceRootPath = containerTuple.getValue0();
 		
-		String signalPath = CorePath.SERVICE_STATE_SIGNAL.getAbsolutePath(serviceRootPath);
-		ClusterUtil.ensurePathCreated(getTestClient(), signalPath);
-
-		String statePath = CorePath.SERVICE_STATE.getAbsolutePath(serviceRootPath);	
-
 		// signal a change to INIT
-		byte[] stateChangeBytes = Util.toKryoBytes(_kryo, ServiceState.INIT);
-		getTestClient().setData().forPath(signalPath, stateChangeBytes);
+		signalState(getTestClient(), _kryo, serviceRootPath, ServiceState.class, ServiceState.INIT, null);
 		
 		// wait for the state to be processed
-		ClusterUtil.waitForData(getTestClient(), statePath, stateChangeBytes, 5000, TimeUnit.MILLISECONDS);
+		String actualStateData = waitForState(getTestClient(), _kryo, _exCallback, 
+				serviceRootPath, ServiceState.INIT, String.class, 5000, TimeUnit.MILLISECONDS);
 		
-		String stateDataPath = CorePath.SERVICE_STATE_DATA.getAbsolutePath(serviceRootPath);
-		byte[] stateDataBytes = getTestClient().getData().forPath(stateDataPath);
-		assertEquals(expectedStateData, Util.fromKryoBytes(_kryo, stateDataBytes, String.class));
+		assertEquals(expectedStateData, actualStateData);
 	}
 	
 	/*
@@ -314,7 +301,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 			}
 		};
 		
-		ServiceContainer<TState> container = new ServiceContainer<>(concentusHandle, clusterHandle, deployment, _exCallback);
+		ServiceContainer<TState> container = new ServiceContainer<>(concentusHandle, clusterHandle, deployment, new TestComponentResolver(), _exCallback);
 		container.start();
 		_exCallback.throwAnyExceptions();
 		

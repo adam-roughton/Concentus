@@ -15,7 +15,6 @@
  */
 package com.adamroughton.concentus.cluster.worker;
 
-import java.io.ByteArrayOutputStream;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -28,24 +27,27 @@ import org.junit.Test;
 import com.adamroughton.concentus.cluster.CorePath;
 import com.adamroughton.concentus.cluster.ExceptionCallback;
 import com.adamroughton.concentus.cluster.TestClusterBase;
-import com.adamroughton.concentus.cluster.worker.ClusterServiceStateSignalListener;
-import com.adamroughton.concentus.cluster.worker.ClusterServiceStateSignalListener.ListenerDelegate;
+import com.adamroughton.concentus.cluster.worker.ClusterServiceSignalListener;
+import com.adamroughton.concentus.cluster.worker.ClusterServiceSignalListener.ListenerDelegate;
+import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
+import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Output;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.CuratorFrameworkFactory;
+import com.netflix.curator.framework.api.UnhandledErrorListener;
 import com.netflix.curator.retry.ExponentialBackoffRetry;
 import com.netflix.curator.utils.ZKPaths;
 
 import static com.adamroughton.concentus.data.cluster.kryo.ServiceState.*;
 import static org.junit.Assert.*;
+import static com.adamroughton.concentus.cluster.HelperMethods.*;
 
 public class TestClusterServiceStateListener extends TestClusterBase {
 
 	private ClusterStateListener<ServiceState> _listener;
-	private ClusterServiceStateSignalListener<ServiceState> _nodeListener;
+	private ClusterServiceSignalListener<ServiceState> _nodeListener;
 	private ExceptionCallback _exCallback;
 	private CuratorFramework _client;
 	private Kryo _kryo;
@@ -64,9 +66,16 @@ public class TestClusterServiceStateListener extends TestClusterBase {
 		_kryo = Util.newKryoInstance();
 		
 		_client = CuratorFrameworkFactory.newClient(getZooKeeperAddress(), new ExponentialBackoffRetry(10, 3));
+		_client.getUnhandledErrorListenable().addListener(new UnhandledErrorListener() {
+			
+			@Override
+			public void unhandledError(String message, Throwable e) {
+				_exCallback.signalFatalException(e);
+			}
+		});
 		_client.start();
 		_exCallback = new ExceptionCallback();
-		_nodeListener = new ClusterServiceStateSignalListener<>(ServiceState.class, _client, _signalPath, _listener, _exCallback);
+		_nodeListener = new ClusterServiceSignalListener<>(ServiceState.class, _client, _signalPath, _listener);
 	}
 	
 	@After
@@ -74,24 +83,17 @@ public class TestClusterServiceStateListener extends TestClusterBase {
 		_client.close();
 	}
 	
-	private void setState(ServiceState state) throws Exception {
-		ByteArrayOutputStream bOut = new ByteArrayOutputStream();
-		Output output = new Output(bOut);
-		_kryo.writeClassAndObject(output, state);
-		output.close();
-		
-		byte[] data = bOut.toByteArray();
-		if (getTestClient().checkExists().forPath(_signalPath) != null) {
-			getTestClient().setData().forPath(_signalPath, data);
-		} else {
-			getTestClient().create().creatingParentsIfNeeded().forPath(_signalPath, data);			
-		}
-		
+	private int signal(ServiceState state) throws Exception {
+		return signal(state, null);
+	}
+	
+	private int signal(ServiceState state, Object data) throws Exception {
+		return signalState(_client, _kryo, _servicePath, ServiceState.class, state, data);
 	}
 	
 	@Test
 	public void initialNullStateIsIgnored() throws Exception {
-		setState(null);
+		signal(null);
 		_nodeListener.start();
 		
 		ValueCollector<ServiceState> collector = _listener.getValueCollector();
@@ -103,7 +105,7 @@ public class TestClusterServiceStateListener extends TestClusterBase {
 	
 	@Test
 	public void initialStateIsActedOn() throws Exception {
-		setState(CONNECT);
+		signal(CONNECT);
 		_nodeListener.start();
 		
 		ValueCollector<ServiceState> collector = _listener.getValueCollector();
@@ -116,10 +118,10 @@ public class TestClusterServiceStateListener extends TestClusterBase {
 	
 	@Test
 	public void nodeChangedOnce() throws Exception {
-		setState(null);
+		signal(null);
 		_nodeListener.start();
 		
-		setState(START);
+		signal(START);
 		
 		ValueCollector<ServiceState> collector = _listener.getValueCollector();
 		collector.waitForCount(1, 1000, TimeUnit.MILLISECONDS);
@@ -131,7 +133,7 @@ public class TestClusterServiceStateListener extends TestClusterBase {
 	
 	@Test
 	public void nodeChangedManyItems() throws Exception {
-		setState(null);
+		signal(null);
 		_nodeListener.start();
 		ValueCollector<ServiceState> collector = _listener.getValueCollector();
 		
@@ -142,7 +144,7 @@ public class TestClusterServiceStateListener extends TestClusterBase {
 				
 		int lastCount = 0;
 		for (ServiceState state : expected) {
-			setState(state);
+			signal(state);
 			collector.waitForCount(++lastCount, 1000, TimeUnit.MILLISECONDS);
 		}
 		
@@ -154,7 +156,7 @@ public class TestClusterServiceStateListener extends TestClusterBase {
 		
 	@Test
 	public void nodeChangedNullData() throws Exception {
-		setState(null);
+		signal(null);
 		_nodeListener.start();
 		ValueCollector<ServiceState> collector = _listener.getValueCollector();
 		
@@ -176,7 +178,7 @@ public class TestClusterServiceStateListener extends TestClusterBase {
 		
 		int lastCount = 0;
 		for (ServiceState state : changes) {
-			setState(state);
+			signal(state);
 			if (state != null) {
 				collector.waitForCount(++lastCount, 1000, TimeUnit.MILLISECONDS);
 			} else {
@@ -191,7 +193,7 @@ public class TestClusterServiceStateListener extends TestClusterBase {
 		assertEquals(expected, clusterStates);
 	}
 	
-	private static class ClusterStateListener<TState> implements ListenerDelegate<TState> {
+	private static class ClusterStateListener<TState extends Enum<TState> & ClusterState> implements ListenerDelegate<TState> {
 		
 		private final ValueCollector<TState> _valueCollector;
 		
@@ -200,8 +202,13 @@ public class TestClusterServiceStateListener extends TestClusterBase {
 		}
 		
 		@Override
-		public void onStateChanged(TState newState) throws Exception {
-			_valueCollector.addValue(newState);
+		public void onSignalChanged(StateEntry<TState> newSignalEntry)
+				throws Exception {
+			if (newSignalEntry == null) {
+				_valueCollector.addValue(null);
+			} else {
+				_valueCollector.addValue(newSignalEntry.getState());
+			}
 		}
 		
 		public ValueCollector<TState> getValueCollector() {
