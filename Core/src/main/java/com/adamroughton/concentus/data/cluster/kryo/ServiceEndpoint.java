@@ -1,4 +1,4 @@
-package com.adamroughton.concentus.cluster.data;
+package com.adamroughton.concentus.data.cluster.kryo;
 
 import java.util.Objects;
 

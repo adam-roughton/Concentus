@@ -13,9 +13,7 @@ import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
-import java.util.ArrayList;
 import java.util.HashSet;
-import java.util.List;
 import java.util.Set;
 
 import org.javatuples.Pair;
@@ -105,7 +103,7 @@ public class TestSqliteMetricStore {
 	
 	@Test
 	public void testPushRunMetaData() {
-		final List<Pair<String, Integer>> deploymentInfo = new ArrayList<>();
+		final Set<Pair<String, Integer>> deploymentInfo = new HashSet<>();
 		deploymentInfo.add(new Pair<>("worker", 5));
 		deploymentInfo.add(new Pair<>("clientHandler", 10));
 		deploymentInfo.add(new Pair<>("canonicalState", 1));

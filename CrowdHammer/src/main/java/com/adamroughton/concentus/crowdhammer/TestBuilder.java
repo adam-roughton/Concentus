@@ -33,7 +33,7 @@ public class TestBuilder {
 	}
 	
 	public TestBuilder withService(ServiceDeployment<ServiceState> serviceDeployment, int count) {
-		_deploymentMap.put(serviceDeployment.serviceType(), new Pair<>(serviceDeployment, count));
+		_deploymentMap.put(serviceDeployment.serviceInfo().serviceType(), new Pair<>(serviceDeployment, count));
 		return this;
 	}
 	

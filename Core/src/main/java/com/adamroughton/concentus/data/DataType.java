@@ -29,6 +29,7 @@ import com.adamroughton.concentus.data.cluster.kryo.GuardianInit;
 import com.adamroughton.concentus.data.cluster.kryo.GuardianState;
 import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.data.cluster.kryo.MetricSourceMetaData;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInit;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
@@ -88,6 +89,7 @@ public enum DataType implements KryoRegistratorDelegate {
 	SERVICE_INIT(205, KRYO, ServiceInit.class),
 	METRIC_META_DATA(206, KRYO, MetricMetaData.class),
 	METRIC_SOURCE_META_DATA(207, KRYO, MetricSourceMetaData.class),
+	SERVICE_INFO(208, KRYO, ServiceInfo.class),
 	
 	/*
 	 * Utility types

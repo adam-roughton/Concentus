@@ -28,7 +28,6 @@ import com.adamroughton.concentus.CoreServices;
 import com.adamroughton.concentus.actioncollector.ActionCollectorService;
 import com.adamroughton.concentus.actioncollector.ActionCollectorService.ActionCollectorServiceDeployment;
 import com.adamroughton.concentus.canonicalstate.TickTimer;
-import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.cluster.worker.ClusterHandle;
 import com.adamroughton.concentus.cluster.worker.ClusterService;
 import com.adamroughton.concentus.cluster.worker.ConcentusServiceBase;
@@ -37,6 +36,8 @@ import com.adamroughton.concentus.cluster.worker.ServiceContext;
 import com.adamroughton.concentus.cluster.worker.ServiceDeploymentBase;
 import com.adamroughton.concentus.cluster.worker.StateData;
 import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
@@ -79,7 +80,8 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 				int actionCollectorSendBufferLength,
 				int pubPort,
 				int pubBufferLength) {
-			super(CoreServices.CANONICAL_STATE.getId(), ServiceState.class);
+			super(new ServiceInfo<>(CoreServices.CANONICAL_STATE.getId(), ServiceState.class),
+					ActionCollectorService.SERVICE_INFO);
 			_actionCollectorPort = actionCollectorPort;
 			_actionCollectorRecvBufferLength = actionCollectorRecvBufferLength;
 			_actionCollectorSendBufferLength = actionCollectorSendBufferLength;

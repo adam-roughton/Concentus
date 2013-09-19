@@ -12,7 +12,7 @@ import java.util.UUID;
 import com.adamroughton.concentus.cluster.CorePath;
 import com.adamroughton.concentus.cluster.ExceptionCallback;
 import com.adamroughton.concentus.cluster.TestClusterBase;
-import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.io.Input;

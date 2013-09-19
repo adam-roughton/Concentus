@@ -2,10 +2,12 @@ package com.adamroughton.concentus.crowdhammer;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Map.Entry;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
@@ -39,6 +41,7 @@ import com.adamroughton.concentus.crowdhammer.metriccollector.MetricCollector;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService.WorkerServiceDeployment;
 import com.adamroughton.concentus.data.cluster.kryo.GuardianDeploymentReturnInfo;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.metric.MetricBucketInfo;
 import com.adamroughton.concentus.model.CollectiveApplication;
@@ -124,7 +127,8 @@ public class ClusterTestTask implements TestTask {
 				GuardianDeploymentState newState,
 				GuardianDeploymentReturnInfo retInfo) {
 			if (newState != GuardianDeploymentState.RUNNING) {
-				_exceptionRef.compareAndSet(null, new RuntimeException("The deployment " + guardianDeployment.getDeployment().serviceType() + 
+				ServiceInfo<ServiceState> serviceInfo = guardianDeployment.getDeployment().serviceInfo();
+				_exceptionRef.compareAndSet(null, new RuntimeException("The deployment " + serviceInfo.serviceType() + 
 						" on guardian " + guardianDeployment.getGuardianPath() + 
 							" entered deployment state " + newState + " with ret info: " + 
 							((retInfo == null)? "null" : retInfo.toString())));
@@ -235,32 +239,53 @@ public class ClusterTestTask implements TestTask {
 			
 			// generate dependency set and deployment info
 			ServiceDependencySet dependencySet = new ServiceDependencySet();
-			List<Pair<String, Integer>> serviceTypeAndCountList = new ArrayList<>();
+			Map<String, Integer> serviceCountLookup = new HashMap<>();
+
+			Log.info("Deployment Plan:");
 			for (Pair<ServiceDeployment<ServiceState>, Integer> deploymentCountPair : deploymentCountPairs) {
 				ServiceDeployment<ServiceState> deployment = deploymentCountPair.getValue0();
 				int count = deploymentCountPair.getValue1();
-				dependencySet.addDependencies(deployment.serviceType(), deployment.serviceDependencies());
-				serviceTypeAndCountList.add(new Pair<>(deployment.serviceType(), count));
+				
+				ServiceInfo<ServiceState> serviceInfo = deployment.serviceInfo();
+				dependencySet.addDependencies(serviceInfo.serviceType(), serviceInfo.dependencies());
+				for (ServiceInfo<ServiceState> hostedService : deployment.getHostedServicesInfo()) {
+					// make implicit dependency explicit
+					dependencySet.addDependencies(hostedService.serviceType(), serviceInfo.serviceType());
+					
+					// add hosted service dependencies
+					dependencySet.addDependencies(hostedService.serviceType(), hostedService.dependencies());
+					
+					// there is a one-to-one mapping between hosts and hosted
+					// services
+					Log.info("ServiceType: " + hostedService.serviceType() + ", count: " + count);
+					serviceCountLookup.put(hostedService.serviceType(), count);
+				}
+				
+				Log.info("ServiceType: " + serviceInfo.serviceType() + ", count: " + count);
+				serviceCountLookup.put(serviceInfo.serviceType(), count);
 			}
 			
 			Log.info("Starting test runs...");
 			for (int clientCount : _test.getClientCounts()) {
 				assertRunning();
 				Log.info("Doing run with client count: " + clientCount);
-				TimeoutTracker timeoutTracker = new TimeoutTracker(30, TimeUnit.SECONDS);
+				TimeoutTracker timeoutTracker = new TimeoutTracker(30, TimeUnit.DAYS);
 				
 				_metricCollector.newTestRun(_test.getName(), 
 						clientCount, 
 						_test.getTestDurationMillis(), 
 						application.getClass(), 
 						agent.getClass(), 
-						serviceTypeAndCountList);
+						mapToPairSet(serviceCountLookup.entrySet()));
 				
 				Log.info("Deploying services...");
 				for (Pair<ServiceDeployment<ServiceState>, Integer> deploymentCountPair : deploymentCountPairs) {
+					ServiceDeployment<ServiceState> deployment = deploymentCountPair.getValue0();
+					int count = deploymentCountPair.getValue1();
+					Log.info("Deploying: " + count + " instance" + (count == 1? "": "s") +" of " + deployment.serviceInfo().serviceType());
 					for (int i = 0; i < deploymentCountPair.getValue1(); i++) {
 						assertRunning();
-						GuardianDeployment<ServiceState> guardianDeployment = _guardianManager.deploy(deploymentCountPair.getValue0(),
+						GuardianDeployment<ServiceState> guardianDeployment = _guardianManager.deploy(deployment,
 								_test.getComponentResolver(),
 								timeoutTracker.getTimeout(), 
 								timeoutTracker.getUnit());
@@ -271,56 +296,36 @@ public class ClusterTestTask implements TestTask {
 					}
 				}
 				
-				// wait for the required number of each service type to enter the created state
-				Log.info("Waiting for services...");
-				for (Pair<String, Integer> serviceTypeAndCount : serviceTypeAndCountList) {
-					assertRunning();
-					String serviceType = serviceTypeAndCount.getValue0();
-					int count = serviceTypeAndCount.getValue1();
-					String serviceTypePath = ZKPaths.makePath(_clusterHandle.resolvePathFromRoot(SERVICES), serviceType);
-					Log.info("Waiting for " + count + " instance" + (count == 1? "": "s") +" of " + serviceType + " to register...");
-					List<String> serviceIds = ClusterUtil.waitForChildren(_clusterHandle.getClient(), serviceTypePath, count, 
-							timeoutTracker.getTimeout(), timeoutTracker.getUnit());
-					List<String> servicePaths = ClusterUtil.toPaths(serviceTypePath, serviceIds);
-					
-					Log.info("Creating service group for " + serviceType + "...");
-					ServiceGroup<ServiceState> serviceGroup = new ServiceGroup<>();
-					serviceGroup.getListenable().addListener(_serviceGroupListener, _backgroundExecutor);
-					for (String path : servicePaths) {
-						ServiceHandle<ServiceState> serviceHandle = new ServiceHandle<>(path, 
-								serviceType, ServiceState.class, _clusterHandle);
-						serviceHandle.start();
-						serviceGroup.addService(serviceHandle);
-					}
-					_groupsByType.put(serviceType, serviceGroup);
-				}
-				
 				// start the services (incl. workers)
 				Log.info("Starting services...");
 				for (ServiceState state : new ServiceState[] { CREATED, INIT, BIND, CONNECT, START }) {
 					// iterate through the services in order of dependency
 					for (String serviceType : dependencySet) {
 						assertRunning();
-						ServiceGroup<ServiceState> group = _groupsByType.get(serviceType);
-						
-						// we need to initialise the workers with the client count they will
-						// be simulated
-						if (state == INIT && serviceType.equals(WorkerService.SERVICE_TYPE)) {
-							List<Pair<String, Integer>> maxClientCounts = new ArrayList<>();
-							for (ServiceHandle<ServiceState> workerService : group) {
-								int maxClientCount = workerService.getCurrentState().getStateData(Integer.class);
-								maxClientCounts.add(new Pair<>(workerService.getServicePath(), maxClientCount));
+					
+						ServiceGroup<ServiceState> group;
+						if (state == CREATED) {
+							group = createGroup(serviceType, serviceCountLookup.get(serviceType), 
+									timeoutTracker.getTimeout(), timeoutTracker.getUnit());
+						} else {
+							group = _groupsByType.get(serviceType);
+
+							// we need to initialise the workers with the client count they will
+							// be simulated
+							if (state == INIT && serviceType.equals(WorkerService.SERVICE_INFO.serviceType())) {
+								List<Pair<String, Integer>> maxClientCounts = new ArrayList<>();
+								for (ServiceHandle<ServiceState> workerService : group) {
+									int maxClientCount = workerService.getCurrentState().getStateData(Integer.class);
+									maxClientCounts.add(new Pair<>(workerService.getServicePath(), maxClientCount));
+								}
+								Map<String, Integer> workerAllocations = createWorkerAllocations(clientCount, maxClientCounts);
+								for (ServiceHandle<ServiceState> workerService : group) {
+									String workerPath = workerService.getServicePath();
+									int allocatedClientCount = workerAllocations.get(workerPath);
+									_clusterHandle.setServiceInitData(_metricCollector, workerPath, serviceType, allocatedClientCount);
+								}
 							}
-							Map<String, Integer> workerAllocations = createWorkerAllocations(clientCount, maxClientCounts);
-							for (ServiceHandle<ServiceState> workerService : group) {
-								String workerPath = workerService.getServicePath();
-								int allocatedClientCount = workerAllocations.get(workerPath);
-								_clusterHandle.setServiceInitData(_metricCollector, workerPath, serviceType, allocatedClientCount);
-							}
-						}
-						
-						// we just wait for the services to enter the created state
-						if (state != CREATED) {
+							
 							Log.info("Setting state to " + state + " for services of type " + serviceType + "...");
 							group.enterStateInBackground(state, timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 						}
@@ -380,6 +385,26 @@ public class ClusterTestTask implements TestTask {
 				Log.info("Finished test");
 			}
 		}
+	}
+	
+	private ServiceGroup<ServiceState> createGroup(String serviceType, int count, long timeout, TimeUnit unit) throws Exception {
+		String serviceTypePath = ZKPaths.makePath(_clusterHandle.resolvePathFromRoot(SERVICES), serviceType);
+		Log.info("Waiting for " + count + " instance" + (count == 1? "": "s") +" of " + serviceType + " to register...");
+		List<String> serviceIds = ClusterUtil.waitForChildren(_clusterHandle.getClient(), serviceTypePath, count, 
+				timeout, unit);
+		List<String> servicePaths = ClusterUtil.toPaths(serviceTypePath, serviceIds);
+		
+		Log.info("Creating service group for " + serviceType + "...");
+		ServiceGroup<ServiceState> serviceGroup = new ServiceGroup<>();
+		serviceGroup.getListenable().addListener(_serviceGroupListener, _backgroundExecutor);
+		for (String path : servicePaths) {
+			ServiceHandle<ServiceState> serviceHandle = new ServiceHandle<>(path, 
+					serviceType, ServiceState.class, _clusterHandle);
+			serviceHandle.start();
+			serviceGroup.addService(serviceHandle);
+		}
+		_groupsByType.put(serviceType, serviceGroup);
+		return serviceGroup;
 	}
 	
 	private void waitForBackgroundSignal(long time, TimeUnit unit) throws Exception {
@@ -510,4 +535,11 @@ public class ClusterTestTask implements TestTask {
 		return allocationsMap;
 	}
 
+	private static Set<Pair<String, Integer>> mapToPairSet(Set<Entry<String, Integer>> entrySet) {
+		HashSet<Pair<String, Integer>> pairSet = new HashSet<>(entrySet.size());
+		for (Entry<String, Integer> entry : entrySet) {
+			pairSet.add(new Pair<>(entry.getKey(), entry.getValue()));
+		}
+		return pairSet;
+	}
 }

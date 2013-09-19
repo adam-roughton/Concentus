@@ -35,6 +35,7 @@ import org.javatuples.Pair;
 
 import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
+import com.esotericsoftware.minlog.Log;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.api.BackgroundCallback;
 import com.netflix.curator.framework.api.CuratorEvent;
@@ -183,7 +184,8 @@ public class ClusterUtil {
 	
 	public static List<String> waitForChildren(final CuratorFramework client, 
 			final String path, final int count, long timeout, TimeUnit unit) throws Exception {
-		final AtomicReference<List<String>> childrenRef = new AtomicReference<>(null);
+		ensurePathCreated(client, path);
+		final AtomicReference<List<String>> childrenRef = new AtomicReference<>(null);		
 		
 		final CountDownLatch latch = new CountDownLatch(1);
 		final BackgroundCallback callback = new BackgroundCallback() {
@@ -193,8 +195,10 @@ public class ClusterUtil {
 					throws Exception {
 				if (event.getType() == CuratorEventType.CHILDREN) {
 					List<String> children = event.getChildren();
+					Log.info("waitForChildren: Got child count " + children.size());
 					if (children.size() >= count) {
-						if (childrenRef.compareAndSet(null, new ArrayList<>(children))) {						
+						if (childrenRef.compareAndSet(null, new ArrayList<>(children))) {
+							Log.info("waitForChildren: got req. count");
 							latch.countDown();
 						}
 					}
@@ -205,6 +209,7 @@ public class ClusterUtil {
 			
 			@Override
 			public void process(WatchedEvent event) throws Exception {
+				Log.info("waitForChildren: watch event " + event.toString());
 				if (event.getType() == EventType.NodeChildrenChanged) {
 					client.getChildren().usingWatcher(this).inBackground(callback).forPath(path);					
 				}

@@ -1,6 +1,7 @@
 package com.adamroughton.concentus.cluster.coordinator;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -14,15 +15,12 @@ import java.util.Set;
 public final class ServiceDependencySet implements Iterable<String> {
 	
 	private final Map<String, ServiceDefinition> _serviceDefinitions = new HashMap<>();
-	private int _version = 1;
 	
 	public void addDependency(String serviceType, String dependency) {
 		addDependencies(serviceType, dependency);
 	}
 	
 	public void addDependencies(String serviceType, String... dependencies) {
-		int version = _version++;
-		
 		// Create an item to track the dependency position for this service
 		ServiceDefinition definition;
 		if (_serviceDefinitions.containsKey(serviceType)) {
@@ -35,11 +33,11 @@ public final class ServiceDependencySet implements Iterable<String> {
 		
 		// update the dependencies
 		for (String dependencyType : definition.dependencies) {
-			updateDependency(dependencyType, definition.score, version);
+			updateDependency(dependencyType, definition.score, new String[] { serviceType });
 		}
 	}
 	
-	private void updateDependency(String serviceType, int scoreOfDependant, int version) {
+	private void updateDependency(String serviceType, int scoreOfDependant, String[] dependencyChain) {
 		ServiceDefinition definition;
 		if (_serviceDefinitions.containsKey(serviceType)) {
 			definition = _serviceDefinitions.get(serviceType);
@@ -48,16 +46,22 @@ public final class ServiceDependencySet implements Iterable<String> {
 			_serviceDefinitions.put(serviceType, definition);
 		}
 		
-		if (definition.version >= version) {
-			throw new IllegalStateException("Cyclic dependency detected for '" + serviceType + "'");
-		} else {
-			definition.version = version;
+		// inefficient, but sufficient for our purposes
+		for (String dependency : dependencyChain) {
+			if (dependency.equals(serviceType)) {
+				throw new IllegalStateException("Cyclic dependency detected for '" + serviceType + "': " + 
+						prettyPrintChain(serviceType, dependencyChain));
+			}
 		}
+
 		definition.score = Math.max(definition.score, scoreOfDependant + 1);
+		
+		String[] newDependencyChain = Arrays.copyOf(dependencyChain, dependencyChain.length + 1);
+		newDependencyChain[dependencyChain.length] = serviceType;
 		
 		// update the dependencies
 		for (String dependencyType : definition.dependencies) {
-			updateDependency(dependencyType, definition.score, version);
+			updateDependency(dependencyType, definition.score, newDependencyChain);
 		}
 	}
 	
@@ -116,18 +120,26 @@ public final class ServiceDependencySet implements Iterable<String> {
 		};
 	}
 	
+	private static String prettyPrintChain(String head, String...dependencies) {
+		StringBuilder strBuilder = new StringBuilder();
+		for (String dependency : dependencies) {
+			strBuilder.append(dependency);
+			strBuilder.append(" -> ");
+		}
+		strBuilder.append(head);
+		return strBuilder.toString();
+	}
+	
 	private static class ServiceDefinition implements Comparable<ServiceDefinition> {
 		public final String serviceType;
 		public final Set<String> dependencies;
 		public int score;
-		public int version;
 		
 		public ServiceDefinition(String serviceType, String... dependencies) {
 			this.serviceType = serviceType;
 			this.dependencies = new HashSet<>();
 			addDependencies(dependencies);
 			this.score = 0;
-			this.version = 0;
 		}
 		
 		public void addDependencies(String... dependencies) {

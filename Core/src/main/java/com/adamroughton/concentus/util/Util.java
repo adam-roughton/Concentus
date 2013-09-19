@@ -20,6 +20,8 @@ import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.nio.file.Files;
@@ -368,6 +370,12 @@ public class Util {
 		} catch (IllegalArgumentException | InvocationTargetException | IllegalAccessException | SecurityException e) {
 			throw new RuntimeException(String.format("Could not invoke the main method for the class %1$s.", className), e);
 		}
+	}
+	
+	public static String stackTraceToString(Throwable throwable) {
+		StringWriter stackTraceWriter = new StringWriter();
+		throwable.printStackTrace(new PrintWriter(stackTraceWriter));
+		return stackTraceWriter.toString();
 	}
 	
 }

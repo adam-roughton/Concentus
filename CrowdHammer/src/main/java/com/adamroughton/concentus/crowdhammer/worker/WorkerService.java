@@ -30,7 +30,6 @@ import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.CoreServices;
 import com.adamroughton.concentus.InstanceFactory;
-import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.cluster.worker.ClusterHandle;
 import com.adamroughton.concentus.cluster.worker.ClusterService;
 import com.adamroughton.concentus.cluster.worker.ConcentusServiceBase;
@@ -39,6 +38,8 @@ import com.adamroughton.concentus.cluster.worker.ServiceDeploymentBase;
 import com.adamroughton.concentus.cluster.worker.StateData;
 import com.adamroughton.concentus.crowdhammer.ClientAgent;
 import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.messaging.EventHeader;
@@ -66,7 +67,8 @@ import static com.adamroughton.concentus.util.Util.*;
 
 public final class WorkerService<TBuffer extends ResizingBuffer> extends ConcentusServiceBase {
 
-	public static final String SERVICE_TYPE = "worker";
+	public static final ServiceInfo<ServiceState> SERVICE_INFO = new ServiceInfo<>("worker", 
+			ServiceState.class, CoreServices.CLIENT_HANDLER.getId());
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	
@@ -112,7 +114,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 				InstanceFactory<? extends ClientAgent> agentFactory,
 				int maxClientCount, int recvPort, 
 				int recvBufferSize, int sendBufferSize) {
-			super(SERVICE_TYPE, ServiceState.class, CoreServices.CLIENT_HANDLER.getId());
+			super(SERVICE_INFO);
 			_maxClientCount = maxClientCount;
 			_recvPort = recvPort;
 			_recvBufferSize = recvBufferSize;

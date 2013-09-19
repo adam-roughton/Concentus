@@ -20,11 +20,11 @@ import java.io.IOException;
 import java.util.Objects;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
 import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.Kryo;
-import com.esotericsoftware.kryo.io.Input;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.recipes.cache.ChildData;
 import com.netflix.curator.framework.recipes.cache.NodeCache;
@@ -37,6 +37,7 @@ class ClusterServiceSignalListener<TState extends Enum<TState> & ClusterState> i
 	}
 	
 	private final Class<TState> _stateType;
+	private final FatalExceptionCallback _exCallback;
 	private final AtomicInteger _lastSeenVersion = new AtomicInteger(-1);
 	private final ListenerDelegate<TState> _listenerDelegate;
 	private final NodeCache _stateSignalNode;
@@ -46,8 +47,10 @@ class ClusterServiceSignalListener<TState extends Enum<TState> & ClusterState> i
 			Class<TState> stateType,
 			CuratorFramework client, 
 			String stateSignalPath,
-			ListenerDelegate<TState> listenerDelegate) {
+			ListenerDelegate<TState> listenerDelegate,
+			FatalExceptionCallback exCallback) {
 		_stateType = Objects.requireNonNull(stateType);
+		_exCallback = Objects.requireNonNull(exCallback);
 		_stateSignalNode = new NodeCache(client, stateSignalPath);
 		_stateSignalNode.getListenable().addListener(this);
 		_listenerDelegate = Objects.requireNonNull(listenerDelegate);
@@ -57,26 +60,29 @@ class ClusterServiceSignalListener<TState extends Enum<TState> & ClusterState> i
 	@SuppressWarnings("unchecked")
 	@Override
 	public void nodeChanged() throws Exception {
-		ChildData node = _stateSignalNode.getCurrentData();
-		if (node != null) {
-			int newVersion = node.getStat().getVersion();
-			final byte[] data = node.getData();
-			Input input = new Input(data);
-			Object newSignalEntryObj = _kryo.readClassAndObject(input);
-			input.close();
-			
-			StateEntry<TState> newSignalEntry;
-			if (StateEntry.class.isAssignableFrom(newSignalEntryObj.getClass()) && 
-					_stateType.equals(((StateEntry<?>) newSignalEntryObj).stateType())) {
-				newSignalEntry = (StateEntry<TState>) newSignalEntryObj;				
-			} else {
-				newSignalEntry = null;
-			}
-			
-			if (newSignalEntry != null && newSignalEntry.getState() != null && tryClaimLatestVersion(newVersion)) {
-				_listenerDelegate.onSignalChanged(newSignalEntry);
-			}
-		}		
+		try {
+			ChildData node = _stateSignalNode.getCurrentData();
+			if (node != null) {
+				int newVersion = node.getStat().getVersion();
+				final byte[] data = node.getData();
+				
+				StateEntry<?> newSignalEntryObj = 
+						Util.fromKryoBytes(_kryo, data, StateEntry.class);
+				
+				StateEntry<TState> newSignalEntry;
+				if (newSignalEntryObj != null && _stateType.equals(newSignalEntryObj.stateType())) {
+					newSignalEntry = (StateEntry<TState>) newSignalEntryObj;				
+				} else {
+					newSignalEntry = null;
+				}
+				
+				if (newSignalEntry != null && newSignalEntry.getState() != null && tryClaimLatestVersion(newVersion)) {
+					_listenerDelegate.onSignalChanged(newSignalEntry);
+				}
+			}	
+		} catch (Exception e) {
+			_exCallback.signalFatalException(e);
+		}
 	}
 	
 	private boolean tryClaimLatestVersion(int newVersion) {

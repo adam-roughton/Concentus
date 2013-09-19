@@ -13,7 +13,6 @@ import com.adamroughton.concentus.ConcentusEndpoints;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.CoreServices;
-import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.cluster.worker.ClusterHandle;
 import com.adamroughton.concentus.cluster.worker.ClusterService;
 import com.adamroughton.concentus.cluster.worker.ConcentusServiceBase;
@@ -21,6 +20,8 @@ import com.adamroughton.concentus.cluster.worker.ServiceContext;
 import com.adamroughton.concentus.cluster.worker.ServiceDeploymentBase;
 import com.adamroughton.concentus.cluster.worker.StateData;
 import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.data.events.bufferbacked.TickEvent;
 import com.adamroughton.concentus.disruptor.EventQueue;
@@ -46,7 +47,12 @@ import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
 public class ActionCollectorService<TBuffer extends ResizingBuffer> extends ConcentusServiceBase {
-
+	
+	public static final ServiceInfo<ServiceState> SERVICE_INFO = new ServiceInfo<>(
+					CoreServices.ACTION_PROCESSOR.getId(), 
+					ServiceState.class, 
+					CoreServices.CANONICAL_STATE.getId());
+	
 	public static class ActionCollectorServiceDeployment extends ServiceDeploymentBase<ServiceState> {
 
 		private int _recvPort;
@@ -67,8 +73,7 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 				TickDelegate tickDelegate,
 				long startTime,
 				long tickDuration) {
-			super(CoreServices.ACTION_PROCESSOR.getId(), ServiceState.class, 
-					CoreServices.CANONICAL_STATE.getId());
+			super(SERVICE_INFO);
 			_recvPort = recvPort;
 			_recvBufferLength = recvBufferLength;
 			_sendBufferLength = sendBufferLength;

@@ -94,7 +94,7 @@ public class CrowdHammerCli<TBuffer extends ResizingBuffer> {
 		public void onCrowdHammerEvent(CrowdHammer crowdHammer,
 				CrowdHammerEvent event) {
 			if (event.getEventType() == EventType.TEST_EVENT) {
-				System.out.println(event.getTestState() + " " + event.getException());
+				System.out.println(event.getTestState() + (event.hadException()? " " + Util.stackTraceToString(event.getException()) : ""));
 			}
 		}
 	};

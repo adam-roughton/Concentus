@@ -21,11 +21,12 @@ import com.adamroughton.concentus.cluster.ClusterUtil;
 import com.adamroughton.concentus.cluster.CorePath;
 import com.adamroughton.concentus.cluster.ExceptionCallback;
 import com.adamroughton.concentus.cluster.TestClusterBase;
-import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.data.BufferFactory;
 import com.adamroughton.concentus.data.NullResizingBuffer;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInit;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
@@ -251,7 +252,6 @@ public class TestClusterServiceContainer extends TestClusterBase {
 	 * 
 	 */
 	
-	
 	private Triplet<String, ServiceContainer<ServiceState>, ClusterServiceCollector<ServiceState>> 
 				newContainerWithCollector(UUID clusterId, String type, Object preStartData) 
 			throws Throwable {
@@ -271,18 +271,13 @@ public class TestClusterServiceContainer extends TestClusterBase {
 		ServiceDeployment<TState> deployment = new ServiceDeployment<TState>() {
 
 			@Override
-			public Class<TState> stateType() {
-				return stateType;
+			public ServiceInfo<TState> serviceInfo() {
+				return new ServiceInfo<>(serviceType, stateType);
 			}
-
+			
 			@Override
-			public String serviceType() {
-				return serviceType;
-			}
-
-			@Override
-			public String[] serviceDependencies() {
-				return new String[0];
+			public Iterable<ServiceInfo<TState>> getHostedServicesInfo() {
+				return Collections.emptyList();
 			}
 
 			@Override
@@ -299,6 +294,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 			public void onPreStart(StateData<TState> stateData) {
 				stateData.setDataForCoordinator(preStartData);
 			}
+			
 		};
 		
 		ServiceContainer<TState> container = new ServiceContainer<>(concentusHandle, clusterHandle, deployment, new TestComponentResolver(), _exCallback);

@@ -11,9 +11,9 @@ import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.InstanceFactory;
 import com.adamroughton.concentus.cluster.ClusterParticipant;
 import com.adamroughton.concentus.cluster.ClusterPath;
-import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.data.KryoRegistratorDelegate;
 import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.netflix.curator.utils.ZKPaths;
 

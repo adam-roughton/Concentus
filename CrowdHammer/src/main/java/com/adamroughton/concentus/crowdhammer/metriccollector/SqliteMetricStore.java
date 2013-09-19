@@ -9,6 +9,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 
 import org.javatuples.Pair;
 
@@ -115,7 +116,7 @@ public class SqliteMetricStore implements MetricStore {
 	@Override
 	public void pushTestRunMetaData(int runId, String name, int clientCount, 
 			long durationMillis, Class<? extends CollectiveApplication> applicationClass, 
-			Class<? extends ClientAgent> agentClass, List<Pair<String, Integer>> deploymentInfo) {
+			Class<? extends ClientAgent> agentClass, Set<Pair<String, Integer>> deploymentInfo) {
 		
 		try {
 			_insertRunMetaDataStatement.setInt(1, runId);

@@ -7,8 +7,8 @@ import java.io.IOException;
 import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -24,13 +24,13 @@ import com.adamroughton.concentus.cluster.CorePath;
 import com.adamroughton.concentus.cluster.coordinator.CoordinatorClusterHandle;
 import com.adamroughton.concentus.cluster.coordinator.MetricRegistrationCallback;
 import com.adamroughton.concentus.cluster.coordinator.ServiceIdAllocator;
-import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.crowdhammer.ClientAgent;
 import com.adamroughton.concentus.data.DataType;
 import com.adamroughton.concentus.data.KryoRegistratorDelegate;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.data.cluster.kryo.MetricSourceMetaData;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint;
 import com.adamroughton.concentus.data.events.bufferbacked.MetricEvent;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
@@ -178,7 +178,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 	
 	public void newTestRun(String testName, int clientCount, 
 			long durationMillis, Class<? extends CollectiveApplication> applicationClass, 
-			Class<? extends ClientAgent> agentClass, List<Pair<String, Integer>> deploymentInfo) {
+			Class<? extends ClientAgent> agentClass, Set<Pair<String, Integer>> deploymentInfo) {
 		_nextMetricSourceId = 0;
 		_currentTestRunId++;
 		
@@ -389,7 +389,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 		public long durationMillis; 
 		public Class<? extends CollectiveApplication> applicationClass; 
 		public Class<? extends ClientAgent> agentClass;
-		public List<Pair<String, Integer>> deploymentInfo;
+		public Set<Pair<String, Integer>> deploymentInfo;
 		
 		// for Kryo
 		@SuppressWarnings("unused")
@@ -397,7 +397,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 		
 		public NewTestRunEvent(String testName, int runId, int clientCount, 
 			long durationMillis, Class<? extends CollectiveApplication> applicationClass, 
-			Class<? extends ClientAgent> agentClass, List<Pair<String, Integer>> deploymentInfo) {
+			Class<? extends ClientAgent> agentClass, Set<Pair<String, Integer>> deploymentInfo) {
 			this.testName = testName;
 			this.runId = runId;
 			this.clientCount = clientCount;

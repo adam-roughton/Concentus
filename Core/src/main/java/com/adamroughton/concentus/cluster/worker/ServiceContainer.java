@@ -31,6 +31,7 @@ import com.adamroughton.concentus.cluster.ClusterUtil;
 import com.adamroughton.concentus.cluster.worker.ClusterServiceSignalListener.ListenerDelegate;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInit;
 import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.disruptor.FailFastExceptionHandler;
@@ -52,8 +53,7 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 	private final ServiceDeployment<TState> _deployment;
 	private final ComponentResolver<? extends ResizingBuffer> _componentResolver;
 	private final FatalExceptionCallback _exCallback;
-	private final String _serviceType;
-	private final Class<TState> _stateType;
+	private final ServiceInfo<TState> _serviceInfo;
 	private final TState _createdState;	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	
@@ -76,7 +76,7 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 				@Override
 				public void translateTo(StateChangeEntry<TState> event,
 						long sequence) {
-					event.signalEntry = new StateEntry<TState>(_stateType, newState, signalData, -1);
+					event.signalEntry = new StateEntry<TState>(_serviceInfo.stateType(), newState, signalData, -1);
 					event.expectedState = expectedCurrentState;
 				}
 			});
@@ -112,7 +112,7 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 			_currentState = newState;
 			
 			// carry the signal version over to the new state
-			StateEntry<TState> stateEntry = new StateEntry<TState>(_stateType, newState, 
+			StateEntry<TState> stateEntry = new StateEntry<TState>(_serviceInfo.stateType(), newState, 
 					dataHandle.getDataForCoordinator(), 
 					event.signalEntry.version());
 						
@@ -152,10 +152,9 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 		_deployment = Objects.requireNonNull(serviceDeployment);
 		_componentResolver = Objects.requireNonNull(componentResolver);
 		_exCallback = Objects.requireNonNull(exCallback);
-		_serviceType = Objects.requireNonNull(_deployment.serviceType());
-		_stateType = Objects.requireNonNull(_deployment.stateType());
+		_serviceInfo = Objects.requireNonNull(_deployment.serviceInfo());
 		
-		_createdState = ClusterUtil.validateStateType(_stateType).getValue0();
+		_createdState = ClusterUtil.validateStateType(_serviceInfo.stateType()).getValue0();
 		
 		_serviceContext = new ServiceExecutionContext<>(_componentResolver, 
 				_cluster, _concentusHandle);
@@ -187,7 +186,7 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 			
 			// write the expected state type
 			String stateTypePath = makeServicePath(SERVICE_STATE_TYPE);
-			_cluster.createOrSet(stateTypePath, _stateType);
+			_cluster.createOrSet(stateTypePath, _serviceInfo.stateType());
 			
 			_serviceDisruptor.start();
 			
@@ -195,14 +194,15 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 			// uses to signal the service to enter a new state)
 			String signalPath = makeServicePath(SERVICE_STATE_SIGNAL);
 			_listener = new ClusterServiceSignalListener<>(
-					_stateType,
+					_serviceInfo.stateType(),
 					_cluster.getClient(), 
 					signalPath, 
-					_signalListener);
+					_signalListener,
+					_concentusHandle);
 			_listener.start();
 			
 			// confirm that the service is now created, allow coordinator to proceed
-			StateEntry<TState> stateEntry = new StateEntry<TState>(_stateType, _createdState, 
+			StateEntry<TState> stateEntry = new StateEntry<TState>(_serviceInfo.stateType(), _createdState, 
 					dataHandle.getDataForCoordinator(), -1);			
 			String statePath = makeServicePath(SERVICE_STATE);
 			_cluster.createOrSetEphemeral(statePath, stateEntry);
@@ -225,7 +225,7 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 	}
 	
 	private String serviceRootPath() {
-		String serviceTypePath = ZKPaths.makePath(_cluster.resolvePathFromRoot(SERVICES), _serviceType);
+		String serviceTypePath = ZKPaths.makePath(_cluster.resolvePathFromRoot(SERVICES), _serviceInfo.serviceType());
 		return _cluster.makeIdPath(serviceTypePath);
 	}
 	

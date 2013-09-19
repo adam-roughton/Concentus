@@ -75,7 +75,8 @@ public class TestClusterServiceStateListener extends TestClusterBase {
 		});
 		_client.start();
 		_exCallback = new ExceptionCallback();
-		_nodeListener = new ClusterServiceSignalListener<>(ServiceState.class, _client, _signalPath, _listener);
+		_nodeListener = new ClusterServiceSignalListener<>(ServiceState.class, _client, 
+				_signalPath, _listener, _exCallback);
 	}
 	
 	@After

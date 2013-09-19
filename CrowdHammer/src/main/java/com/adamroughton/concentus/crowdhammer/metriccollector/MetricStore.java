@@ -1,7 +1,7 @@
 package com.adamroughton.concentus.crowdhammer.metriccollector;
 
 import java.io.Closeable;
-import java.util.List;
+import java.util.Set;
 
 import org.javatuples.Pair;
 
@@ -13,7 +13,7 @@ public interface MetricStore extends Closeable {
 
 	void pushTestRunMetaData(int runId, String name, int clientCount, 
 			long durationMillis, Class<? extends CollectiveApplication> applicationClass, 
-			Class<? extends ClientAgent> agentClass, List<Pair<String, Integer>> deploymentInfo);
+			Class<? extends ClientAgent> agentClass, Set<Pair<String, Integer>> deploymentInfo);
 	
 	void pushSourceMetaData(int runId, int sourceId, String name, String serviceType);
 	

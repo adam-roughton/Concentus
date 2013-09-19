@@ -30,7 +30,6 @@ import com.adamroughton.concentus.ConcentusEndpoints;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.CoreServices;
-import com.adamroughton.concentus.cluster.data.ServiceEndpoint;
 import com.adamroughton.concentus.cluster.worker.ClusterHandle;
 import com.adamroughton.concentus.cluster.worker.ClusterService;
 import com.adamroughton.concentus.cluster.worker.ConcentusServiceBase;
@@ -39,6 +38,8 @@ import com.adamroughton.concentus.cluster.worker.ServiceDeploymentBase;
 import com.adamroughton.concentus.cluster.worker.StateData;
 import com.adamroughton.concentus.data.DataType;
 import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.messaging.EventHeader;
@@ -79,10 +80,10 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 		}
 		
 		public ClientHandlerServiceDeployment(int recvPort, int recvBufferLength, int sendBufferLength) {
-			super(CoreServices.CLIENT_HANDLER.getId(), 
+			super(new ServiceInfo<>(CoreServices.CLIENT_HANDLER.getId(), 
 					ServiceState.class, 
-					CoreServices.CANONICAL_STATE.getId(), 
-					CoreServices.ACTION_PROCESSOR.getId());
+					CoreServices.ACTION_PROCESSOR.getId(), 
+					CoreServices.CANONICAL_STATE.getId()));
 			_recvPort = recvPort;
 			_recvBufferLength = recvBufferLength;
 			_sendBufferLength = sendBufferLength;
