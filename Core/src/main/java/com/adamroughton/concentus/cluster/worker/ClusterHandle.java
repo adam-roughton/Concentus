@@ -5,13 +5,11 @@ import static com.adamroughton.concentus.cluster.CorePath.*;
 import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
-import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.InstanceFactory;
+import com.adamroughton.concentus.cluster.ClusterHandleSettings;
 import com.adamroughton.concentus.cluster.ClusterParticipant;
 import com.adamroughton.concentus.cluster.ClusterPath;
-import com.adamroughton.concentus.data.KryoRegistratorDelegate;
 import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint;
 import com.adamroughton.concentus.model.CollectiveApplication;
@@ -19,21 +17,15 @@ import com.netflix.curator.utils.ZKPaths;
 
 public class ClusterHandle extends ClusterParticipant implements Closeable {
 
-	public ClusterHandle(String zooKeeperAddress, String root,
-			UUID clusterId, FatalExceptionCallback exHandler) {
-		super(zooKeeperAddress, root, clusterId, exHandler);
-	}	
-	
-	public ClusterHandle(String zooKeeperAddress, String root,
-			UUID clusterId, KryoRegistratorDelegate kryoRegistrator, FatalExceptionCallback exHandler) {
-		super(zooKeeperAddress, root, clusterId, kryoRegistrator, exHandler);
+	public ClusterHandle(ClusterHandleSettings handleSettings) {
+		super(handleSettings);
 	}	
 
 	@SuppressWarnings("unchecked")
 	public InstanceFactory<? extends CollectiveApplication> getApplicationInstanceFactory() {
 		InstanceFactory<?> factoryObj = read(resolvePathFromRoot(APPLICATION), InstanceFactory.class);
 		Class<?> instanceClass = factoryObj.instanceType();
-		if (!instanceClass.isAssignableFrom(CollectiveApplication.class)) {
+		if (!CollectiveApplication.class.isAssignableFrom(instanceClass)) {
 			throw new RuntimeException(String.format(
 					"The InstanceFactory found does not create" +
 					" instances of type CollectiveApplication (was %s)", 

@@ -11,6 +11,7 @@ import org.junit.After;
 import org.junit.Before;
 import org.junit.Test;
 
+import com.adamroughton.concentus.cluster.ClusterHandleSettings;
 import com.adamroughton.concentus.cluster.CorePath;
 import com.adamroughton.concentus.cluster.ExceptionCallback;
 import com.adamroughton.concentus.cluster.TestClusterBase;
@@ -63,7 +64,7 @@ public class TestServiceHandle extends TestClusterBase {
 		_kryo = Util.newKryoInstance();
 		
 		_exCallback = new ExceptionCallback();
-		_clusterHandle = new CoordinatorClusterHandle(getZooKeeperAddress(), ROOT, HANDLE_CLUSTER_ID, _exCallback);
+		_clusterHandle = new CoordinatorClusterHandle(new ClusterHandleSettings(getZooKeeperAddress(), ROOT, HANDLE_CLUSTER_ID, _exCallback));
 		_clusterHandle.start();
 		_serviceHandle = new ServiceHandle<>(_testServicePath, "test", ServiceState.class, _clusterHandle);
 		_serviceHandle.getListenable().addListener(_listener);

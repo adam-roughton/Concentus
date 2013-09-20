@@ -6,15 +6,13 @@ import it.unimi.dsi.fastutil.objects.Object2IntMap;
 import java.io.IOException;
 import java.util.Arrays;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.zookeeper.data.Stat;
 
-import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.cluster.ClusterHandleSettings;
 import com.adamroughton.concentus.cluster.CorePath;
 import com.adamroughton.concentus.cluster.worker.ClusterHandle;
-import com.adamroughton.concentus.data.KryoRegistratorDelegate;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInit;
 import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
@@ -25,15 +23,8 @@ public class CoordinatorClusterHandle extends ClusterHandle {
 	private final MetricRegistrationListener _metricRegistrationListener;
 	private final Object2IntMap<String> _typeIndexLookup = new Object2IntArrayMap<>();
 	
-	public CoordinatorClusterHandle(String zooKeeperAddress, String root,
-			UUID clusterId, FatalExceptionCallback exHandler) {
-		this(zooKeeperAddress, root, clusterId, 
-				KryoRegistratorDelegate.NULL_DELEGATE, exHandler);
-	}
-	
-	public CoordinatorClusterHandle(String zooKeeperAddress, String root,
-			UUID clusterId, KryoRegistratorDelegate kryoRegistratorDelegate, FatalExceptionCallback exHandler) {
-		super(zooKeeperAddress, root, clusterId, kryoRegistratorDelegate, exHandler);
+	public CoordinatorClusterHandle(ClusterHandleSettings handleSettings) {
+		super(handleSettings);
 		_metricRegistrationListener = new MetricRegistrationListener(this);
 	}
 	

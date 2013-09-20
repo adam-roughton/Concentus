@@ -28,7 +28,6 @@ import org.apache.zookeeper.KeeperException.Code;
 import org.apache.zookeeper.ZKUtil;
 
 import com.adamroughton.concentus.FatalExceptionCallback;
-import com.adamroughton.concentus.data.KryoRegistratorDelegate;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.Kryo;
 import com.netflix.curator.framework.CuratorFramework;
@@ -39,55 +38,34 @@ import com.netflix.curator.utils.ZKPaths;
 
 public class ClusterParticipant implements Closeable {
 
-	private final FatalExceptionCallback _exHandler;
-	
-	private final UUID _clusterParticipantId;
+	private final ClusterHandleSettings _settings;
 	private final CuratorFramework _client;
-	private final String _root;
 	private final Kryo _kryo;
-	
-	public ClusterParticipant(
-			String zooKeeperAddress, 
-			String root,
-			UUID clusterId,
-			FatalExceptionCallback exHandler) {
-		this(zooKeeperAddress, root, clusterId, null, exHandler);
-	}
-	
-	public ClusterParticipant(
-			String zooKeeperAddress, 
-			String root,
-			UUID clusterId,
-			KryoRegistratorDelegate kryoRegistrator,
-			final FatalExceptionCallback exHandler) {
-		_exHandler = Objects.requireNonNull(exHandler);
-		_client = CuratorFrameworkFactory.newClient(zooKeeperAddress, new ExponentialBackoffRetry(1000, 3));
+		
+	public ClusterParticipant(final ClusterHandleSettings handleSettings) {
+		_settings = Objects.requireNonNull(handleSettings);
+		
+		_client = CuratorFrameworkFactory.newClient(handleSettings.zooKeeperAddress(), new ExponentialBackoffRetry(1000, 3));
 		_client.getUnhandledErrorListenable().addListener(new UnhandledErrorListener() {
 			
 			@Override
 			public void unhandledError(String message, Throwable e) {
-				exHandler.signalFatalException(e);
+				handleSettings.exCallback().signalFatalException(e);
 			}
 		});
-		_clusterParticipantId = Objects.requireNonNull(clusterId);
-		_root = Objects.requireNonNull(root);
 		
 		_kryo = Util.newKryoInstance();
-		if (kryoRegistrator != null) {
-			kryoRegistrator.register(_kryo);
-		}
-		
-		if (!Util.isValidZKRoot(root)) {
-			throw new IllegalArgumentException(String.format("The root %s is not a valid ZooKeeper root.", root));
+		if (handleSettings.kryoRegistratorDelegate() != null) {
+			handleSettings.kryoRegistratorDelegate().register(_kryo);
 		}
 	}
 	
 	public UUID getMyId() {
-		return _clusterParticipantId;
+		return _settings.clusterId();
 	}
 	
 	public String getMyIdString() {
-		return _clusterParticipantId.toString();
+		return getMyId().toString();
 	}
 	
 	public String resolvePathFromRoot(ClusterPath path) {
@@ -95,11 +73,11 @@ public class ClusterParticipant implements Closeable {
 			throw new IllegalArgumentException("The path cannot be resolved as it " +
 					"is not relative to the application root");
 		}
-		return path.getAbsolutePath(_root);
+		return path.getAbsolutePath(_settings.zooKeeperAppRoot());
 	}
 	
-	public String getAppRoot() {
-		return _root;
+	public ClusterHandleSettings settings() {
+		return _settings;
 	}
 	
 	public CuratorFramework getClient() {
@@ -107,7 +85,7 @@ public class ClusterParticipant implements Closeable {
 	}
 	
 	protected FatalExceptionCallback getExHandler() {
-		return _exHandler;
+		return _settings.exCallback();
 	}
 	
 	public void start() throws Exception {
@@ -206,7 +184,7 @@ public class ClusterParticipant implements Closeable {
 			}
 			return true;
 		} catch (Exception e) {
-			_exHandler.signalFatalException(e);
+			_settings.exCallback().signalFatalException(e);
 			return false;
 		}
 	}
@@ -217,7 +195,7 @@ public class ClusterParticipant implements Closeable {
 				ZKUtil.deleteRecursive(_client.getZookeeperClient().getZooKeeper(), path);
 			}
 		} catch (Exception e) {
-			_exHandler.signalFatalException(e);
+			_settings.exCallback().signalFatalException(e);
 		}
 	}
 	
@@ -230,15 +208,15 @@ public class ClusterParticipant implements Closeable {
 				}
 			}
 		} catch (Exception e) {
-			_exHandler.signalFatalException(e);
+			_settings.exCallback().signalFatalException(e);
 		}
 	}
 	
 	public final void ensurePathCreated(String path) {
-		ClusterUtil.ensurePathCreated(_client, path, _exHandler);
+		ClusterUtil.ensurePathCreated(_client, path, _settings.exCallback());
 	}
 	
 	public final void ensureEphemeralPathCreated(String path) {
-		ClusterUtil.ensureEphemeralPathCreated(_client, path, _exHandler);
+		ClusterUtil.ensureEphemeralPathCreated(_client, path, _settings.exCallback());
 	}
 }

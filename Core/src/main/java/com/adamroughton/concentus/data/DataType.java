@@ -15,10 +15,13 @@
  */
 package com.adamroughton.concentus.data;
 
+import java.lang.reflect.Field;
+import java.util.Arrays;
 import java.util.Objects;
 
 import org.javatuples.Pair;
 import org.javatuples.Tuple;
+import org.objenesis.ObjenesisStd;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
@@ -95,14 +98,7 @@ public enum DataType implements KryoRegistratorDelegate {
 	 * Utility types
 	 */
 	@SuppressWarnings("rawtypes")
-	PAIR(1000, KRYO, Pair.class, new TupleKryoRegistratorDelegate<Pair>(Pair.class, new TupleCreateDelegate<Pair>() {
-
-		@Override
-		public Pair newInstance(Object[] array) {
-			return Pair.fromArray(array);
-		}
-	})),
-	
+	PAIR(1000, KRYO, Pair.class, new TupleKryoRegistratorDelegate<Pair>(Pair.class)),
 	
 	;	
 	
@@ -210,10 +206,36 @@ public enum DataType implements KryoRegistratorDelegate {
 	
 	private static class TupleSerializer<TTuple extends Tuple> extends Serializer<TTuple> {
 		
-		private final TupleCreateDelegate<TTuple> _createDelegate;
+		private final Class<TTuple> _tupleType;
+		private final Field _valuesArrayField;
+		private final Field _valuesListField;
+		private final Field[] _valueFields;
+		private final ObjenesisStd _objenesis;
 		
-		public TupleSerializer(TupleCreateDelegate<TTuple> createDelegate) {
-			_createDelegate = Objects.requireNonNull(createDelegate);
+		public TupleSerializer(Class<TTuple> tupleType) {
+			try {
+				_tupleType = Objects.requireNonNull(tupleType);
+				
+				_valuesArrayField = Tuple.class.getDeclaredField("valueArray");
+				_valuesArrayField.setAccessible(true);
+				
+				_valuesListField = Tuple.class.getDeclaredField("valueList");
+				_valuesListField.setAccessible(true);
+				
+				_objenesis = new ObjenesisStd();
+				
+				Field sizeField = tupleType.getDeclaredField("SIZE");
+				sizeField.setAccessible(true);
+				int tupleLength = sizeField.getInt(null);
+				
+				_valueFields = new Field[tupleLength];
+				for (int i = 0; i < tupleLength; i++) {
+					_valueFields[i] = tupleType.getDeclaredField("val" + i);
+					_valueFields[i].setAccessible(true);
+				}
+	        } catch (Exception e) {
+	            throw new RuntimeException(e);
+	        }	
 		}
 		
 		@Override
@@ -221,10 +243,35 @@ public enum DataType implements KryoRegistratorDelegate {
 			kryo.writeObject(output, tuple.toArray());
 		}
 
+		@SuppressWarnings("unchecked")
 		@Override
 		public TTuple read(Kryo kryo, Input input, Class<TTuple> type) {
-			Object[] values = kryo.readObject(input, Object[].class);
-			return _createDelegate.newInstance(values);
+			try {
+				if (!type.equals(_tupleType)) {
+					throw new RuntimeException("The given tuple type: " + type.getName() + 
+							" does not match the tuple type of this serializer: " + _tupleType.getName());
+				}
+				
+				/*
+				 * TODO: Pretty hacky - relies on children not accessing members
+				 * on the object during their deserialization.
+				 */
+				Object tuple = _objenesis.newInstance(type);
+				kryo.reference(tuple);
+			
+				Object[] values = kryo.readObject(input, Object[].class);
+				_valuesArrayField.set(tuple, values);
+				
+				_valuesListField.set(tuple, Arrays.asList(values));
+				
+				for (int i = 0; i < values.length; i++) {
+					_valueFields[i].set(tuple, values[i]);
+				}
+				
+				return (TTuple) tuple;
+			} catch (Exception e) {
+				throw new RuntimeException(e);
+			}			
 		}
 		
 	}
@@ -232,16 +279,14 @@ public enum DataType implements KryoRegistratorDelegate {
 	private static class TupleKryoRegistratorDelegate<TTuple extends Tuple> implements DataTypeKryoRegistratorDelegate {
 		
 		private final Class<TTuple> _tupleType;
-		private final TupleSerializer<TTuple> _serializer;
 		
-		public TupleKryoRegistratorDelegate(Class<TTuple> tupleType, TupleCreateDelegate<TTuple> registratorDelegate) {
+		public TupleKryoRegistratorDelegate(Class<TTuple> tupleType) {
 			_tupleType = Objects.requireNonNull(tupleType);
-			_serializer = new TupleSerializer<>(registratorDelegate);
 		}
 		
 		@Override
 		public void register(int id, Kryo kryo) {
-			kryo.register(_tupleType, _serializer, id);
+			kryo.register(_tupleType, new TupleSerializer<>(_tupleType), id);
 		}
 		
 	}

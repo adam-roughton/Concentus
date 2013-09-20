@@ -43,6 +43,7 @@ import java.util.Collections
 import com.adamroughton.concentus.cluster.worker.ClusterHandle
 import java.util.UUID
 import com.adamroughton.concentus.util.Container
+import com.adamroughton.concentus.cluster.ClusterHandleSettings
 
 private case class RegisterTickReceiver(streamId: Int, receiverActor: ActorRef, objId: String)
 private case class Tick(time: Long)
@@ -209,10 +210,10 @@ class ActionReceiver(
 			}
 			
 			val concentusHandle = new ConcentusHandle(new DefaultClock(), receiverAddress, zooKeeperAddress, Collections.emptySet())
-			val clusterHandle = new ClusterHandle(zooKeeperAddress, zooKeeperAppRoot, UUID.randomUUID, concentusHandle)
+			val clusterHandleSettings = new ClusterHandleSettings(zooKeeperAddress, zooKeeperAppRoot, UUID.randomUUID, concentusHandle)
 			
-			val serviceContainer = new ServiceContainer(concentusHandle, 
-			    clusterHandle, actionCollectorDeployment, resolver, concentusHandle)
+			val serviceContainer = new ServiceContainer(clusterHandleSettings, concentusHandle, 
+			    actionCollectorDeployment, resolver)
 			(serviceRef.get(), serviceContainer)
 		}
 		

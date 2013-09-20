@@ -28,6 +28,7 @@ import com.adamroughton.concentus.CoreServices;
 import com.adamroughton.concentus.actioncollector.ActionCollectorService;
 import com.adamroughton.concentus.actioncollector.ActionCollectorService.ActionCollectorServiceDeployment;
 import com.adamroughton.concentus.canonicalstate.TickTimer;
+import com.adamroughton.concentus.cluster.ClusterHandleSettings;
 import com.adamroughton.concentus.cluster.worker.ClusterHandle;
 import com.adamroughton.concentus.cluster.worker.ClusterService;
 import com.adamroughton.concentus.cluster.worker.ConcentusServiceBase;
@@ -201,7 +202,10 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 					}
 			
 		};
-		_actionProcessorContainer = new ServiceContainer<>(_concentusHandle, cluster, actionCollector, _componentResolver, _concentusHandle);
+		ClusterHandleSettings canonicalStateHandleSettings = cluster.settings();
+		ClusterHandleSettings actionProcHandleSettings = new ClusterHandleSettings(canonicalStateHandleSettings.zooKeeperAddress(), 
+				canonicalStateHandleSettings.zooKeeperAppRoot(), canonicalStateHandleSettings.exCallback());
+		_actionProcessorContainer = new ServiceContainer<>(actionProcHandleSettings, _concentusHandle, actionCollector, _componentResolver);
 		_actionProcessorContainer.start();
 	}
 	

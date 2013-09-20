@@ -193,7 +193,8 @@ public final class GuardianManager implements Closeable {
 					
 					// check that the state hasn't been updated in the meantime
 					if (_guardians.get(availableGuardian) == GuardianTrackerState.WAITING) {
-						_clusterHandle.setServiceSignal(availableGuardian, GuardianState.class, GuardianState.RUN, new Pair<>(deployment, componentResolver));
+						_clusterHandle.setServiceSignal(availableGuardian, GuardianState.class, GuardianState.RUN, 
+								new Pair<>(deployment, componentResolver));
 						return guardianDeployment;
 					} else {
 						_deployments.remove(availableGuardian, guardianDeployment);

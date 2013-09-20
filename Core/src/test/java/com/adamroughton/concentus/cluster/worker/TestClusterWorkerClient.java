@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import com.adamroughton.concentus.cluster.ClusterHandleSettings;
 import com.adamroughton.concentus.cluster.CorePath;
 import com.adamroughton.concentus.cluster.ExceptionCallback;
 import com.adamroughton.concentus.cluster.TestClusterBase;
@@ -36,7 +37,7 @@ public class TestClusterWorkerClient extends TestClusterBase {
 	@Before
 	public void before() throws Exception {
 		_exCallback = new ExceptionCallback();
-		_workerClient = new ClusterHandle(getZooKeeperAddress(), ROOT, PARTICIPANT_ID, _exCallback);
+		_workerClient = new ClusterHandle(new ClusterHandleSettings(getZooKeeperAddress(), ROOT, PARTICIPANT_ID, _exCallback));
 		_workerClient.start();
 	}
 	

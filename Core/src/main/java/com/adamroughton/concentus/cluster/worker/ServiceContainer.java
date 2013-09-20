@@ -25,7 +25,7 @@ import java.util.concurrent.TimeUnit;
 import com.adamroughton.concentus.ComponentResolver;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.Constants;
-import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.cluster.ClusterHandleSettings;
 import com.adamroughton.concentus.cluster.ClusterPath;
 import com.adamroughton.concentus.cluster.ClusterUtil;
 import com.adamroughton.concentus.cluster.worker.ClusterServiceSignalListener.ListenerDelegate;
@@ -52,7 +52,6 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 	private final ClusterHandle _cluster;
 	private final ServiceDeployment<TState> _deployment;
 	private final ComponentResolver<? extends ResizingBuffer> _componentResolver;
-	private final FatalExceptionCallback _exCallback;
 	private final ServiceInfo<TState> _serviceInfo;
 	private final TState _createdState;	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
@@ -95,6 +94,7 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 				// initialise the service
 				String initDataPath = makeServicePath(SERVICE_INIT_DATA);
 				ServiceInit initData = _cluster.read(initDataPath, ServiceInit.class);
+				Objects.requireNonNull(initData, "The service must be initialised with a valid " + ServiceInit.class.getName() + " object (was null)");
 				_service = _serviceContext.createService(initData.getServiceId(), _context, _deployment);
 			}
 			
@@ -138,20 +138,17 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 			});
 		}
 	};
-
-	
+			
 	@SuppressWarnings("unchecked")
 	public ServiceContainer(
+			ClusterHandleSettings clusterHandleSettings,
 			ConcentusHandle concentusHandle,
-			ClusterHandle clusterHandle,
 			ServiceDeployment<TState> serviceDeployment,
-			ComponentResolver<? extends ResizingBuffer> componentResolver,
-			FatalExceptionCallback exCallback) {
+			ComponentResolver<? extends ResizingBuffer> componentResolver) {
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
-		_cluster = Objects.requireNonNull(clusterHandle);
+		_cluster = new ClusterHandle(clusterHandleSettings);
 		_deployment = Objects.requireNonNull(serviceDeployment);
 		_componentResolver = Objects.requireNonNull(componentResolver);
-		_exCallback = Objects.requireNonNull(exCallback);
 		_serviceInfo = Objects.requireNonNull(_deployment.serviceInfo());
 		
 		_createdState = ClusterUtil.validateStateType(_serviceInfo.stateType()).getValue0();
@@ -167,7 +164,7 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 			}
 			
 		}, 16, _executor);
-		_serviceDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Service State Disruptor", exCallback));
+		_serviceDisruptor.handleExceptionsWith(new FailFastExceptionHandler("Service State Disruptor", _concentusHandle));
 		_serviceDisruptor.handleEventsWith(_serviceStateChangeHandler);
 	}
 
@@ -208,7 +205,7 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 			_cluster.createOrSetEphemeral(statePath, stateEntry);
 			Log.info("Registered with cluster");
 		} catch (Exception e) {
-			_exCallback.signalFatalException(e);
+			_concentusHandle.signalFatalException(e);
 		}
 	}
 	

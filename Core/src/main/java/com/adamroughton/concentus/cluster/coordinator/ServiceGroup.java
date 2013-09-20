@@ -21,6 +21,7 @@ import com.adamroughton.concentus.cluster.coordinator.ServiceHandle.ServiceHandl
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
 import com.adamroughton.concentus.util.IdentityWrapper;
 import com.adamroughton.concentus.util.TimeoutTracker;
+import com.esotericsoftware.minlog.Log;
 import com.netflix.curator.framework.listen.Listenable;
 
 public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements Iterable<ServiceHandle<TState>> {
@@ -111,6 +112,7 @@ public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements
 		@Override
 		public void onServiceHandleEvent(ServiceHandle<TState> serviceHandle,
 				ServiceHandleEvent<TState> event) {
+			Log.info(serviceHandle.getServicePath() + " had service event " + event.toString());
 			processServiceEvent(serviceHandle, event.getCurrentState(), event.getEventType());
 		}
 	};

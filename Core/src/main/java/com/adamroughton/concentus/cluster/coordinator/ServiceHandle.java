@@ -69,6 +69,14 @@ public final class ServiceHandle<TState extends Enum<TState> & ClusterState> imp
 		public boolean wasInternalEvent() {
 			return _serviceStateEntry != null && _signalStateEntry == null;
 		}
+
+		@Override
+		public String toString() {
+			return "ServiceHandleEvent [eventType=" + _eventType
+					+ ", serviceStateEntry=" + _serviceStateEntry
+					+ ", signalStateEntry=" + _signalStateEntry + "]";
+		}
+		
 		
 	}
 	

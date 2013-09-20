@@ -80,7 +80,7 @@ public class TestClusterParticipant extends TestClusterBase {
 		};
 		_kryo = Util.newKryoInstance();
 		registrator.register(_kryo);
-		_clusterParticipant = new ClusterParticipant(getZooKeeperAddress(), ROOT, PARTICIPANT_ID, registrator, _exCallback);
+		_clusterParticipant = new ClusterParticipant(new ClusterHandleSettings(getZooKeeperAddress(), ROOT, PARTICIPANT_ID, registrator, _exCallback));
 	}
 	
 	@After

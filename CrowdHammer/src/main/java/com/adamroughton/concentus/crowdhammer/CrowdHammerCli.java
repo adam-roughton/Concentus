@@ -5,7 +5,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
@@ -20,9 +19,8 @@ import asg.cliche.Shell;
 import asg.cliche.ShellFactory;
 
 import com.adamroughton.concentus.ConcentusExecutableOperations;
-import com.adamroughton.concentus.ConcentusExecutableOperations.ClusterHandleFactory;
 import com.adamroughton.concentus.ConcentusHandle;
-import com.adamroughton.concentus.FatalExceptionCallback;
+import com.adamroughton.concentus.cluster.ClusterHandleSettings;
 import com.adamroughton.concentus.cluster.coordinator.CoordinatorClusterHandle;
 import com.adamroughton.concentus.crowdhammer.CrowdHammer.CrowdHammerEvent;
 import com.adamroughton.concentus.crowdhammer.CrowdHammer.CrowdHammerEvent.EventType;
@@ -59,20 +57,13 @@ public class CrowdHammerCli<TBuffer extends ResizingBuffer> {
 			resDirPath = Paths.get(System.getProperty("user.dir"));
 		}
 		
-		Pair<CoordinatorClusterHandle, ConcentusHandle> coreComponents = 
-				ConcentusExecutableOperations.createCoreComponents("CrowdHammer", args, new ClusterHandleFactory<CoordinatorClusterHandle>() {
-
-					@Override
-					public CoordinatorClusterHandle create(String zooKeeperAddress,
-							String root, UUID clusterId,
-							FatalExceptionCallback exHandler) {
-						return new CoordinatorClusterHandle(zooKeeperAddress, root, clusterId, exHandler);
-					}
-				});
+		Pair<ClusterHandleSettings, ConcentusHandle> coreComponents = 
+				ConcentusExecutableOperations.createCoreComponents("CrowdHammer", args);
 		
+		ClusterHandleSettings clusterHandleSettings = coreComponents.getValue0();
 		ConcentusHandle handle = coreComponents.getValue1();
 		
-		try (CoordinatorClusterHandle clusterHandle = coreComponents.getValue0()) {
+		try (CoordinatorClusterHandle clusterHandle = new CoordinatorClusterHandle(clusterHandleSettings)) {
 			System.out.println("Starting CrowdHammer Coordinator");
 			clusterHandle.start();
 			CrowdHammerCli<?> coordinator = new CrowdHammerCli<>(clusterHandle, handle, resDirPath);

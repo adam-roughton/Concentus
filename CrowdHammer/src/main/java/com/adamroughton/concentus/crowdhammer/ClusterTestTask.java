@@ -1,6 +1,7 @@
 package com.adamroughton.concentus.crowdhammer;
 
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -296,20 +297,42 @@ public class ClusterTestTask implements TestTask {
 					}
 				}
 				
-				// start the services (incl. workers)
+				// start the services
 				Log.info("Starting services...");
-				for (ServiceState state : new ServiceState[] { CREATED, INIT, BIND, CONNECT, START }) {
-					// iterate through the services in order of dependency
-					for (String serviceType : dependencySet) {
-						assertRunning();
-					
+				for (String serviceType : dependencySet) {
+					for (ServiceState state : new ServiceState[] { CREATED, INIT, BIND, CONNECT, START }) {
 						ServiceGroup<ServiceState> group;
 						if (state == CREATED) {
 							group = createGroup(serviceType, serviceCountLookup.get(serviceType), 
 									timeoutTracker.getTimeout(), timeoutTracker.getUnit());
+							group.waitForStateInBackground(CREATED, timeoutTracker.getTimeout(), timeoutTracker.getUnit());
+							
 						} else {
 							group = _groupsByType.get(serviceType);
 
+							if (state == INIT) {
+								Map<String, ? extends Object> serviceInitData;
+								
+								// we need to initialise the workers with the client count they will
+								// be simulated
+								if (serviceType.equals(WorkerService.SERVICE_INFO.serviceType())) {
+									List<Pair<String, Integer>> maxClientCounts = new ArrayList<>();
+									for (ServiceHandle<ServiceState> workerService : group) {
+										int maxClientCount = workerService.getCurrentState().getStateData(Integer.class);
+										maxClientCounts.add(new Pair<>(workerService.getServicePath(), maxClientCount));
+									}
+									serviceInitData = createWorkerAllocations(clientCount, maxClientCounts);
+								} else {
+									serviceInitData = Collections.emptyMap();
+								}
+								
+								for (ServiceHandle<ServiceState> service : group) {
+									String servicePath = service.getServicePath();
+									Object initData = serviceInitData.get(servicePath);
+									_clusterHandle.setServiceInitData(_metricCollector, servicePath, serviceType, initData);
+								}
+							}
+							
 							// we need to initialise the workers with the client count they will
 							// be simulated
 							if (state == INIT && serviceType.equals(WorkerService.SERVICE_INFO.serviceType())) {
@@ -330,13 +353,8 @@ public class ClusterTestTask implements TestTask {
 							group.enterStateInBackground(state, timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 						}
 						
-						Log.info("Waiting for services of type " + serviceType + " to enter state " + state + "...");
-						// wait for the group to enter the state
-						ServiceState groupState = _groupStateLookup.get(group);
-						while (groupState != state) {
-							waitForBackgroundSignal(timeoutTracker.getTimeout(), timeoutTracker.getUnit());
-							groupState = _groupStateLookup.get(group);
-						}
+						waitForGroupToEnterState(serviceType, group, state, 
+								timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 					}
 				}
 				
@@ -365,10 +383,10 @@ public class ClusterTestTask implements TestTask {
 					group.enterStateInBackground(SHUTDOWN, timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 					
 					// wait for the group to enter the state
-					ServiceState groupState = _groupStateLookup.get(group);
+					ServiceState groupState = _groupStateLookup.get(new IdentityWrapper<>(group));
 					while (groupState != SHUTDOWN) {
 						waitForBackgroundSignal(timeoutTracker.getTimeout(), timeoutTracker.getUnit());
-						groupState = _groupStateLookup.get(group);
+						groupState = _groupStateLookup.get(new IdentityWrapper<>(group));
 					}
 				}
 			}
@@ -416,6 +434,17 @@ public class ClusterTestTask implements TestTask {
 			}
 		} finally {
 			_backgroundUpdateLock.unlock();
+		}
+	}
+	
+	private void waitForGroupToEnterState(String serviceType, ServiceGroup<ServiceState> group, 
+			ServiceState state, long timeout, TimeUnit unit) throws Exception {
+		Log.info("Waiting for services of type " + serviceType + " to enter state " + state + "...");
+		// wait for the group to enter the state
+		ServiceState groupState = _groupStateLookup.get(new IdentityWrapper<>(group));
+		while (groupState != state) {
+			waitForBackgroundSignal(timeout, unit);
+			groupState = _groupStateLookup.get(new IdentityWrapper<>(group));
 		}
 	}
 	

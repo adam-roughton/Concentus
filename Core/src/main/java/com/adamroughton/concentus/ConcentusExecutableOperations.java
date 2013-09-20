@@ -32,8 +32,7 @@ import org.apache.commons.cli.Options;
 import org.apache.commons.cli.ParseException;
 import org.javatuples.Pair;
 
-import com.adamroughton.concentus.cluster.ClusterParticipant;
-import com.adamroughton.concentus.cluster.worker.ClusterHandle;
+import com.adamroughton.concentus.cluster.ClusterHandleSettings;
 import com.adamroughton.concentus.cluster.worker.ServiceContainer;
 import com.adamroughton.concentus.cluster.worker.ServiceDeployment;
 import com.adamroughton.concentus.data.ResizingBuffer;
@@ -42,32 +41,15 @@ import com.adamroughton.concentus.util.Util;
 
 public class ConcentusExecutableOperations {
 	
-	public static interface ClusterHandleFactory<TClusterHandle extends ClusterParticipant> {
-		TClusterHandle create(String zooKeeperAddress, 
-				String root,
-				UUID clusterId,
-				FatalExceptionCallback exHandler);
-	}
-	
 	public static <TState extends Enum<TState> & ClusterState> void executeClusterService(String[] args, ServiceDeployment<TState> serviceDeployment, 
 			ComponentResolver<? extends ResizingBuffer> componentResolver) throws Exception {
-		Pair<ClusterHandle, ConcentusHandle> coreComponents = createCoreComponents("ClusterService", args, 
-				new ClusterHandleFactory<ClusterHandle>() {
+		Pair<ClusterHandleSettings, ConcentusHandle> coreComponents = createCoreComponents("ClusterService", args);
 
-					@Override
-					public ClusterHandle create(String zooKeeperAddress,
-							String root, UUID clusterId,
-							FatalExceptionCallback exHandler) {
-						return new ClusterHandle(zooKeeperAddress, root, clusterId, exHandler);
-					}
-			
-				});
-
-		ClusterHandle clusterHandle = coreComponents.getValue0();
+		ClusterHandleSettings clusterHandleSettings = coreComponents.getValue0();
 		ConcentusHandle concentusHandle = coreComponents.getValue1();
 		
-		try (ServiceContainer<TState> container = new ServiceContainer<>(concentusHandle, clusterHandle, serviceDeployment, 
-				componentResolver, concentusHandle)) {
+		try (ServiceContainer<TState> container = new ServiceContainer<>(clusterHandleSettings, 
+				concentusHandle, serviceDeployment, componentResolver)) {
 			container.start();
 			
 			// Wait for exit
@@ -78,8 +60,7 @@ public class ConcentusExecutableOperations {
 		}
 	}
 	
-	public static <TClusterHandle extends ClusterParticipant> Pair<TClusterHandle, ConcentusHandle> 
-			createCoreComponents(String name, String[] args, ClusterHandleFactory<TClusterHandle> clusterHandleFactory) {
+	public static Pair<ClusterHandleSettings, ConcentusHandle> 	createCoreComponents(String name, String[] args) {
 		Map<String, String> commandLineArgs = parseCommandLine("ClusterService", SharedCommandLineOptions.getCommandLineOptions(), args, false);
 		
 		String zooKeeperAddress = SharedCommandLineOptions.readZooKeeperAddress(commandLineArgs);
@@ -96,9 +77,10 @@ public class ConcentusExecutableOperations {
 		}	
 		ConcentusHandle concentusHandle = new ConcentusHandle(clock, hostAddress, zooKeeperAddress, traceFlagSet);
 		UUID clusterId = UUID.randomUUID();
-		TClusterHandle clusterHandle = clusterHandleFactory.create(zooKeeperAddress, zooKeeperAppRoot, clusterId, concentusHandle);
+		ClusterHandleSettings clusterHandleSettings = new ClusterHandleSettings(zooKeeperAddress, zooKeeperAppRoot, 
+				clusterId, null, concentusHandle);
 		
-		return new Pair<>(clusterHandle, concentusHandle);
+		return new Pair<>(clusterHandleSettings, concentusHandle);
 	}
 		
 	public static Map<String, String> parseCommandLineForNode(String[] args, ConcentusProcess node) {

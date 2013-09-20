@@ -47,4 +47,12 @@ public class StateEntry<TState extends Enum<TState> & ClusterState> {
 	public Class<TState> stateType() {
 		return _stateType;
 	}
+
+	@Override
+	public String toString() {
+		return "StateEntry [state=" + _state + ", stateData=" + _stateData
+				+ ", version=" + _version + ", stateType=" + _stateType + "]";
+	}
+	
+	
 }

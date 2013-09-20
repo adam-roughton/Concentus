@@ -17,6 +17,7 @@ import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.ComponentResolver;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.DrivableClock;
+import com.adamroughton.concentus.cluster.ClusterHandleSettings;
 import com.adamroughton.concentus.cluster.ClusterUtil;
 import com.adamroughton.concentus.cluster.CorePath;
 import com.adamroughton.concentus.cluster.ExceptionCallback;
@@ -265,7 +266,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 					final Object preStartData) throws Throwable {
 		ConcentusHandle concentusHandle = new ConcentusHandle(new DrivableClock(), InetAddress.getLocalHost(), 
 				getZooKeeperAddress(), Collections.<String>emptySet());
-		ClusterHandle clusterHandle = new ClusterHandle(getZooKeeperAddress(), ROOT, clusterId, _exCallback);
+		ClusterHandleSettings clusterHandleSettings = new ClusterHandleSettings(getZooKeeperAddress(), ROOT, clusterId, _exCallback);
 		
 		final AtomicReference<ServiceContext<TState>> serviceContextContainer = new AtomicReference<>();
 		ServiceDeployment<TState> deployment = new ServiceDeployment<TState>() {
@@ -297,7 +298,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 			
 		};
 		
-		ServiceContainer<TState> container = new ServiceContainer<>(concentusHandle, clusterHandle, deployment, new TestComponentResolver(), _exCallback);
+		ServiceContainer<TState> container = new ServiceContainer<>(clusterHandleSettings, concentusHandle, deployment, new TestComponentResolver());
 		container.start();
 		_exCallback.throwAnyExceptions();
 		
