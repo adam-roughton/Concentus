@@ -2,17 +2,12 @@ package com.adamroughton.concentus.cluster.coordinator;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
-import java.util.concurrent.atomic.AtomicInteger;
-import java.util.concurrent.atomic.AtomicReference;
 
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher.Event.EventType;
@@ -20,6 +15,8 @@ import org.javatuples.Pair;
 
 import com.adamroughton.concentus.ComponentResolver;
 import com.adamroughton.concentus.cluster.CorePath;
+import com.adamroughton.concentus.cluster.VersioningListenable;
+import com.adamroughton.concentus.cluster.VersioningListenableContainer;
 import com.adamroughton.concentus.cluster.worker.Guardian;
 import com.adamroughton.concentus.cluster.worker.ServiceDeployment;
 import com.adamroughton.concentus.data.ResizingBuffer;
@@ -28,16 +25,15 @@ import com.adamroughton.concentus.data.cluster.kryo.GuardianDeploymentReturnInfo
 import com.adamroughton.concentus.data.cluster.kryo.GuardianDeploymentReturnInfo.ReturnType;
 import com.adamroughton.concentus.data.cluster.kryo.GuardianState;
 import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
-import com.adamroughton.concentus.util.IdentityWrapper;
 import com.adamroughton.concentus.util.TimeoutTracker;
 import com.adamroughton.concentus.util.Util;
+import com.adamroughton.concentus.cluster.VersioningListenableContainer.ListenerInvokeDelegate;
 import com.esotericsoftware.kryo.Kryo;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.api.BackgroundCallback;
 import com.netflix.curator.framework.api.CuratorEvent;
 import com.netflix.curator.framework.api.CuratorEventType;
 import com.netflix.curator.framework.api.CuratorWatcher;
-import com.netflix.curator.framework.listen.Listenable;
 import com.netflix.curator.framework.recipes.cache.PathChildrenCache;
 import com.netflix.curator.framework.recipes.cache.PathChildrenCacheEvent;
 import com.netflix.curator.framework.recipes.cache.PathChildrenCacheEvent.Type;
@@ -249,34 +245,20 @@ public final class GuardianManager implements Closeable {
 		
 		private final String _guardianPath;
 		private final ServiceDeployment<TState> _deployment;
-		private final AtomicInteger _version = new AtomicInteger(0);
-		private final AtomicReference<GuardianDeploymentStateEntry> _state = new AtomicReference<>(
-				new GuardianDeploymentStateEntry(GuardianDeploymentState.RUNNING, null, -1));
-		
-		private final Executor _defaultListenerExecutor = Executors.newSingleThreadExecutor();
-		private final ConcurrentMap<IdentityWrapper<GuardianDeploymentListener<TState>>, ListenerEntry> _listeners = new ConcurrentHashMap<>();
-		private final Listenable<GuardianDeploymentListener<TState>> _listenable = new Listenable<GuardianDeploymentListener<TState>>() {
-			
-			@Override
-			public void removeListener(GuardianDeploymentListener<TState> listener) {
-				_listeners.remove(new IdentityWrapper<>(listener));
-			}
-			
-			@Override
-			public void addListener(GuardianDeploymentListener<TState> listener, Executor executor) {
-				Objects.requireNonNull(listener);
-				if (executor == null) {
-					executor = _defaultListenerExecutor;
-				}
-				ListenerEntry listenerEntry = new ListenerEntry(executor, _state.get().version());
-				_listeners.put(new IdentityWrapper<>(listener), listenerEntry);
-			}
-			
-			@Override
-			public void addListener(GuardianDeploymentListener<TState> listener) {
-				addListener(listener, null);
-			}
-		};
+		private final VersioningListenableContainer<GuardianDeploymentStateEntry, GuardianDeploymentListener<TState>> _listenable = 
+				new VersioningListenableContainer<>(new ListenerInvokeDelegate<GuardianDeploymentStateEntry, GuardianDeploymentListener<TState>>() {
+
+					@Override
+					public void invoke(
+							GuardianDeploymentListener<TState> listener,
+							GuardianDeploymentStateEntry deploymentStateEntry,
+							int updateVersion) {
+						GuardianDeploymentState state = deploymentStateEntry.getState();
+						GuardianDeploymentReturnInfo retInfo = deploymentStateEntry.getRetInfo();
+						listener.onDeploymentChange(GuardianDeployment.this, state, retInfo);
+					}
+					
+				});
 		
 		public GuardianDeployment(String guardianPath, 
 				ServiceDeployment<TState> deployment) {
@@ -284,81 +266,16 @@ public final class GuardianManager implements Closeable {
 			_deployment = Objects.requireNonNull(deployment);
 		}
 		
-		private void changeState(final GuardianDeploymentState newState, 
-				final GuardianDeploymentReturnInfo retInfo) {
-			GuardianDeploymentStateEntry newStateEntry = new GuardianDeploymentStateEntry(newState, retInfo, 
-					_version.getAndIncrement());
-			
-			GuardianDeploymentStateEntry currentState = _state.get();
-			boolean doUpdateAttempt = true;
-			boolean callListeners = false;
-			do {
-				if (currentState.version() < newStateEntry.version()) {
-					if (_state.compareAndSet(currentState, newStateEntry)) {
-						callListeners = true;
-						doUpdateAttempt = false;
-					} else {
-						doUpdateAttempt = true;
-					}
-				} else {
-					doUpdateAttempt = false;
-				}
-			} while (doUpdateAttempt);
-			
-			if (callListeners) {
-				for (Entry<IdentityWrapper<GuardianDeploymentListener<TState>>, ListenerEntry> entry : _listeners.entrySet()) {
-					ListenerEntry listenerEntry = entry.getValue();
-					callListenerIfNeeded(entry.getKey().get(), listenerEntry, newStateEntry);
-				}	
-			}
-		}
-		
-		public void resetListenerVersion(int version, 
-				final GuardianDeploymentListener<TState> listener) {
-			ListenerEntry storedListenerEntry = _listeners.get(new IdentityWrapper<>(listener));
-			if (storedListenerEntry == null) {
-				throw new IllegalArgumentException("The provided listener is not registered with this " + 
-						GuardianDeployment.class.getSimpleName());
-			}
-			storedListenerEntry.updateVersion.set(version);
-			callListenerIfNeeded(listener, storedListenerEntry, _state.get());
-		}
-		
-		private void callListenerIfNeeded(final GuardianDeploymentListener<TState> listener, 
-				ListenerEntry listenerEntry, final GuardianDeploymentStateEntry stateEntry) {
-			boolean done = false;
-			boolean doUpdate = false;
-			do {
-				// only update the listener if this state is newer than the last update
-				int lastUpdateVersion = listenerEntry.updateVersion.get();
-				if (lastUpdateVersion < stateEntry.version()) {
-					if (listenerEntry.updateVersion.compareAndSet(lastUpdateVersion, stateEntry.version())) {
-						done = true;
-						doUpdate = true;
-					}
-				} else {
-					done = true;
-					doUpdate = false;
-				}
-			} while (!done);
-			
-			if (doUpdate) {
-				listenerEntry.executor.execute(new Runnable() {
-
-					@Override
-					public void run() {
-						listener.onDeploymentChange(GuardianDeployment.this, stateEntry.getState(), stateEntry.getRetInfo());
-					}
-					
-				});
-			}
+		private void changeState(GuardianDeploymentState newState, 
+				GuardianDeploymentReturnInfo retInfo) {
+			_listenable.newListenerEvent(new GuardianDeploymentStateEntry(newState, retInfo));
 		}
 		
 		public GuardianDeploymentStateEntry getState() {
-			return _state.get();
+			return _listenable.getLatestEvent();
 		}
 		
-		public Listenable<GuardianDeploymentListener<TState>> getListenable() {
+		public VersioningListenable<GuardianDeploymentListener<TState>> getListenable() {
 			return _listenable;
 		}
 		
@@ -375,28 +292,16 @@ public final class GuardianManager implements Closeable {
 			return _deployment;
 		}
 		
-		private class ListenerEntry  {
-			public final Executor executor;
-			public final AtomicInteger updateVersion;
-			
-			public ListenerEntry(Executor executor, int version) {
-				this.executor = Objects.requireNonNull(executor);
-				updateVersion = new AtomicInteger(version);
-			}
-		}
-		
 	}
 	
 	public static class GuardianDeploymentStateEntry {
 		
 		private final GuardianDeploymentState _state;
 		private final GuardianDeploymentReturnInfo _retInfo;
-		private final int _version;
 		
-		public GuardianDeploymentStateEntry(GuardianDeploymentState state, GuardianDeploymentReturnInfo retInfo, int version) {
+		public GuardianDeploymentStateEntry(GuardianDeploymentState state, GuardianDeploymentReturnInfo retInfo) {
 			_state = Objects.requireNonNull(state);
 			_retInfo = retInfo;
-			_version = version;
 		}
 		
 		public GuardianDeploymentState getState() {
@@ -411,10 +316,6 @@ public final class GuardianManager implements Closeable {
 		public GuardianDeploymentReturnInfo getRetInfo() {
 			return _retInfo;
 		}
-		
-		public int version() {
-			return _version;
-		}
 
 		@Override
 		public int hashCode() {
@@ -424,7 +325,6 @@ public final class GuardianManager implements Closeable {
 					+ ((_retInfo == null) ? 0 : _retInfo.hashCode());
 			result = prime * result
 					+ ((_state == null) ? 0 : _state.hashCode());
-			result = prime * result + _version;
 			return result;
 		}
 
@@ -442,9 +342,6 @@ public final class GuardianManager implements Closeable {
 				return false;
 			}
 			if (_state != other._state) {
-				return false;
-			}
-			if (_version != other._version) {
 				return false;
 			}
 			return true;

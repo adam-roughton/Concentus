@@ -2,27 +2,24 @@ package com.adamroughton.concentus.cluster.coordinator;
 
 import java.io.Closeable;
 import java.io.IOException;
-import java.util.Map.Entry;
 import java.util.Objects;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.concurrent.Executor;
-import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import com.adamroughton.concentus.cluster.CorePath;
+import com.adamroughton.concentus.cluster.VersioningListenable;
+import com.adamroughton.concentus.cluster.VersioningListenableContainer;
+import com.adamroughton.concentus.cluster.VersioningListenableContainer.ListenerInvokeDelegate;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
 import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
-import com.adamroughton.concentus.util.IdentityWrapper;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.Kryo;
-import com.netflix.curator.framework.listen.Listenable;
+import com.esotericsoftware.minlog.Log;
 import com.netflix.curator.framework.recipes.cache.ChildData;
 import com.netflix.curator.framework.recipes.cache.NodeCache;
 import com.netflix.curator.framework.recipes.cache.NodeCacheListener;
 
 public final class ServiceHandle<TState extends Enum<TState> & ClusterState> implements Closeable {
-	
+
 	public static class ServiceHandleEvent<TState extends Enum<TState> & ClusterState> {
 		
 		public enum EventType {
@@ -90,29 +87,15 @@ public final class ServiceHandle<TState extends Enum<TState> & ClusterState> imp
 	private final CoordinatorClusterHandle _clusterHandle;
 	private final Kryo _kryo;
 	
-	private final Executor _defaultListenerExecutor = Executors.newSingleThreadExecutor();
-	private final ConcurrentMap<IdentityWrapper<ServiceHandleListener<TState>>, Executor> _listeners = new ConcurrentHashMap<>();
-	private Listenable<ServiceHandleListener<TState>> _listenable = new Listenable<ServiceHandleListener<TState>>() {
-		
-		@Override
-		public void removeListener(ServiceHandleListener<TState> listener) {
-			_listeners.remove(new IdentityWrapper<>(listener));
-		}
-		
-		@Override
-		public void addListener(ServiceHandleListener<TState> listener, Executor executor) {
-			Objects.requireNonNull(listener);
-			if (executor == null) {
-				executor = _defaultListenerExecutor;
+	private final VersioningListenableContainer<ServiceHandleEvent<TState>, ServiceHandleListener<TState>> _listenableContainer
+		= new VersioningListenableContainer<>(new ListenerInvokeDelegate<ServiceHandleEvent<TState>, ServiceHandleListener<TState>>() {
+
+			@Override
+			public void invoke(ServiceHandleListener<TState> listener, ServiceHandleEvent<TState> latestEvent,
+					int updateVersion) {
+				listener.onServiceHandleEvent(ServiceHandle.this, latestEvent);
 			}
-			_listeners.put(new IdentityWrapper<>(listener), executor);
-		}
-		
-		@Override
-		public void addListener(ServiceHandleListener<TState> listener) {
-			addListener(listener, null);
-		}
-	};
+		});
 	
 	private final NodeCache _serviceStateCache;
 	private final NodeCacheListener _serviceStateListener = new NodeCacheListener() {
@@ -153,19 +136,9 @@ public final class ServiceHandle<TState extends Enum<TState> & ClusterState> imp
 				event = new ServiceHandleEvent<TState>(ServiceHandleEvent.EventType.STATE_CHANGED, 
 						stateEntry, lastSignalEntry);
 			}
+			Log.info("ServiceHandle.nodeChanged: " + _servicePath + "; " + event.toString());
 			
-			for (Entry<IdentityWrapper<ServiceHandleListener<TState>>, Executor> entry : _listeners.entrySet()) {
-				Executor executor = entry.getValue();
-				final ServiceHandleListener<TState> listener = entry.getKey().get();
-				executor.execute(new Runnable() {
-
-					@Override
-					public void run() {
-						listener.onServiceHandleEvent(ServiceHandle.this, event);
-					}
-					
-				});
-			}
+			_listenableContainer.newListenerEvent(event);
 		}
 		
 		private boolean tryClaimLatestVersion(int newVersion) {
@@ -212,8 +185,8 @@ public final class ServiceHandle<TState extends Enum<TState> & ClusterState> imp
 		_clusterHandle.delete(_servicePath);
 	}
 	
-	public Listenable<ServiceHandleListener<TState>> getListenable() {
-		return _listenable;
+	public VersioningListenable<ServiceHandleListener<TState>> getListenable() {
+		return _listenableContainer;
 	}
 	
 	public void setState(TState state, Object stateData) {
@@ -238,5 +211,12 @@ public final class ServiceHandle<TState extends Enum<TState> & ClusterState> imp
 			stateEntryObj = Util.fromKryoBytes(_kryo, nodeData.getData(), StateEntry.class);
 		}
 		return _clusterHandle.castStateEntry(stateEntryObj, _stateType);
+	}
+	
+	@Override
+	public String toString() {
+		return "ServiceHandle [servicePath=" + _servicePath
+				+ ", serviceType=" + _serviceType + ", stateType="
+				+ _stateType + "]";
 	}
 }

@@ -144,6 +144,7 @@ public class ClusterTestTask implements TestTask {
 				ServiceGroup<ServiceState> serviceGroup,
 				ServiceGroupEvent<ServiceState> event) {
 			if (event.getType() == EventType.STATE_READY) {
+				Log.info("ClusterTestTask.onServiceGroupEvent: " + event.toString());
 				_groupStateLookup.put(new IdentityWrapper<>(serviceGroup), event.getState());
 				_backgroundUpdateLock.lock();
 				try {
@@ -292,7 +293,7 @@ public class ClusterTestTask implements TestTask {
 								timeoutTracker.getUnit());
 						guardianDeployment.getListenable().addListener(_deploymentListener, _backgroundExecutor);
 						// act like this listener was registered before any state updates were made
-						guardianDeployment.resetListenerVersion(-1, _deploymentListener);
+						guardianDeployment.getListenable().resetListenerVersion(-1, _deploymentListener);
 						_guardianDeployments.add(guardianDeployment);
 					}
 				}

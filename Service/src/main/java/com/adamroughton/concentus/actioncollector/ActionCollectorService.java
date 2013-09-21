@@ -110,12 +110,13 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 	
 	private final EventQueue<TBuffer> _recvQueue;
 	private final EventQueue<TBuffer> _sendQueue;
+	private final EventQueue<TBuffer> _tickQueue;
 	
 	private final SocketSettings _routerSocketSettings;
 	
 	private final TickEvent _tickEvent = new TickEvent();
-	private final SendQueue<OutgoingEventHeader, TBuffer> _tickSendQueue;
-	private final EventProcessor _tickEventPublisher;
+	private SendQueue<OutgoingEventHeader, TBuffer> _tickSendQueue;
+	private EventProcessor _tickEventPublisher;
 	
 	private ProcessingPipeline<TBuffer> _pipeline;
 	private CollectiveApplication _application;
@@ -158,15 +159,8 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 				sendBufferLength, 
 				Constants.MSG_BUFFER_ENTRY_LENGTH, 
 				new YieldingWaitStrategy());
-		EventQueue<TBuffer> tickQueue = messageQueueFactory
+		_tickQueue = messageQueueFactory
 				.createMultiProducerQueue("tickQueue", 4, 32, new BlockingWaitStrategy());
-		
-		int tickSocketId = _socketManager.create(ZMQ.DEALER, "tickSend");
-		_socketManager.connectSocket(tickSocketId, String.format("inproc://actionCollector"));
-		
-		Mutex<Messenger<TBuffer>> tickMessenger = _socketManager.getSocketMutex(tickSocketId);
-		_tickEventPublisher = MessagingUtil.asSocketOwner("tickPublisher", tickQueue, new Publisher<TBuffer>(_sendHeader), tickMessenger);
-		_tickSendQueue = new SendQueue<>("tickSendQueue", _sendHeader, tickQueue);
 	}
 	
 	public synchronized void tick(final long time) {
@@ -201,6 +195,13 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 				.setRecvPairAddress(address);
 		int dealerSetSocketId = _socketManager.create(SocketManager.DEALER_SET, 
 				dealerSetSocketSettings, "dealerSetSend");
+		
+		int tickSocketId = _socketManager.create(ZMQ.DEALER, "tickSend");
+		_socketManager.connectSocket(tickSocketId, String.format("inproc://actionCollector"));
+		
+		Mutex<Messenger<TBuffer>> tickMessenger = _socketManager.getSocketMutex(tickSocketId);
+		_tickEventPublisher = MessagingUtil.asSocketOwner("tickPublisher", _tickQueue, new Publisher<TBuffer>(_sendHeader), tickMessenger);
+		_tickSendQueue = new SendQueue<>("tickSendQueue", _sendHeader, _tickQueue);
 		
 		SendQueue<OutgoingEventHeader, TBuffer> sendQueueWrapper = 
 				new SendQueue<OutgoingEventHeader, TBuffer>("sendQueue", _sendHeader, _sendQueue);

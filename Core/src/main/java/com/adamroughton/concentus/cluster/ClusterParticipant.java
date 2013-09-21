@@ -38,6 +38,8 @@ import com.netflix.curator.utils.ZKPaths;
 
 public class ClusterParticipant implements Closeable {
 
+	private static final int RETRY_COUNT = 10;
+	
 	private final ClusterHandleSettings _settings;
 	private final CuratorFramework _client;
 	private final Kryo _kryo;
@@ -163,26 +165,37 @@ public class ClusterParticipant implements Closeable {
 	
 	private boolean createOrSetInternal(String path, byte[] data, CreateMode createMode, int version) {
 		try {
-			if (_client.checkExists().forPath(path) == null) {
-				if (version != -1 && version != 0) {
-					return false;
-				}
-				_client.create()
-					.creatingParentsIfNeeded()
-					.withMode(createMode)
-					.forPath(path, data);
-			} else {
-				try {
-					_client.setData().withVersion(version).forPath(path, data);
-				} catch (KeeperException eKeeper) {
-					if (eKeeper.code() == Code.BADVERSION) {
+			int remainingAttempts = RETRY_COUNT;
+			do {
+				if (_client.checkExists().forPath(path) == null) {
+					if (version != -1 && version != 0) {
 						return false;
-					} else {
-						throw eKeeper;
+					}
+					try {
+						_client.create()
+							.creatingParentsIfNeeded()
+							.withMode(createMode)
+							.forPath(path, data);
+						return true;
+					} catch (KeeperException eKeeper) {
+						if (eKeeper.code() != Code.NODEEXISTS) {
+							throw eKeeper;
+						}
+					}
+				} else {
+					try {
+						_client.setData().withVersion(version).forPath(path, data);
+						return true;
+					} catch (KeeperException eKeeper) {
+						if (eKeeper.code() == Code.BADVERSION) {
+							return false;
+						} else if (eKeeper.code() != Code.NONODE) {
+							throw eKeeper;
+						}
 					}
 				}
-			}
-			return true;
+			} while (remainingAttempts-- > 0);
+			return false;
 		} catch (Exception e) {
 			_settings.exCallback().signalFatalException(e);
 			return false;

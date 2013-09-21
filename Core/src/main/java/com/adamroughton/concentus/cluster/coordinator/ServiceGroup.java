@@ -5,20 +5,21 @@ import java.util.Collections;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.List;
-import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.Executor;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
+import com.adamroughton.concentus.cluster.VersioningListenableContainer;
+import com.adamroughton.concentus.cluster.VersioningListenableContainer.ListenerInvokeDelegate;
 import com.adamroughton.concentus.cluster.coordinator.ServiceHandle.ServiceHandleEvent;
 import com.adamroughton.concentus.cluster.coordinator.ServiceHandle.ServiceHandleEvent.EventType;
 import com.adamroughton.concentus.cluster.coordinator.ServiceHandle.ServiceHandleListener;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
+import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.util.IdentityWrapper;
 import com.adamroughton.concentus.util.TimeoutTracker;
 import com.esotericsoftware.minlog.Log;
@@ -68,6 +69,13 @@ public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements
 		public TState getState() {
 			return _state;
 		}
+
+		@Override
+		public String toString() {
+			return "ServiceGroupEvent [eventType=" + _eventType
+					+ ", serviceHandle=" + _serviceHandle + ", state="
+					+ _state + "]";
+		}
 		
 	}
 	
@@ -82,30 +90,16 @@ public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements
 			new ConcurrentHashMap<IdentityWrapper<ServiceHandle<TState>>, Boolean>());
 	
 	private final Executor _timeoutExecutor = Executors.newCachedThreadPool();
-	private final Executor _defaultListenerExecutor = Executors.newSingleThreadExecutor();
 	private final Executor _serviceListenerExecutor = Executors.newSingleThreadExecutor();
-	private final ConcurrentMap<IdentityWrapper<ServiceGroupListener<TState>>, Executor> _listeners = new ConcurrentHashMap<>();
-	private Listenable<ServiceGroupListener<TState>> _listenable = new Listenable<ServiceGroupListener<TState>>() {
-		
-		@Override
-		public void removeListener(ServiceGroupListener<TState> listener) {
-			_listeners.remove(new IdentityWrapper<>(listener));
-		}
-		
-		@Override
-		public void addListener(ServiceGroupListener<TState> listener, Executor executor) {
-			Objects.requireNonNull(listener);
-			if (executor == null) {
-				executor = _defaultListenerExecutor;
+	private final VersioningListenableContainer<ServiceGroupEvent<TState>, ServiceGroupListener<TState>> _listenable
+		= new VersioningListenableContainer<>(new ListenerInvokeDelegate<ServiceGroupEvent<TState>, ServiceGroupListener<TState>>() {
+
+			@Override
+			public void invoke(ServiceGroupListener<TState> listener,
+					ServiceGroupEvent<TState> event, int updateVersion) {
+				listener.onServiceGroupEvent(ServiceGroup.this, event);
 			}
-			_listeners.put(new IdentityWrapper<>(listener), executor);
-		}
-		
-		@Override
-		public void addListener(ServiceGroupListener<TState> listener) {
-			addListener(listener, null);
-		}
-	};
+		});
 	
 	private final ServiceHandleListener<TState> _serviceListener = new ServiceHandleListener<TState>() {
 
@@ -128,7 +122,7 @@ public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements
 		boolean enterState(ServiceHandle<TState> handle, TState nextState);
 	}
 	
-	public void enterStateInBackground(TState state, long timeout, TimeUnit unit) {
+	public void enterStateInBackground(TState state, long timeout, TimeUnit unit) throws Exception {
 		enterStateInBackground(state, new EnterStateDelegate<TState>() {
 			
 			@Override
@@ -139,7 +133,7 @@ public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements
 		}, timeout, unit);
 	}
 	
-	public void enterStateInBackground(final TState state, EnterStateDelegate<TState> delegate, final long timeout, final TimeUnit unit) {	
+	public void enterStateInBackground(final TState state, EnterStateDelegate<TState> delegate, final long timeout, final TimeUnit unit) throws Exception {	
 		HashSet<String> participatingServicePaths = new HashSet<>();
 		
 		List<ServiceHandle<TState>> services = new ArrayList<>();
@@ -150,13 +144,27 @@ public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements
 		
 		final UpdateOperation<TState> updateOperation = new UpdateOperation<>(state, participatingServicePaths);
 		if (!_currentUpdateOperation.compareAndSet(null, updateOperation)) {
-			throw new IllegalStateException("The group state is alredy being updated by a previous call to enterState.");
+			throw new IllegalStateException("The group state is already being updated by a previous call to enterState.");
 		}
 		
 		// set states
 		for (final ServiceHandle<TState> service : services) {
 			if (!delegate.enterState(service, state)) {
-				processServiceEvent(service, state, EventType.STATE_CHANGED);
+				final int initListenerVersion = service.getListenable().getListenerVersion(_serviceListener);
+				StateEntry<TState> stateEntry = service.getCurrentState();
+				if (stateEntry.getState() == state) {
+					_serviceListenerExecutor.execute(new Runnable() {
+
+						@Override
+						public void run() {
+							int listenerVersion = service.getListenable().getListenerVersion(_serviceListener);
+							if (listenerVersion == initListenerVersion) {
+								processServiceEvent(service, state, EventType.STATE_CHANGED);
+							}
+						}
+						
+					});
+				}
 			}
 		}
 		
@@ -171,11 +179,11 @@ public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements
 					}
 					
 					if (_currentUpdateOperation.compareAndSet(updateOperation, null)) {
-						_defaultListenerExecutor.execute(new Runnable() {
+						_serviceListenerExecutor.execute(new Runnable() {
 	
 							@Override
 							public void run() {
-								sendToListeners(new ServiceGroupEvent<>(ServiceGroupEvent.EventType.TIMED_OUT, 
+								_listenable.newListenerEvent(new ServiceGroupEvent<>(ServiceGroupEvent.EventType.TIMED_OUT, 
 										null, 
 										updateOperation.expectedState));
 							}
@@ -189,7 +197,7 @@ public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements
 		
 	}
 	
-	public void waitForStateInBackground(final TState state, final long timeout, final TimeUnit unit) {
+	public void waitForStateInBackground(final TState state, final long timeout, final TimeUnit unit) throws Exception {
 		// do the same operation as enterState, except don't actually set the state
 		enterStateInBackground(state, new EnterStateDelegate<TState>() {
 			
@@ -207,6 +215,9 @@ public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements
 		if (currentOperation != null) {
 			inOperationSet = currentOperation.participatingServicePaths.contains(serviceHandle.getServicePath());
 		}
+		Log.info("ServiceGroup.processServiceEvent: currentOperation=" + 
+				Objects.toString(currentOperation) + ", inOperationSet=" + inOperationSet + 
+				", serviceHandle=" + serviceHandle.toString());
 		
 		final ServiceGroupEvent<TState> groupEvent;
 		if (eventType == EventType.SERVICE_DEATH) {
@@ -223,12 +234,15 @@ public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements
 						groupEvent = new ServiceGroupEvent<>(ServiceGroupEvent.EventType.STATE_READY, 
 								null, currentOperation.expectedState);
 						operationFinished = true;
+						Log.info("ServiceGroup.processServiceEvent: operation complete");
 					} else {
 						groupEvent = null;
 					}
 				} else {
 					groupEvent = new ServiceGroupEvent<>(ServiceGroupEvent.EventType.UPDATE_FAILURE, 
 							null, currentOperation.expectedState);
+					Log.info("ServiceGroup.processServiceEvent: current operation failed - expected " 
+							+ currentOperation.expectedState + ", got " + updatedState + "; " + serviceHandle.getServicePath());
 					operationFinished = true;
 				}
 			} else {
@@ -243,7 +257,7 @@ public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements
 		}
 		
 		if (groupEvent != null) {
-			sendToListeners(groupEvent);
+			_listenable.newListenerEvent(groupEvent);
 		}
 	}
 	
@@ -263,21 +277,6 @@ public class ServiceGroup<TState extends Enum<TState> & ClusterState> implements
 	
 	public Listenable<ServiceGroupListener<TState>> getListenable() {
 		return _listenable;
-	}
-	
-	private void sendToListeners(final ServiceGroupEvent<TState> groupEvent) {
-		for (Entry<IdentityWrapper<ServiceGroupListener<TState>>, Executor> entry : _listeners.entrySet()) {
-			final ServiceGroupListener<TState> listener = entry.getKey().get();
-			Executor executor = entry.getValue();
-			executor.execute(new Runnable() {
-
-				@Override
-				public void run() {
-					listener.onServiceGroupEvent(ServiceGroup.this, groupEvent);
-				}
-				
-			});
-		}
 	}
 	
 	@Override

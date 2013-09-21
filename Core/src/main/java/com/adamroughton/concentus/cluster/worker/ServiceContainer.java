@@ -203,7 +203,7 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 					dataHandle.getDataForCoordinator(), -1);			
 			String statePath = makeServicePath(SERVICE_STATE);
 			_cluster.createOrSetEphemeral(statePath, stateEntry);
-			Log.info("Registered with cluster");
+			Log.info(_serviceInfo.serviceType() + " registered with cluster: " + serviceRootPath());
 		} catch (Exception e) {
 			_concentusHandle.signalFatalException(e);
 		}
