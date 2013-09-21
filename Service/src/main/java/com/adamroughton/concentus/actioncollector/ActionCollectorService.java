@@ -83,12 +83,12 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 		}
 		
 		@Override
-		public void onPreStart(StateData<ServiceState> stateData) {
+		public void onPreStart(StateData stateData) {
 		}
 
 		@Override
 		public <TBuffer extends ResizingBuffer> ClusterService<ServiceState> createService(
-				int serviceId, ServiceContext<ServiceState> context,
+				int serviceId, StateData initData, ServiceContext<ServiceState> context,
 				ConcentusHandle handle, MetricContext metricContext,
 				ComponentResolver<TBuffer> resolver) {
 			return new ActionCollectorService<>(serviceId, _recvPort, _recvBufferLength, _sendBufferLength, 
@@ -175,13 +175,13 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 	}
 
 	@Override
-	protected void onInit(StateData<ServiceState> stateData,
+	protected void onInit(StateData stateData,
 			ClusterHandle cluster) throws Exception {
 		_application = cluster.getApplicationInstanceFactory().newInstance();
 	}
 
 	@Override
-	protected void onBind(StateData<ServiceState> stateData,
+	protected void onBind(StateData stateData,
 			ClusterHandle cluster) throws Exception {
 		int routerSocketId = _socketManager.create(ZMQ.ROUTER, _routerSocketSettings, "routerRecv");
 		int[] boundPorts = _socketManager.getBoundPorts(routerSocketId);
@@ -232,13 +232,13 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 	}
 
 	@Override
-	protected void onStart(StateData<ServiceState> stateData,
+	protected void onStart(StateData stateData,
 			ClusterHandle cluster) throws Exception {
 		_pipeline.start();
 	}
 
 	@Override
-	protected void onShutdown(StateData<ServiceState> stateData,
+	protected void onShutdown(StateData stateData,
 			ClusterHandle cluster) throws Exception {
 		if (_pipeline != null) {
 			try {

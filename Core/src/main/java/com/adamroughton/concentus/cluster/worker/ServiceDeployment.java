@@ -23,10 +23,11 @@ public interface ServiceDeployment<TState extends Enum<TState> & ClusterState> {
 	 */
 	Iterable<ServiceInfo<TState>> getHostedServicesInfo();
 	
-	void onPreStart(StateData<TState> stateData);
+	void onPreStart(StateData stateData);
 	
 	<TBuffer extends ResizingBuffer> ClusterService<TState> createService(
 			int serviceId,
+			StateData initData,
 			ServiceContext<TState> context,
 			ConcentusHandle handle, 
 			MetricContext metricContext, 

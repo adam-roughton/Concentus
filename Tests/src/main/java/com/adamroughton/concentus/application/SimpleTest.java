@@ -30,7 +30,7 @@ public class SimpleTest {
 			.withClientCounts(10, 20, 30, 40, 50)
 			.withRunTime(5, TimeUnit.MINUTES)
 			.withService(new DirectCanonicalStateServiceDeployment(-1, 2048, 2048, -1, 2048), 1)
-			.withService(new ClientHandlerServiceDeployment(1, 2048, 2048), 1)
+			.withService(new ClientHandlerServiceDeployment(-1, 2048, 2048), 1)
 			.withWorkerCount(1)
 			.withApplicationFactory(new SimpleApplicationFactory())
 			.withAgentFactory(new SimpleClientAgentFactory())

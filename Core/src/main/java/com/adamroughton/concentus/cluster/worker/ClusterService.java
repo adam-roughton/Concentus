@@ -32,7 +32,7 @@ public interface ClusterService<TState extends Enum<TState> & ClusterState> {
 	 * @throws Exception
 	 */
 	void onStateChanged(TState newServiceState, 
-			StateData<TState> stateData,
+			StateData stateData,
 			ClusterHandle cluster) throws Exception;
 	
 }

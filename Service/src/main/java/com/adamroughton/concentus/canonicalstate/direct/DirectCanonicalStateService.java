@@ -91,12 +91,12 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 		}
 		
 		@Override
-		public void onPreStart(StateData<ServiceState> stateData) {
+		public void onPreStart(StateData stateData) {
 		}
 
 		@Override
 		public <TBuffer extends ResizingBuffer> ClusterService<ServiceState> createService(
-				int serviceId, ServiceContext<ServiceState> context,
+				int serviceId, StateData initData, ServiceContext<ServiceState> context,
 				ConcentusHandle handle, MetricContext metricContext,
 				ComponentResolver<TBuffer> resolver) {
 			return new DirectCanonicalStateService<>(_actionCollectorPort, _actionCollectorRecvBufferLength, 
@@ -181,7 +181,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 	}
 	
 	@Override
-	protected void onInit(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onInit(StateData stateData, ClusterHandle cluster) throws Exception {
 		_application = cluster.getApplicationInstanceFactory().newInstance();	
 		// bit hacky, but lets us get access to the service in the container
 		ActionCollectorServiceDeployment actionCollector = new ActionCollectorServiceDeployment(_actionCollectorPort, 
@@ -192,12 +192,13 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 					@Override
 					public <TBuffer extends ResizingBuffer> ClusterService<ServiceState> createService(
 							int serviceId,
+							StateData initData,
 							ServiceContext<ServiceState> context,
 							ConcentusHandle handle,
 							MetricContext metricContext,
 							ComponentResolver<TBuffer> resolver) {
 						_actionCollectorService = (ActionCollectorService<?>) 
-								super.createService(serviceId, context, handle, metricContext, resolver);
+								super.createService(serviceId, initData, context, handle, metricContext, resolver);
 						return _actionCollectorService;
 					}
 			
@@ -210,7 +211,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 	}
 	
 	@Override
-	protected void onBind(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onBind(StateData stateData, ClusterHandle cluster) throws Exception {
 		// infrastructure for pub socket
 		Mutex<Messenger<TBuffer>> pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
 		_publisher = MessagingUtil.asSocketOwner("publisher", _outputQueue, new Publisher<TBuffer>(_pubHeader), pubSocketPackageMutex);
@@ -222,7 +223,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 	}
 
 	@Override
-	protected void onStart(StateData<ServiceState> stateData, ClusterHandle cluster) {
+	protected void onStart(StateData stateData, ClusterHandle cluster) {
 		SendQueue<OutgoingEventHeader, TBuffer> pubSendQueue = new SendQueue<>("publisher", _pubHeader, _outputQueue);
 		
 		Clock clock = _concentusHandle.getClock();
@@ -255,7 +256,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 	}
 
 	@Override
-	protected void onShutdown(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onShutdown(StateData stateData, ClusterHandle cluster) throws Exception {
 		_actionProcessorContainer.close();
 		_recvPipeline.halt(60, TimeUnit.SECONDS);
 		_pubPipeline.halt(60, TimeUnit.SECONDS);

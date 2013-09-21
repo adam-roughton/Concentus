@@ -124,12 +124,12 @@ public class CanonicalStateService<TBuffer extends ResizingBuffer> extends Conce
 	}
 	
 	@Override
-	protected void onInit(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onInit(StateData stateData, ClusterHandle cluster) throws Exception {
 		_application = cluster.getApplicationInstanceFactory().newInstance();
 	}
 	
 	@Override
-	protected void onBind(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onBind(StateData stateData, ClusterHandle cluster) throws Exception {
 		// infrastructure for sub socket
 		Mutex<Messenger<TBuffer>> subSocketPackageMutex = _socketManager.getSocketMutex(_inputSocketId);
 		_subListener = Util.asStateful(new EventListener<>("inputListener", _subHeader, subSocketPackageMutex, _inputQueue, _concentusHandle));
@@ -155,12 +155,12 @@ public class CanonicalStateService<TBuffer extends ResizingBuffer> extends Conce
 	}
 
 	@Override
-	protected void onStart(StateData<ServiceState> stateData, ClusterHandle cluster) {
+	protected void onStart(StateData stateData, ClusterHandle cluster) {
 		_pipeline.start();
 	}
 
 	@Override
-	protected void onShutdown(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onShutdown(StateData stateData, ClusterHandle cluster) throws Exception {
 		cluster.unregisterServiceEndpoint(ConcentusEndpoints.CANONICAL_STATE_PUB.getId());
 		_pipeline.halt(60, TimeUnit.SECONDS);
 		_socketManager.close();

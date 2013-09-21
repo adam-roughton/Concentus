@@ -373,7 +373,9 @@ public class ClusterTestTask implements TestTask {
 				
 				// wait for test time
 				assertRunning();
-				Thread.sleep(metricBucketInfo.getBucketEndTime(startBucketId + bucketCount));
+				long sleepTime = metricBucketInfo.getBucketEndTime(startBucketId + bucketCount);
+				Log.info("Waiting " + TimeUnit.MILLISECONDS.toSeconds(sleepTime) + " seconds until terminating current run");
+				Thread.sleep(sleepTime);
 				
 				Log.info("Stopping test...");
 				setTestState(TestTask.State.TEARING_DOWN);

@@ -175,7 +175,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 
 			@Override
 			public void onStateChanged(ServiceState newServiceState,
-					StateData<ServiceState> stateData, ClusterHandle cluster)
+					StateData stateData, ClusterHandle cluster)
 					throws Exception {
 				barrier.await();
 				super.onStateChanged(newServiceState, stateData, cluster);
@@ -226,7 +226,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 
 			@Override
 			public void onStateChanged(ServiceState newServiceState,
-					StateData<ServiceState> stateData, ClusterHandle cluster)
+					StateData stateData, ClusterHandle cluster)
 					throws Exception {
 				stateData.setDataForCoordinator(expectedStateData);
 			}
@@ -284,6 +284,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 			@Override
 			public <TBuffer extends ResizingBuffer> ClusterService<TState> createService(
 					int serviceId,
+					StateData initData,
 					ServiceContext<TState> serviceContext,
 					ConcentusHandle handle, MetricContext metricContext,
 					ComponentResolver<TBuffer> resolver) {
@@ -292,7 +293,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 			}
 
 			@Override
-			public void onPreStart(StateData<TState> stateData) {
+			public void onPreStart(StateData stateData) {
 				stateData.setDataForCoordinator(preStartData);
 			}
 			
@@ -345,7 +346,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 		
 		@Override
 		public void onStateChanged(TState newServiceState,
-				StateData<TState> stateData, ClusterHandle cluster) throws Exception {
+				StateData stateData, ClusterHandle cluster) throws Exception {
 			StateChange<TState> change = new StateChange<>(newServiceState, stateData.getData(Object.class));
 			_collector.addValue(change);
 		}

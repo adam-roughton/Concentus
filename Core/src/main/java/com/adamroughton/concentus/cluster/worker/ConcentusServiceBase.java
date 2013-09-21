@@ -6,7 +6,7 @@ public abstract class ConcentusServiceBase implements ClusterService<ServiceStat
 	
 	@Override
 	public void onStateChanged(ServiceState newServiceState,
-			StateData<ServiceState> stateData, ClusterHandle cluster)
+			StateData stateData, ClusterHandle cluster)
 			throws Exception {
 		switch (newServiceState) {
 			case INIT:
@@ -28,21 +28,21 @@ public abstract class ConcentusServiceBase implements ClusterService<ServiceStat
 		}
 	}
 
-	protected void onInit(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onInit(StateData stateData, ClusterHandle cluster) throws Exception {
 	}
 
-	protected void onBind(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onBind(StateData stateData, ClusterHandle cluster) throws Exception {
 	}
 
-	protected void onConnect(StateData<ServiceState> stateData,
+	protected void onConnect(StateData stateData,
 			ClusterHandle cluster) throws Exception {
 	}
 
-	protected void onStart(StateData<ServiceState> stateData,
+	protected void onStart(StateData stateData,
 			ClusterHandle cluster) throws Exception {
 	}
 
-	protected void onShutdown(StateData<ServiceState> stateData,
+	protected void onShutdown(StateData stateData,
 			ClusterHandle cluster) throws Exception {
 	}
 

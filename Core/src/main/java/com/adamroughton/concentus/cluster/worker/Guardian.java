@@ -62,6 +62,7 @@ public final class Guardian implements ClusterService<GuardianState> {
 		@Override
 		public <TBuffer extends ResizingBuffer> ClusterService<GuardianState> createService(
 				int serviceId,
+				StateData initData,
 				ServiceContext<GuardianState> serviceContext,
 				ConcentusHandle handle, MetricContext metricContext,
 				ComponentResolver<TBuffer> resolver) {
@@ -69,7 +70,7 @@ public final class Guardian implements ClusterService<GuardianState> {
 		}
 
 		@Override
-		public void onPreStart(StateData<GuardianState> stateData) {
+		public void onPreStart(StateData stateData) {
 		}
 		
 	}
@@ -122,7 +123,7 @@ public final class Guardian implements ClusterService<GuardianState> {
 
 	@Override
 	public void onStateChanged(GuardianState newServiceState,
-			StateData<GuardianState> stateData, ClusterHandle cluster) throws Exception {
+			StateData stateData, ClusterHandle cluster) throws Exception {
 		switch (newServiceState) {
 			case READY:
 				onReady(stateData, cluster);
@@ -144,13 +145,13 @@ public final class Guardian implements ClusterService<GuardianState> {
 		}
 	}
 	
-	private void onReady(StateData<GuardianState> stateData, ClusterHandle cluster) throws Exception {
+	private void onReady(StateData stateData, ClusterHandle cluster) throws Exception {
 		stopHostProcess();
 		GuardianDeploymentReturnInfo retInfo = stateData.getData(GuardianDeploymentReturnInfo.class);
 		stateData.setDataForCoordinator(retInfo);
 	}
 	
-	private void onRun(StateData<GuardianState> stateData, final ClusterHandle cluster) throws Exception {	
+	private void onRun(StateData stateData, final ClusterHandle cluster) throws Exception {	
 		stopHostProcess();
 		
 		// get allocated service deployment
@@ -251,7 +252,7 @@ public final class Guardian implements ClusterService<GuardianState> {
 		
 	}
 	
-	private void onShutdown(StateData<GuardianState> stateData, ClusterHandle cluster) throws Exception {
+	private void onShutdown(StateData stateData, ClusterHandle cluster) throws Exception {
 		stopHostProcess();
 	}
 	

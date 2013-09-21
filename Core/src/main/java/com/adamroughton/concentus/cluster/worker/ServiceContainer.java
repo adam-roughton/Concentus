@@ -95,7 +95,8 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 				String initDataPath = makeServicePath(SERVICE_INIT_DATA);
 				ServiceInit initData = _cluster.read(initDataPath, ServiceInit.class);
 				Objects.requireNonNull(initData, "The service must be initialised with a valid " + ServiceInit.class.getName() + " object (was null)");
-				_service = _serviceContext.createService(initData.getServiceId(), _context, _deployment);
+				StateDataHandle initDataHandle = new StateDataHandle(initData.getDataForService());
+				_service = _serviceContext.createService(initData.getServiceId(), initDataHandle, _context, _deployment);
 			}
 			
 			StateDataHandle dataHandle = new StateDataHandle(event.signalEntry.getStateData(Object.class));
@@ -234,7 +235,7 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 	 * Helper classes
 	 */
 	
-	private class StateDataHandle implements StateData<TState> {
+	private class StateDataHandle implements StateData {
 		
 		private final Object _data;
 		private Object _dataForCoordinator;
@@ -280,9 +281,9 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 		}
 		
 		public <TState extends Enum<TState> & ClusterState> ClusterService<TState> createService(
-				int serviceId, ServiceContext<TState> serviceContext, ServiceDeployment<TState> deployment) {
+				int serviceId, StateData initData, ServiceContext<TState> serviceContext, ServiceDeployment<TState> deployment) {
 			_metricContext.start(serviceId);
-			return deployment.createService(serviceId, serviceContext ,_concentusHandle, _metricContext, _componentResolver);
+			return deployment.createService(serviceId, initData, serviceContext ,_concentusHandle, _metricContext, _componentResolver);
 		}
 		
 	}

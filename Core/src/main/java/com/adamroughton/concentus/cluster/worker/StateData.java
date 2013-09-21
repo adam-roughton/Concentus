@@ -1,6 +1,6 @@
 package com.adamroughton.concentus.cluster.worker;
 
-public interface StateData<TState> {
+public interface StateData {
 	
 	boolean hasData();
 	

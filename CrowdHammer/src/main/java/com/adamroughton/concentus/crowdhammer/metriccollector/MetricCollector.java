@@ -364,6 +364,8 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 		}
 		
 		private boolean shouldCollect(MetricEvent metricEvent) {
+			if (_collectWindow == null) return false;
+			
 			long bucketId = metricEvent.getMetricBucketId();
 			if (_collectWindow.startBucketId != -1 && bucketId >= _collectWindow.startBucketId) {
 				if (_collectWindow.lastBucketId != -1) {

@@ -90,12 +90,12 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 		}
 		
 		@Override
-		public void onPreStart(StateData<ServiceState> stateData) {
+		public void onPreStart(StateData stateData) {
 		}
 
 		@Override
 		public <TBuffer extends ResizingBuffer> ClusterService<ServiceState> createService(
-				int serviceId, ServiceContext<ServiceState> context,
+				int serviceId, StateData initData, ServiceContext<ServiceState> context,
 				ConcentusHandle handle, MetricContext metricContext,
 				ComponentResolver<TBuffer> resolver) {
 			return new ClientHandlerService<>(_recvPort, _recvBufferLength, _sendBufferLength, 
@@ -187,7 +187,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 	}
 		
 	@Override
-	protected void onBind(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {		
+	protected void onBind(StateData stateData, ClusterHandle cluster) throws Exception {		
 		// infrastructure for router socket
 		Mutex<Messenger<TBuffer>> routerSocketPackageMutex = _socketManager.getSocketMutex(_routerSocketId);
 		_routerListener = new EventListener<>(
@@ -248,7 +248,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 	}
 	
 	@Override
-	protected void onConnect(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onConnect(StateData stateData, ClusterHandle cluster) throws Exception {
 		List<ServiceEndpoint> canonicalStateEndpoints = cluster.getAllServiceEndpoints(ConcentusEndpoints.CANONICAL_STATE_PUB.getId());
 		if (canonicalStateEndpoints.size() < 1) {
 			throw new RuntimeException("No canonical state services registered!");
@@ -315,7 +315,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 	}
 	
 	@Override
-	protected void onStart(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onStart(StateData stateData, ClusterHandle cluster) throws Exception {
 		_routerDealerSetBridgeTask.cancel(true);
 		Mutex<Messenger<TBuffer>> routerMutex = _socketManager.getSocketMutex(_routerSocketId);
 		routerMutex.waitForRelease(60, TimeUnit.SECONDS);
@@ -328,7 +328,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 	}
 	
 	@Override
-	protected void onShutdown(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onShutdown(StateData stateData, ClusterHandle cluster) throws Exception {
 		_pipeline.halt(60, TimeUnit.SECONDS);
 		_socketManager.close();
 	}

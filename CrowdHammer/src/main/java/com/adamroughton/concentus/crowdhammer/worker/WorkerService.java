@@ -57,6 +57,7 @@ import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
+import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
@@ -74,7 +75,8 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 	
 	private final ConcentusHandle _concentusHandle;
 	private final MetricContext _metricContext;
-	private final int _recvPort;
+	private final int _recvPortRequested;
+	private int _recvPort;
 	
 	private EventQueue<TBuffer> _clientRecvQueue;
 	private EventQueue<TBuffer> _clientSendQueue;
@@ -85,10 +87,9 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 	private final IncomingEventHeader _clientRecvHeader;
 	
 	private SocketManager<TBuffer> _socketManager;
-	private final int _maxClients;
+	private final int _simClientCount;
 	private final StructuredArray<Client> _clients;
 	
-	private int _clientCountForTest;
 	private SimulatedClientProcessor<TBuffer> _clientProcessor;
 	
 	private int _routerSocketId;
@@ -115,6 +116,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 				int maxClientCount, int recvPort, 
 				int recvBufferSize, int sendBufferSize) {
 			super(SERVICE_INFO);
+			_agentFactory = Objects.requireNonNull(agentFactory);
 			_maxClientCount = maxClientCount;
 			_recvPort = recvPort;
 			_recvBufferSize = recvBufferSize;
@@ -122,15 +124,26 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 		}
 		
 		@Override
-		public void onPreStart(StateData<ServiceState> stateData) {
+		public void onPreStart(StateData stateData) {
 			stateData.setDataForCoordinator(_maxClientCount);
 		}
 
 		@Override
 		public <TBuffer extends ResizingBuffer> ClusterService<ServiceState> createService(
-				int serviceId, ServiceContext<ServiceState> context, ConcentusHandle handle,
+				int serviceId, StateData initData, ServiceContext<ServiceState> context, ConcentusHandle handle,
 				MetricContext metricContext, ComponentResolver<TBuffer> resolver) {
-			return new WorkerService<>(_agentFactory, _maxClientCount, _recvPort, _recvBufferSize, 
+			if (!initData.hasData()) {
+				throw new RuntimeException("The worker must be provided with a client count to simulate");
+			}
+			int simClientCount = initData.getData(Integer.class);
+			
+			if (simClientCount > _maxClientCount)
+				throw new IllegalArgumentException(
+						String.format("The client count was too large: %d > %d", 
+								simClientCount, 
+								_maxClientCount));
+			
+			return new WorkerService<>(_agentFactory, simClientCount, _recvPort, _recvBufferSize, 
 					_sendBufferSize, context, handle, metricContext, resolver);
 		}
 		
@@ -138,7 +151,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 	
 	public WorkerService(
 			final InstanceFactory<? extends ClientAgent> agentFactory,
-			int maxClientCount,
+			int simClientCount,
 			int recvPort,
 			int recvBufferSize,
 			int sendBufferSize,
@@ -146,12 +159,12 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 			ConcentusHandle concentusHandle, 
 			MetricContext metricContext, 
 			ComponentResolver<TBuffer> resolver) {
-		_maxClients = maxClientCount;
-		_recvPort = recvPort;
+		_simClientCount = simClientCount;
+		_recvPortRequested = recvPort;
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_metricContext = Objects.requireNonNull(metricContext);
 		
-		_clients = StructuredArray.newInstance(nextPowerOf2(_maxClients), Client.class, new ComponentFactory<Client>() {
+		_clients = StructuredArray.newInstance(nextPowerOf2(_simClientCount), Client.class, new ComponentFactory<Client>() {
 
 			long index = 0;
 			
@@ -181,21 +194,11 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 	}
 	
 	@Override
-	protected void onInit(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
-		_clientCountForTest = stateData.getData(Integer.class);
-		
-		if (_clientCountForTest > _maxClients)
-			throw new IllegalArgumentException(
-					String.format("The client count was too large: %d > %d", 
-							_clientCountForTest, 
-							_maxClients));
-	}
-	
-	@Override
-	protected void onBind(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onBind(StateData stateData, ClusterHandle cluster) throws Exception {
 		SocketSettings routerSocketSettings = SocketSettings.create()
-				.bindToPort(_recvPort);
+				.bindToPort(_recvPortRequested);
 		_routerSocketId = _socketManager.create(ZMQ.ROUTER, routerSocketSettings, "client_recv");
+		_recvPort = _socketManager.getBoundPorts(_routerSocketId)[0];
 		
 		SocketSettings dealerSetSettings = SocketSettings.create()
 				.setRecvPairAddress(String.format("tcp://%s:%d",
@@ -205,7 +208,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 	}
 	
 	@Override
-	protected void onConnect(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onConnect(StateData stateData, ClusterHandle cluster) throws Exception {
 		/*
 		 * connect client socket to all client handlers
 		 */		
@@ -213,9 +216,12 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 				ConcentusEndpoints.CLIENT_HANDLER.getId());
 		final int clientHandlerCount = clientHandlerEndpoints.size();
 		for (ServiceEndpoint endpoint : clientHandlerEndpoints) {
+			String address = String.format("tcp://%s:%d", endpoint.ipAddress(), endpoint.port());
 			_socketManager.connectSocket(_dealerSetSocketId, 
-					String.format("tcp://%s:%d", endpoint.ipAddress(), endpoint.port()));
+					address);
+			Log.info("Connecting to " + address);
 		}
+		Log.info("Found " + clientHandlerCount + " client handler endpoints");
 				
 		// process connect events & collect identities
 		final byte[][] handlerIds = new byte[clientHandlerCount][];
@@ -256,10 +262,11 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 		/*
 		 * assign client handler to each client and prepare clients
 		 */
+		Log.info("Assigning client handlers to clients");
 		int nextHandlerIndex = 0;
 		for (long clientIndex = 0; clientIndex < _clients.getLength(); clientIndex++) {
 			Client client = _clients.get(clientIndex);
-			if (clientIndex < _clientCountForTest) {
+			if (clientIndex < _simClientCount) {
 				client.setHandlerId(handlerIds[nextHandlerIndex++ % handlerIds.length]);
 				//client.setHandlerId(_handlerIds[nextHandlerIndex++ % _handlerIds.length]);
 				client.setIsActive(true);
@@ -284,7 +291,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 
 		// event processing infrastructure
 		SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue = new SendQueue<>("clientProcessor", _clientSendHeader, _clientSendQueue);
-		_clientProcessor = new SimulatedClientProcessor<>(_concentusHandle.getClock(), _clients, _clientCountForTest, clientSendQueue, _clientRecvHeader, _metricContext);
+		_clientProcessor = new SimulatedClientProcessor<>(_concentusHandle.getClock(), _clients, _simClientCount, clientSendQueue, _clientRecvHeader, _metricContext);
 		
 		_pipeline = ProcessingPipeline.<TBuffer>build(_routerListener, _concentusHandle.getClock())
 				.thenConnector(_clientRecvQueue)
@@ -296,12 +303,12 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 	}
 	
 	@Override
-	protected void onStart(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {
+	protected void onStart(StateData stateData, ClusterHandle cluster) throws Exception {
 		_pipeline.start();
 	}
 		
 	@Override
-	protected void onShutdown(StateData<ServiceState> stateData, ClusterHandle cluster) throws Exception {	
+	protected void onShutdown(StateData stateData, ClusterHandle cluster) throws Exception {	
 		_clientProcessor.stopSendingInput();
 		_pipeline.halt(60, TimeUnit.SECONDS);
 		_socketManager.close();
