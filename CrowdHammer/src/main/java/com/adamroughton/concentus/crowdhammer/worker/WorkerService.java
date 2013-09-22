@@ -51,7 +51,7 @@ import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
-import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.ZmqSocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
@@ -86,7 +86,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 	private final OutgoingEventHeader _clientSendHeader;
 	private final IncomingEventHeader _clientRecvHeader;
 	
-	private SocketManager<TBuffer> _socketManager;
+	private ZmqSocketManager<TBuffer> _socketManager;
 	private final int _simClientCount;
 	private final StructuredArray<Client> _clients;
 	
@@ -204,7 +204,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 				.setRecvPairAddress(String.format("tcp://%s:%d",
 						_concentusHandle.getNetworkAddress().getHostAddress(),
 						_recvPort));
-		_dealerSetSocketId = _socketManager.create(SocketManager.DEALER_SET, dealerSetSettings, "client_send");
+		_dealerSetSocketId = _socketManager.create(ZmqSocketManager.DEALER_SET, dealerSetSettings, "client_send");
 	}
 	
 	@Override
@@ -268,7 +268,6 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 			Client client = _clients.get(clientIndex);
 			if (clientIndex < _simClientCount) {
 				client.setHandlerId(handlerIds[nextHandlerIndex++ % handlerIds.length]);
-				//client.setHandlerId(_handlerIds[nextHandlerIndex++ % _handlerIds.length]);
 				client.setIsActive(true);
 			} else {
 				client.setIsActive(false);

@@ -271,7 +271,7 @@ public class ClusterTestTask implements TestTask {
 			for (int clientCount : _test.getClientCounts()) {
 				assertRunning();
 				Log.info("Doing run with client count: " + clientCount);
-				TimeoutTracker timeoutTracker = new TimeoutTracker(30, TimeUnit.DAYS);
+				TimeoutTracker timeoutTracker = new TimeoutTracker(10, TimeUnit.MINUTES);
 				
 				_metricCollector.newTestRun(_test.getName(), 
 						clientCount, 
@@ -373,15 +373,17 @@ public class ClusterTestTask implements TestTask {
 				
 				// wait for test time
 				assertRunning();
-				long sleepTime = metricBucketInfo.getBucketEndTime(startBucketId + bucketCount);
+				long sleepTime = Math.max(0, metricBucketInfo.getBucketEndTime(startBucketId + bucketCount) - _testClock.currentMillis());
 				Log.info("Waiting " + TimeUnit.MILLISECONDS.toSeconds(sleepTime) + " seconds until terminating current run");
 				Thread.sleep(sleepTime);
 				
 				Log.info("Stopping test...");
+				timeoutTracker = new TimeoutTracker(5, TimeUnit.MINUTES);
 				setTestState(TestTask.State.TEARING_DOWN);
 				
 				// tear down services (shutdown)
 				for (String serviceType : dependencySet.inReverse()) {
+					Log.info("Tearing down services of type " + serviceType);
 					ServiceGroup<ServiceState> group = _groupsByType.get(serviceType);
 					group.enterStateInBackground(SHUTDOWN, timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 					
@@ -391,7 +393,15 @@ public class ClusterTestTask implements TestTask {
 						waitForBackgroundSignal(timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 						groupState = _groupStateLookup.get(new IdentityWrapper<>(group));
 					}
+					
+					// close all service handles in the group
+					for (ServiceHandle<ServiceState> serviceHandle : group) {
+						serviceHandle.close();
+						String serviceTypePath = ZKPaths.makePath(_clusterHandle.resolvePathFromRoot(SERVICES), serviceType);
+						_clusterHandle.deleteChildren(serviceTypePath);
+					}
 				}
+				cleanUp();
 			}
 		} catch (InterruptedException eInterrupted) {
 			
@@ -400,7 +410,12 @@ public class ClusterTestTask implements TestTask {
 		} finally {
 			try {
 				// stop guardian deployments (ready)
+				Log.info("Stopping guardian deployments...");
 				cleanUp();
+				
+				// remove application from ZooKeeper
+				String applicationPath = _clusterHandle.resolvePathFromRoot(APPLICATION);
+				_clusterHandle.delete(applicationPath);
 			} finally {
 				setTestState(TestTask.State.STOPPED);
 				Log.info("Finished test");
@@ -471,9 +486,7 @@ public class ClusterTestTask implements TestTask {
 			deployment.stop();
 		}
 		
-		// remove application from ZooKeeper
-		String applicationPath = _clusterHandle.resolvePathFromRoot(APPLICATION);
-		_clusterHandle.delete(applicationPath);
+		_clusterHandle.deleteChildren(_clusterHandle.resolvePathFromRoot(SERVICE_ENDPOINTS));
 	}
 	
 	private void setTestState(TestTask.State newState) {

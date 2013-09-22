@@ -23,6 +23,7 @@ import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.events.bufferbacked.ActionReceiptEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
+import com.adamroughton.concentus.data.model.ClientId;
 import com.adamroughton.concentus.data.model.bufferbacked.ActionReceipt;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 import com.adamroughton.concentus.messaging.SocketIdentity;
@@ -32,7 +33,8 @@ import com.esotericsoftware.minlog.Log;
 
 public final class ClientProxy {
 
-	private final long _clientId;
+	private final ClientId _clientId;
+	private final long _clientIdBits;
 	private SocketIdentity _clientRef;
 	private SocketIdentity _actionCollectorRef;
 	private long _lastMsgTime;
@@ -62,8 +64,9 @@ public final class ClientProxy {
 	
 	private final ActionReceipt _actionReceiptData = new ActionReceipt();
 	
-	public ClientProxy(final long clientId) {
+	public ClientProxy(ClientId clientId) {
 		_clientId = clientId;
+		_clientIdBits = clientId.toBits();
 		_lastMsgTime = 0;
 		_clientRef = new SocketIdentity(new byte[0]);
 		_actionCollectorRef = new SocketIdentity(new byte[0]);
@@ -92,8 +95,12 @@ public final class ClientProxy {
 		_shouldDropFlag = false;
 	}
 	
-	public long getClientId() {
+	public ClientId getClientId() {
 		return _clientId;
+	}
+	
+	public long getClientIdBits() {
+		return _clientIdBits;
 	}
 	
 	public void setClientRef(SocketIdentity clientRef) {
@@ -137,7 +144,8 @@ public final class ClientProxy {
 		long tailSeq = headSeq - _reliableDataMap.getLength() + 1;
 		if (ackSeq + 1 < tailSeq) {
 			// signal that the client has been disconnected
-			Log.warn(String.format("Disconnecting client %d: requested %d, but %d was the lowest seq available", _clientId, ackSeq + 1, tailSeq));
+			Log.warn(String.format("Disconnecting client %d: requested %d, but %d " +
+					"was the lowest seq available", _clientId, ackSeq + 1, tailSeq));
 			_shouldDropFlag = true;
 			return;
 		}

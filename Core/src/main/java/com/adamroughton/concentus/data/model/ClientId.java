@@ -20,34 +20,34 @@ public final class ClientId {
 	private static final long CLIENT_ID_NAMESPACE_MASK = (0xFFFFL << 48);
 	
 	private final int _namespaceId;
-	private final long _clientId;
+	private final long _clientIndex;
 
 	/**
 	 * Each client ID is 64 bits with 16 bits reserved for the
 	 * namespaceID, and 48 bits registered for the clientId.
 	 * @param namespaceId the ID for which this client ID is unique. Only the first 16 bits
 	 * will be used.
-	 * @param clientId the unique client ID in the namespace. Only the first 48 bits
+	 * @param clientIndex the unique client index in the namespace. Only the first 48 bits
 	 * will be used.
 	 */
 	public ClientId(final int namespaceId, final long clientId) {
 		_namespaceId = namespaceId;
-		_clientId = clientId;
+		_clientIndex = clientId;
 	}
 	
 	public int getNamespaceId() {
 		return _namespaceId;
 	}
 
-	public long getClientId() {
-		return _clientId;
+	public long getClientIndex() {
+		return _clientIndex;
 	}
 
 	@Override
 	public int hashCode() {
 		final int prime = 31;
 		int result = 1;
-		result = prime * result + (int) (_clientId ^ (_clientId >>> 32));
+		result = prime * result + (int) (_clientIndex ^ (_clientIndex >>> 32));
 		result = prime * result + _namespaceId;
 		return result;
 	}
@@ -61,7 +61,7 @@ public final class ClientId {
 		if (getClass() != obj.getClass())
 			return false;
 		ClientId other = (ClientId) obj;
-		if (_clientId != other._clientId)
+		if (_clientIndex != other._clientIndex)
 			return false;
 		if (_namespaceId != other._namespaceId)
 			return false;
@@ -82,8 +82,16 @@ public final class ClientId {
 		long clientIdBits = clientId.getNamespaceId();
 		clientIdBits <<= 48;
 		clientIdBits &= CLIENT_ID_NAMESPACE_MASK;
-		clientIdBits |= (clientId.getClientId() & (~CLIENT_ID_NAMESPACE_MASK));
+		clientIdBits |= (clientId.getClientIndex() & (~CLIENT_ID_NAMESPACE_MASK));
 		return clientIdBits;
 	}
+
+	@Override
+	public String toString() {
+		return "ClientId [namespaceId=" + _namespaceId + ", clientIndex="
+				+ _clientIndex + "]";
+	}
+	
+	
 	
 }

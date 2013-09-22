@@ -42,7 +42,7 @@ import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.patterns.EventPattern;
 import com.adamroughton.concentus.messaging.patterns.EventReader;
-import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.ZmqSocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
@@ -65,7 +65,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 	private final KryoRegistratorDelegate _kryoRegistrator;
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
-	private final SocketManager<TBuffer> _socketManager;
+	private final ZmqSocketManager<TBuffer> _socketManager;
 	
 	private final EventQueue<TBuffer> _inputQueue;
 	private final InternalEventWriter<TBuffer> _internalWriter;
@@ -92,7 +92,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_metricPort = metricPort;
 		_socketManager = componentResolver.newSocketManager(concentusHandle.getClock());
-		_header = new IncomingEventHeader(0, 2);
+		_header = new IncomingEventHeader(0, 1);
 		
 		EventQueueFactory eventQueueFactory = componentResolver.getEventQueueFactory();
 		
@@ -331,9 +331,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 		}
 	
 		private void onStartCollectingEvent(CollectWindow collectWindow) {
-			if (_collectWindow == null) {
-				_collectWindow = collectWindow;
-			}
+			_collectWindow = collectWindow;
 		}
 		
 		private void onMetricEvent(MetricEvent metricEvent) {

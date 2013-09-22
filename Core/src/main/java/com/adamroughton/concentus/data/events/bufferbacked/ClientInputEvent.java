@@ -75,4 +75,21 @@ public final class ClientInputEvent extends BufferBackedObject {
 		return getBuffer().slice(actionField.offset);
 	}
 	
+	@Override
+	public String toString() {
+		StringBuilder strBuilder = new StringBuilder();
+		strBuilder.append("ClientInputEvent: ");
+		if (getBuffer() == null) {
+			strBuilder.append("[Not attached to a buffer]");
+		} else {
+			strBuilder.append("[");
+			strBuilder.append("clientId=" + getClientIdBits() + ", ");
+			strBuilder.append("reliableSeqAck=" + getReliableSeqAck() + ", ");
+			strBuilder.append("hasAction=" + hasAction() + ", ");
+			strBuilder.append("actionData=" + getActionSlice().toString());
+			strBuilder.append("]");
+		}
+		return strBuilder.toString();
+	}
+	
 }

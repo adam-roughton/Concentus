@@ -16,15 +16,15 @@ final class LongMetricEventQueuePublisher<TBuffer extends ResizingBuffer>
 	}
 
 	@Override
-	public void publish(long bucketId, MetricMetaData metricMetaData,
+	public void publish(long bucketId, long bucketDuration, MetricMetaData metricMetaData,
 			Long metricValue) {
-		publishDirect(bucketId, metricMetaData, metricValue);
+		publishDirect(bucketId, bucketDuration, metricMetaData, metricValue);
 	}
 
 	@Override
-	public void publishDirect(long bucketId, MetricMetaData metricMetaData,
+	public void publishDirect(long bucketId, long bucketDuration, MetricMetaData metricMetaData,
 			final long metricValue) {
-		publishEvent(bucketId, metricMetaData, new MetricValueWriterDelegate() {
+		publishEvent(bucketId, bucketDuration, metricMetaData, new MetricValueWriterDelegate() {
 			
 			@Override
 			public void write(ResizingBuffer buffer) {

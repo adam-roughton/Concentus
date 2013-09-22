@@ -4,6 +4,6 @@ import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 
 public interface LongValueMetricPublisher extends MetricPublisher<Long> {
 
-	void publishDirect(long bucketId, MetricMetaData metricMetaData, long metricValue);
+	void publishDirect(long bucketId, long bucketDuration, MetricMetaData metricMetaData, long metricValue);
 	
 }

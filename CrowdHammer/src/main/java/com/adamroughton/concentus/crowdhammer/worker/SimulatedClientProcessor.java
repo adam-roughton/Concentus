@@ -70,7 +70,7 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 	public SimulatedClientProcessor(
 			Clock clock,
 			StructuredArray<Client> clients,
-			long activeClientCount,
+			int activeClientCount,
 			SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue,
 			IncomingEventHeader recvHeader,
 			MetricContext metricContext) {
@@ -78,7 +78,7 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 		_activeClientCount = activeClientCount;
 		
 		// create an index for quickly looking up clients
-		_clientsIndex = new Long2LongOpenHashMap();
+		_clientsIndex = new Long2LongOpenHashMap(activeClientCount);
 		//_clientsIndex = new Long2LongArrayMap((int)_clients.getLength());
 		
 		_clientSendQueue = Objects.requireNonNull(clientSendQueue);

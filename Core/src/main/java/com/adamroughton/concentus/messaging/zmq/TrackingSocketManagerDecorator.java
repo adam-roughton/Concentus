@@ -25,20 +25,24 @@ import com.adamroughton.concentus.data.BufferFactory;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
+import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
+import com.adamroughton.concentus.messaging.MessengerBridge;
+import com.adamroughton.concentus.messaging.MessengerBridge.BridgeDelegate;
+import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.SocketIdentity;
 import com.adamroughton.concentus.messaging.TrackingMessengerDecorator;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.util.Mutex;
 
-public class TrackingSocketManagerDecorator<TBuffer extends ResizingBuffer> implements SocketManager<TBuffer> {
+public class TrackingSocketManagerDecorator<TBuffer extends ResizingBuffer> implements ZmqSocketManager<TBuffer> {
 
 	private final MetricContext _metricContext;
-	private final SocketManager<TBuffer> _decoratedManager;
+	private final ZmqSocketManager<TBuffer> _decoratedManager;
 	private final Clock _clock;
 	
-	public TrackingSocketManagerDecorator(MetricContext metricContext, SocketManager<TBuffer> decoratedManager, Clock clock) {
+	public TrackingSocketManagerDecorator(MetricContext metricContext, ZmqSocketManager<TBuffer> decoratedManager, Clock clock) {
 		_metricContext = Objects.requireNonNull(metricContext);
 		_decoratedManager = Objects.requireNonNull(decoratedManager);
 		_clock = Objects.requireNonNull(clock);
@@ -124,6 +128,25 @@ public class TrackingSocketManagerDecorator<TBuffer extends ResizingBuffer> impl
 			
 		};
 	}
+	
+	@Override
+	public MessengerBridge<TBuffer> newBridge(
+			int frontendSocketId, int backendSocketId,
+			BridgeDelegate<TBuffer> bridgeDelegate,
+			IncomingEventHeader frontendHeader,
+			OutgoingEventHeader backendHeader) {
+		return _decoratedManager.newBridge(frontendSocketId, backendSocketId,
+				bridgeDelegate, frontendHeader, backendHeader);
+	}
+
+	@Override
+	public MessengerBridge<TBuffer> newBridge(int frontendSocketId,
+			int backendSocketId, BridgeDelegate<TBuffer> bridgeDelegate,
+			int defaultBufferSize, IncomingEventHeader frontendHeader,
+			OutgoingEventHeader backendHeader) {
+		return _decoratedManager.newBridge(frontendSocketId, backendSocketId, 
+				bridgeDelegate, defaultBufferSize, frontendHeader, backendHeader);
+	}
 
 	@Override
 	public int connectSocket(int socketId, ServiceEndpoint endpoint) {
@@ -169,6 +192,11 @@ public class TrackingSocketManagerDecorator<TBuffer extends ResizingBuffer> impl
 	@Override
 	public int[] getBoundPorts(int socketId) {
 		return _decoratedManager.getBoundPorts(socketId);
+	}
+	
+	@Override
+	public int getBoundPort(int socketId) {
+		return _decoratedManager.getBoundPort(socketId);
 	}
 
 }

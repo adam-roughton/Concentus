@@ -20,7 +20,8 @@ import java.util.Objects;
 public enum CoreServices {
 	CLIENT_HANDLER("client_handler"),
 	ACTION_PROCESSOR("action_processor"),
-	CANONICAL_STATE("canonical_state")
+	CANONICAL_STATE("canonical_state"),
+	TICK_TIMER("tick_timer")
 	;
 		
 	private final String _id;

@@ -54,7 +54,7 @@ import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
 import com.adamroughton.concentus.messaging.SocketIdentity;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
-import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.ZmqSocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.pipeline.PipelineSection;
@@ -108,7 +108,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 	private final MetricContext _metricContext;
 	private final RoundRobinAllocationStrategy _actionProcAllocationStrategy = new RoundRobinAllocationStrategy();
 	
-	private final SocketManager<TBuffer> _socketManager;
+	private final ZmqSocketManager<TBuffer> _socketManager;
 	private final ExecutorService _executor;
 	
 	private final EventQueue<TBuffer> _recvQueue;
@@ -178,7 +178,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 				.setRecvPairAddress(String.format("tcp://%s:%d", 
 						concentusHandle.getNetworkAddress().getHostAddress(),
 						_routerPort));
-		_dealerSetSocketId = _socketManager.create(SocketManager.DEALER_SET, dealerSetSocketSettings, "input_send");
+		_dealerSetSocketId = _socketManager.create(ZmqSocketManager.DEALER_SET, dealerSetSocketSettings, "input_send");
 		
 		// sub socket
 		SocketSettings subSocketSetting = SocketSettings.create()
@@ -253,16 +253,18 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 		if (canonicalStateEndpoints.size() < 1) {
 			throw new RuntimeException("No canonical state services registered!");
 		}
-		List<ServiceEndpoint> actionProcessorEndpoints = cluster.getAllServiceEndpoints(ConcentusEndpoints.ACTION_PROCESSOR.getId());
+		List<ServiceEndpoint> actionProcessorEndpoints = cluster.getAllServiceEndpoints(ConcentusEndpoints.ACTION_COLLECTOR.getId());
 		if (actionProcessorEndpoints.size() < 1) {
 			throw new RuntimeException("No action processor services registered!");
 		}
 		
 		for (ServiceEndpoint endpoint : canonicalStateEndpoints) {
+			Log.info("Connecting to canonical state endpoint: " + endpoint);
 			_socketManager.connectSocket(_subSocketId, endpoint);
 		}
 		
 		for (ServiceEndpoint endpoint : actionProcessorEndpoints) {
+			Log.info("Connecting to action processor endpoint: " + endpoint);
 			_socketManager.connectSocket(_dealerSetSocketId, endpoint);
 		}
 		

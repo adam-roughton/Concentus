@@ -25,9 +25,11 @@ import com.adamroughton.concentus.ComponentResolver;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.ConcentusEndpoints;
 import com.adamroughton.concentus.CoreServices;
+import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.actioncollector.ActionCollectorService;
 import com.adamroughton.concentus.actioncollector.ActionCollectorService.ActionCollectorServiceDeployment;
-import com.adamroughton.concentus.canonicalstate.TickTimer;
+import com.adamroughton.concentus.canonicalstate.TickTimerService;
+import com.adamroughton.concentus.canonicalstate.TickTimerService.TickTimerServiceDeployment;
 import com.adamroughton.concentus.cluster.ClusterHandleSettings;
 import com.adamroughton.concentus.cluster.worker.ClusterHandle;
 import com.adamroughton.concentus.cluster.worker.ClusterService;
@@ -48,12 +50,13 @@ import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
-import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.ZmqSocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.pipeline.ProcessingPipeline;
 import com.adamroughton.concentus.util.Mutex;
+import com.esotericsoftware.minlog.Log;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.YieldingWaitStrategy;
@@ -67,6 +70,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 	public static class DirectCanonicalStateServiceDeployment extends ServiceDeploymentBase<ServiceState> {
 
 		private int _actionCollectorPort;
+		private int _actionCollectorTickSubPort;
 		private int _actionCollectorRecvBufferLength;
 		private int _actionCollectorSendBufferLength;
 		private int _pubPort;
@@ -77,13 +81,15 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 		private DirectCanonicalStateServiceDeployment() { }
 		
 		public DirectCanonicalStateServiceDeployment(int actionCollectorPort,
+				int actionCollectorTickSubPort,
 				int actionCollectorRecvBufferLength,
 				int actionCollectorSendBufferLength,
 				int pubPort,
 				int pubBufferLength) {
 			super(new ServiceInfo<>(CoreServices.CANONICAL_STATE.getId(), ServiceState.class),
-					ActionCollectorService.SERVICE_INFO);
+					ActionCollectorService.SERVICE_INFO, TickTimerService.SERVICE_INFO);
 			_actionCollectorPort = actionCollectorPort;
+			_actionCollectorTickSubPort = actionCollectorTickSubPort;
 			_actionCollectorRecvBufferLength = actionCollectorRecvBufferLength;
 			_actionCollectorSendBufferLength = actionCollectorSendBufferLength;
 			_pubPort = pubPort;
@@ -99,8 +105,9 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 				int serviceId, StateData initData, ServiceContext<ServiceState> context,
 				ConcentusHandle handle, MetricContext metricContext,
 				ComponentResolver<TBuffer> resolver) {
-			return new DirectCanonicalStateService<>(_actionCollectorPort, _actionCollectorRecvBufferLength, 
-					_actionCollectorSendBufferLength, _pubPort, _pubBufferLength, handle, metricContext, resolver);
+			return new DirectCanonicalStateService<>(_actionCollectorPort, _actionCollectorTickSubPort, 
+					_actionCollectorRecvBufferLength, _actionCollectorSendBufferLength, _pubPort, 
+					_pubBufferLength, handle, metricContext, resolver);
 		}
 		
 	}
@@ -110,7 +117,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 	private final ComponentResolver<? extends ResizingBuffer> _componentResolver;
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
-	private final SocketManager<TBuffer> _socketManager;
+	private final ZmqSocketManager<TBuffer> _socketManager;
 	private final EventQueue<TBuffer> _outputQueue;
 	private final OutgoingEventHeader _pubHeader;
 	private final EventQueue<ComputeStateEvent> _recvQueue;
@@ -122,9 +129,11 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 	private EventProcessor _publisher;
 	
 	private ServiceContainer<ServiceState> _actionProcessorContainer;
-	private ActionCollectorService<?> _actionCollectorService;
+	
+	private ServiceContainer<ServiceState> _tickTimerContainer;
 	
 	private final int _actionCollectorPort;
+	private final int _actionCollectorTickSubPort;
 	private final int _actionCollectorRecvQueueLength;
 	private final int _actionCollectorSendQueueLength;
 	private final int _pubPort;
@@ -132,6 +141,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 	
 	public DirectCanonicalStateService(
 			int actionCollectorPort,
+			int actionCollectorTickSubPort,
 			int actionCollectorRecvQueueLength,
 			int actionCollectorSendQueueLength,
 			int pubPort,
@@ -140,6 +150,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 			MetricContext metricContext, 
 			ComponentResolver<TBuffer> resolver) {
 		_actionCollectorPort = actionCollectorPort;
+		_actionCollectorTickSubPort = actionCollectorTickSubPort;
 		_actionCollectorRecvQueueLength = actionCollectorRecvQueueLength;
 		_actionCollectorSendQueueLength = actionCollectorSendQueueLength;
 		
@@ -183,31 +194,24 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 	@Override
 	protected void onInit(StateData stateData, ClusterHandle cluster) throws Exception {
 		_application = cluster.getApplicationInstanceFactory().newInstance();	
-		// bit hacky, but lets us get access to the service in the container
-		ActionCollectorServiceDeployment actionCollector = new ActionCollectorServiceDeployment(_actionCollectorPort, 
-				_actionCollectorRecvQueueLength, _actionCollectorSendQueueLength, 
-				new DirectTickDelegate<>(_recvQueue), 0, _application.getTickDuration()) {
-
-					@SuppressWarnings("hiding")
-					@Override
-					public <TBuffer extends ResizingBuffer> ClusterService<ServiceState> createService(
-							int serviceId,
-							StateData initData,
-							ServiceContext<ServiceState> context,
-							ConcentusHandle handle,
-							MetricContext metricContext,
-							ComponentResolver<TBuffer> resolver) {
-						_actionCollectorService = (ActionCollectorService<?>) 
-								super.createService(serviceId, initData, context, handle, metricContext, resolver);
-						return _actionCollectorService;
-					}
-			
-		};
+		
 		ClusterHandleSettings canonicalStateHandleSettings = cluster.settings();
-		ClusterHandleSettings actionProcHandleSettings = new ClusterHandleSettings(canonicalStateHandleSettings.zooKeeperAddress(), 
-				canonicalStateHandleSettings.zooKeeperAppRoot(), canonicalStateHandleSettings.exCallback());
+		String zooKeeperAddress = canonicalStateHandleSettings.zooKeeperAddress();
+		String zooKeeperAppRoot = canonicalStateHandleSettings.zooKeeperAppRoot();
+		FatalExceptionCallback exCallback = canonicalStateHandleSettings.exCallback();
+		
+		ClusterHandleSettings actionProcHandleSettings = new ClusterHandleSettings(zooKeeperAddress, 
+				zooKeeperAppRoot, exCallback);
+		ActionCollectorServiceDeployment actionCollector = new ActionCollectorServiceDeployment(_actionCollectorPort, 
+				_actionCollectorTickSubPort, _actionCollectorRecvQueueLength, _actionCollectorSendQueueLength, 
+				new DirectTickDelegate<>(_recvQueue), 0, _application.getTickDuration());
 		_actionProcessorContainer = new ServiceContainer<>(actionProcHandleSettings, _concentusHandle, actionCollector, _componentResolver);
 		_actionProcessorContainer.start();
+		
+		TickTimerServiceDeployment tickTimerServiceDeployment = new TickTimerServiceDeployment(_application.getTickDuration(), 0);
+		ClusterHandleSettings tickTimerHandleSettings = new ClusterHandleSettings(zooKeeperAddress, zooKeeperAppRoot, exCallback);
+		_tickTimerContainer = new ServiceContainer<>(tickTimerHandleSettings, _concentusHandle, tickTimerServiceDeployment, _componentResolver);
+		_tickTimerContainer.start();
 	}
 	
 	@Override
@@ -219,6 +223,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 		ServiceEndpoint endpoint = new ServiceEndpoint(ConcentusEndpoints.CANONICAL_STATE_PUB.getId(), 
 				_concentusHandle.getNetworkAddress().getHostAddress(),
 				_pubPort);
+		Log.info("Registering endpoint " + endpoint);
 		cluster.registerServiceEndpoint(endpoint);
 	}
 
@@ -227,13 +232,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 		SendQueue<OutgoingEventHeader, TBuffer> pubSendQueue = new SendQueue<>("publisher", _pubHeader, _outputQueue);
 		
 		Clock clock = _concentusHandle.getClock();
-		_stateProcessor = new DirectStateProcessor<>(_application, clock, pubSendQueue, new TickTimer.TickStrategy() {
-			
-			@Override
-			public void onTick(long time) {
-				_actionCollectorService.tick(time);
-			}
-		}, _metricContext);		
+		_stateProcessor = new DirectStateProcessor<>(_application, clock, pubSendQueue, _metricContext);		
 		
 		Runnable startPoint = new Runnable() {
 			

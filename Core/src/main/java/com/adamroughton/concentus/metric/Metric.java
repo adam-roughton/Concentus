@@ -37,7 +37,7 @@ public abstract class Metric<T> {
 	public final void publishPending() {
 		long currentBucketId = _metricBucketInfo.getCurrentBucketId();
 		for (long bucketId = bucketIdLowerBound(); bucketId < currentBucketId; bucketId++) {
-			doPublish(bucketId, _metricMetaData);
+			doPublish(bucketId, _metricBucketInfo.getBucketDuration(), _metricMetaData);
 			_windowMap.remove(bucketId);
 			_lastPublishedBucketId = bucketId;
 		}
@@ -62,14 +62,14 @@ public abstract class Metric<T> {
 		return _lastPublishedBucketId;
 	}
 	
-	protected void doPublish(long bucketId, MetricMetaData metricMetaData) {
+	protected void doPublish(long bucketId, long bucketDuration, MetricMetaData metricMetaData) {
 		T metricValue;
 		if (_windowMap.containsIndex(bucketId)) {
 			metricValue = _windowMap.get(bucketId);
 		} else {
 			metricValue = getDefaultValue();
 		}		
-		_metricPublisher.publish(bucketId, metricMetaData, 
+		_metricPublisher.publish(bucketId, bucketDuration, metricMetaData, 
 				_accumulator.getCumulativeValue(metricValue));
 	}
 	

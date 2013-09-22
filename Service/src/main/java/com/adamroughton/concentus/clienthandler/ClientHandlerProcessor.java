@@ -64,17 +64,9 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	private final IncomingEventHeader _routerRecvHeader;
 	private final IncomingEventHeader _subRecvHeader;
 	
-	private long _nextClientId = 0;
+	private long _nextClientIndex = 0;
 	
-	private final StructuredArray<ClientProxy> _clientLookup = StructuredArray.newInstance(32 * 1024, ClientProxy.class, new ComponentFactory<ClientProxy>() {
-
-		private long nextClientId = 0;
-		
-		@Override
-		public ClientProxy newInstance(Object[] initArgs) {
-			return new ClientProxy(nextClientId++);
-		}
-	});
+	private final StructuredArray<ClientProxy> _clientLookup;
 	
 	private final ActionEvent _actionEvent = new ActionEvent();
 	private final ActionReceiptEvent _actionReceiptEvent = new ActionReceiptEvent();
@@ -103,7 +95,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	public ClientHandlerProcessor(
 			ActionProcessorAllocationStrategy actionProcessorAllocator,
 			Clock clock,
-			int clientHandlerId,
+			final int clientHandlerId,
 			int routerSocketId,
 			int subSocketId,
 			SendQueue<OutgoingEventHeader, TBuffer> routerSendQueue,
@@ -120,6 +112,16 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 		
 		_routerRecvHeader = routerRecvHeader;
 		_subRecvHeader = subRecvHeader;
+		
+		_clientLookup = StructuredArray.newInstance(32 * 1024, ClientProxy.class, new ComponentFactory<ClientProxy>() {
+
+			private long nextClientId = 0;
+			
+			@Override
+			public ClientProxy newInstance(Object[] initArgs) {
+				return new ClientProxy(new ClientId(clientHandlerId,  nextClientId++));
+			}
+		});
 		
 		_metricContext = Objects.requireNonNull(metricContext);
 		_metrics = new MetricGroup();
@@ -236,7 +238,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	}
 	
 	private void onClientConnected(final SocketIdentity clientSocketId, final ClientConnectEvent connectEvent) {
-		if (_nextClientId >= _clientLookup.getLength()) {
+		if (_nextClientIndex >= _clientLookup.getLength()) {
 			// over-subscribed - turn away
 			_routerSendQueue.send(RouterPattern.asReliableTask(clientSocketId, _connectResEvent, new EventWriter<OutgoingEventHeader, ConnectResponseEvent>() {
 
@@ -248,13 +250,13 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 				
 			}));
 		} else {
-			final long newClientId = _nextClientId++;
-			ClientProxy newClient = _clientLookup.get(newClientId);
+			final long newClientIndex = _nextClientIndex++;
+			ClientProxy newClient = _clientLookup.get(newClientIndex);
 			
 			newClient.setLastMsgTime(_clock.currentMillis());
 			newClient.setClientRef(clientSocketId);
 			
-			SocketIdentity actionProcessorRef = _actionProcessorAllocator.allocateClient(newClientId);
+			SocketIdentity actionProcessorRef = _actionProcessorAllocator.allocateClient(newClientIndex);
 			newClient.setActionCollectorRef(actionProcessorRef);
 			
 			newClient.setIsActive(true);
@@ -265,7 +267,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 
 				@Override
 				public void write(OutgoingEventHeader header, ConnectResponseEvent event) {
-					event.setClientId(new ClientId(_clientHandlerId, newClientId));
+					event.setClientId(new ClientId(_clientHandlerId, newClientIndex));
 					event.setResponseCode(ConnectResponseEvent.RES_OK);
 					event.setCallbackBits(connectEvent.getCallbackBits());
 				}
@@ -278,7 +280,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	
 	private void onClientInput(final SocketIdentity senderRef, final ClientInputEvent inputEvent) {
 		try {
-			final ClientProxy client = _clientLookup.get(inputEvent.getClientId().getClientId());
+			final ClientProxy client = _clientLookup.get(inputEvent.getClientId().getClientIndex());
 			if (client.isActive()) {
 				
 				/*
@@ -305,7 +307,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 							@Override
 							public void write(OutgoingEventHeader header,
 									ClientUpdateEvent event) throws Exception {
-								event.setClientId(client.getClientId());
+								event.setClientId(client.getClientIdBits());
 								client.generateUpdate(inputEvent, _latestCanonicalState, event);	
 							}
 				}));
@@ -328,7 +330,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 			}
 			_inputActionThroughputMetric.push(1);
 		} catch (ArrayIndexOutOfBoundsException eNotFound) {
-			Log.warn(String.format("Unknown client ID %d", inputEvent.getClientId().getClientId()));
+			Log.warn(String.format("Unknown client ID %d", inputEvent.getClientId().getClientIndex()));
 			Log.warn(String.format("Router Header: %d, Sub Header: %d", _routerRecvHeader.getHeaderId(), _subRecvHeader.getHeaderId()));
 			Log.warn(inputEvent.getBuffer().toString());
 		}
@@ -336,12 +338,12 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	
 	private void onActionReceipt(SocketIdentity senderRef, ActionReceiptEvent receiptEvent) {
 		try {
-			final ClientProxy client = _clientLookup.get(receiptEvent.getClientId().getClientId());
+			final ClientProxy client = _clientLookup.get(receiptEvent.getClientId().getClientIndex());
 			if (client.isActive()) {
 				client.processActionReceipt(receiptEvent);
 			}
 		} catch (ArrayIndexOutOfBoundsException eNotFound) {
-			Log.warn(String.format("Unknown client ID %d", receiptEvent.getClientId().getClientId()));
+			Log.warn(String.format("Unknown client ID %d", receiptEvent.getClientId().getClientIndex()));
 			Log.warn(String.format("Router Header: %d, Sub Header: %d", _routerRecvHeader.getHeaderId(), _subRecvHeader.getHeaderId()));
 			Log.warn(receiptEvent.getBuffer().toString());
 		}

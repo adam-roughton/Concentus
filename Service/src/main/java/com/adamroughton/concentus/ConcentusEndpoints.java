@@ -4,7 +4,8 @@ import java.util.Objects;
 
 public enum ConcentusEndpoints {
 		CLIENT_HANDLER("client_handler"),
-		ACTION_PROCESSOR("action_processor"),
+		ACTION_COLLECTOR("action_collector"),
+		ACTION_COLLECTOR_TICK_SUB("action_collector_tick_sub"),
 		CANONICAL_STATE_PUB("canonical_state_pub")
 	;
 		

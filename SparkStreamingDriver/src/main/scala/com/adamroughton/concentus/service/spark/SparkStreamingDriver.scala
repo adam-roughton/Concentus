@@ -27,6 +27,7 @@ import com.adamroughton.concentus.ComponentResolver
 import com.adamroughton.concentus.cluster.worker.StateData
 import com.adamroughton.concentus.cluster.worker.ClusterHandle
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState
+import com.adamroughton.concentus.cluster.ClusterHandleSettings
 
 class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		actionCollectorPort: Int,
@@ -53,21 +54,17 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
     	    Constants.DEFAULT_MSG_BUFFER_SIZE, new YieldingWaitStrategy))
     }
 	
-	protected override def onInit(stateData: StateData[ServiceState], cluster: ClusterHandle) = {
+	protected override def onInit(stateData: StateData, cluster: ClusterHandle) = {
     	application = cluster.getApplicationInstanceFactory().newInstance()
     	
     	// create the canonical state processor
     	canonicalStateProcessor = new CanonicalStateProcessor(application, 
-    	    concentusHandle.getClock(),
     	    sendQueue,
-    	    new TickStrategy {
-    			def onTick(time: Long) = {}
-    		},
     		new MetricGroup,
     		metricContext)
 	}
 	
-	protected override def onBind(stateData: StateData[ServiceState], cluster: ClusterHandle) = {
+	protected override def onBind(stateData: StateData, cluster: ClusterHandle) = {
     	/*
     	 * We need spark to start the action collectors on the workers
     	 * before moving to the next state as dependent services will look
@@ -87,8 +84,12 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
     	    application.variableDefinitions map { v => (v.getVariableId, v.getTopNCount) } toMap)
     	
 		val streams = for (id <- 1 to sparkWorkerCount) yield {
+			val clusterHandleSettings = new ClusterHandleSettings(
+			    cluster.settings.zooKeeperAddress,
+			    cluster.settings.zooKeeperAppRoot,
+			    concentusHandle)
 			val stream = new CandidateValueDStream(ssc, actionCollectorPort, actionCollectorRecvBufferLength, 
-			    actionCollectorSendBufferLength, id, concentusHandle.getZooKeeperAddress, cluster.getAppRoot(), resolver)
+			    actionCollectorSendBufferLength, id, clusterHandleSettings, resolver)
 			ssc.registerInputStream(stream)
 
 			stream.map(v => (v.groupKey, v))
@@ -104,14 +105,6 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 			.reduceByKey((v1, v2) => v1.union(v2))
 			.foreach(rdd => rdd.collect())
 		ssc.start
-	}
-
-	protected override def onStart(stateData: StateData[ServiceState], cluster: ClusterHandle) = {
-
-	}
-
-	protected override def onShutdown(stateData: StateData[ServiceState], cluster: ClusterHandle) = {
-    	
 	}
 
 }

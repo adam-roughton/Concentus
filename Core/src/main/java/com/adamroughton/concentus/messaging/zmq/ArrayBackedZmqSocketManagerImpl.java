@@ -31,21 +31,26 @@ import java.util.concurrent.TimeoutException;
 import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.data.ArrayBackedResizingBufferFactory;
 import com.adamroughton.concentus.data.BufferFactory;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
+import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
+import com.adamroughton.concentus.messaging.MessengerBridge;
+import com.adamroughton.concentus.messaging.MessengerBridge.BridgeDelegate;
 import com.adamroughton.concentus.messaging.MessengerMutex;
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerFactory;
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerMutex;
+import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.SocketIdentity;
 import com.adamroughton.concentus.util.Mutex;
 import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 
-public final class SocketManagerImpl implements SocketManager<ArrayBackedResizingBuffer> {
+public final class ArrayBackedZmqSocketManagerImpl implements ZmqSocketManager<ArrayBackedResizingBuffer> {
 
 	private static final int SOCKET_TIMEOUT = 1000;
 	
@@ -62,11 +67,11 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 	private int _nextSocketId = 0;
 	private boolean _isActive = true;
 	
-	public SocketManagerImpl(Clock clock) {
+	public ArrayBackedZmqSocketManagerImpl(Clock clock) {
 		this(clock, 1);
 	}
 	
-	public SocketManagerImpl(Clock clock, int ioThreads) {
+	public ArrayBackedZmqSocketManagerImpl(Clock clock, int ioThreads) {
 		_clock = Objects.requireNonNull(clock);
 		_zmqContext = ZMQ.context(ioThreads);
 	}
@@ -84,9 +89,9 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 	
 	/**
 	 * Creates a new managed socket. The socket is not opened until
-	 * a call to {@link SocketManager#updateSettings(int, SocketSettings)} is made
+	 * a call to {@link ZmqSocketManager#updateSettings(int, SocketSettings)} is made
 	 * with a {@link SocketSettings} object that includes a port to bind to; or 
-	 * a call to {@link SocketManager#connectSocket(int, String)} is made.
+	 * a call to {@link ZmqSocketManager#connectSocket(int, String)} is made.
 	 * @param socketType the ZMQ socket type
 	 * @param name a name for the socket
 	 * @return the socketID which refers to the created socket
@@ -102,7 +107,7 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 		_settingsLookup.put(socketId, Objects.requireNonNull(socketSettings));
 		_socketConnLookup.put(socketId, new ConnectionsRecord());
 		
-		if (socketType == SocketManager.DEALER_SET) {
+		if (socketType == ZmqSocketManager.DEALER_SET) {
 			String recvPairAddress = socketSettings.getRecvPairAddress();
 			if (recvPairAddress == null) {
 				throw new IllegalArgumentException("The socket settings had no recv pair address defined for the dealer set socket");
@@ -169,6 +174,13 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 		}
 	}
 	
+	public synchronized int getBoundPort(int socketId) {
+		int[] boundPorts = getBoundPorts(socketId);
+		if (boundPorts.length < 1) 
+			throw new RuntimeException("No bound port for socket ID " + socketId);
+		return boundPorts[0];
+	}
+	
 	public synchronized void updateSettings(final int socketId, SocketSettings socketSettings) {
 		assertManagerActive();
 		assertSocketExists(socketId);
@@ -229,6 +241,41 @@ public final class SocketManagerImpl implements SocketManager<ArrayBackedResizin
 			}
 			
 		}, messengerMutexes);
+	}
+	
+	@Override
+	public MessengerBridge<ArrayBackedResizingBuffer> newBridge(
+			int frontendSocketId, int backendSocketId,
+			BridgeDelegate<ArrayBackedResizingBuffer> bridgeDelegate, 
+			IncomingEventHeader frontendHeader, OutgoingEventHeader backendHeader) {
+		return newBridge(frontendSocketId, backendSocketId, bridgeDelegate, 
+				Constants.MSG_BUFFER_ENTRY_LENGTH, frontendHeader, backendHeader);
+	}
+	
+	@Override
+	public MessengerBridge<ArrayBackedResizingBuffer> newBridge(
+			int frontendSocketId, int backendSocketId,
+			BridgeDelegate<ArrayBackedResizingBuffer> bridgeDelegate, int defaultBufferSize, 
+			IncomingEventHeader frontendHeader, OutgoingEventHeader backendHeader) {
+		assertManagerActive();
+		Mutex<Messenger<ArrayBackedResizingBuffer>> frontendMessenger = getSocketMutex(frontendSocketId);
+		assertAvailable(frontendSocketId, frontendMessenger);
+		
+		Mutex<Messenger<ArrayBackedResizingBuffer>> backendMessenger = getSocketMutex(backendSocketId);
+		assertAvailable(backendSocketId, backendMessenger);
+		
+		return new MessengerBridge<>(bridgeDelegate, defaultBufferSize, getBufferFactory(), 
+				frontendMessenger, backendMessenger, frontendHeader, backendHeader);
+	}
+	
+	private void assertAvailable(int socketId, Mutex<Messenger<ArrayBackedResizingBuffer>> messengerMutex) {
+		if (messengerMutex == null) {
+			throw new IllegalArgumentException("The socket ID " + socketId + 
+					" was not found in this socket manager.");
+		} else if (messengerMutex.isOwned()) {
+			throw new IllegalArgumentException("The socket ID " + socketId + 
+					" is already in use by another component.");
+		}
 	}
 	
 	@Override

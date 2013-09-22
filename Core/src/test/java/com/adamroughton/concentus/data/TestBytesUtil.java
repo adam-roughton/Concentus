@@ -352,7 +352,7 @@ public class TestBytesUtil {
 		
 		ClientId actual = BytesUtil.readClientId(bb.array(), 0);
 		assertEquals(expected.getNamespaceId(), actual.getNamespaceId());
-		assertEquals(expected.getClientId(), actual.getClientId());
+		assertEquals(expected.getClientIndex(), actual.getClientIndex());
 	}
 	
 	@Test
@@ -365,7 +365,7 @@ public class TestBytesUtil {
 		
 		ClientId actual = BytesUtil.readClientId(bb.array(), 0);
 		assertEquals(expected.getNamespaceId(), actual.getNamespaceId());
-		assertEquals(expected.getClientId(), actual.getClientId());
+		assertEquals(expected.getClientIndex(), actual.getClientIndex());
 	}
 	
 	@Test

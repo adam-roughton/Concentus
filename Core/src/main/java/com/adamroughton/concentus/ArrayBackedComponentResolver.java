@@ -3,8 +3,8 @@ package com.adamroughton.concentus;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
-import com.adamroughton.concentus.messaging.zmq.SocketManager;
-import com.adamroughton.concentus.messaging.zmq.SocketManagerImpl;
+import com.adamroughton.concentus.messaging.zmq.ZmqSocketManager;
+import com.adamroughton.concentus.messaging.zmq.ArrayBackedZmqSocketManagerImpl;
 
 public class ArrayBackedComponentResolver implements ComponentResolver<ArrayBackedResizingBuffer> {
 	
@@ -20,8 +20,8 @@ public class ArrayBackedComponentResolver implements ComponentResolver<ArrayBack
 	}
 
 	@Override
-	public SocketManager<ArrayBackedResizingBuffer> newSocketManager(Clock clock) {
-		return new SocketManagerImpl(clock);
+	public ZmqSocketManager<ArrayBackedResizingBuffer> newSocketManager(Clock clock) {
+		return new ArrayBackedZmqSocketManagerImpl(clock);
 	}
 	
 }

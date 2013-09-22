@@ -34,14 +34,14 @@ public final class CountMetric extends Metric<Long> {
 	}
 	
 	@Override
-	protected void doPublish(long bucketId, MetricMetaData metricMetaData) {
+	protected void doPublish(long bucketId, long bucketDuration, MetricMetaData metricMetaData) {
 		long currentCount;
 		if (_countBuckets.containsIndex(bucketId)) {
 			currentCount = _countBuckets.getDirect(bucketId);
 		} else {
 			currentCount = 0;
 		}
-		_metricPublisher.publishDirect(bucketId, metricMetaData, _accumulator.getCumulativeValueDirect(currentCount));
+		_metricPublisher.publishDirect(bucketId, bucketDuration, metricMetaData, _accumulator.getCumulativeValueDirect(currentCount));
 	}
 	
 	private interface LongMetricAccumulator extends MetricAccumulator<Long> {

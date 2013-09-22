@@ -8,4 +8,6 @@ public interface VersioningListenable<TListener> extends Listenable<TListener> {
 	
 	int getListenerVersion(TListener listener);
 	
+	void clear();
+	
 }

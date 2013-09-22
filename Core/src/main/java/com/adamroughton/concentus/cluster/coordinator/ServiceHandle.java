@@ -177,6 +177,7 @@ public final class ServiceHandle<TState extends Enum<TState> & ClusterState> imp
 
 	@Override
 	public void close() throws IOException {
+		_listenableContainer.clear();
 		_serviceStateCache.close();
 	}
 	

@@ -62,7 +62,7 @@ public abstract class EventHeader {
 		
 		_headerId = headerId;
 		
-		// first byte reserved for header ID
+		// first 4 bytes reserved for header ID
 		_flagOffset = _startOffset + ResizingBuffer.INT_SIZE;
 		
 		if (additionalFlagCount < 0) throw new IllegalArgumentException("The additional flag count must be not be negative.");

@@ -29,6 +29,7 @@ import com.adamroughton.concentus.data.events.bufferbacked.ClientConnectEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ConnectResponseEvent;
+import com.adamroughton.concentus.data.model.ClientId;
 import com.adamroughton.concentus.data.model.bufferbacked.ActionReceipt;
 import com.adamroughton.concentus.data.model.bufferbacked.BufferBackedEffect;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
@@ -310,7 +311,7 @@ public final class Client {
 		}
 		_agent.onUpdate(update);
 		
-		if (_clientId == 0) {
+		if (ClientId.fromBits(_clientId).getClientIndex() == 0) {
 			ChunkReader updateChunkReader = new ChunkReader(update.getData());
 			StringBuilder stateBuilder = new StringBuilder();
 			stateBuilder.append("update [");

@@ -36,7 +36,8 @@ abstract class MetricEventQueuePublisherBase<TBuffer extends ResizingBuffer> {
 		void write(ResizingBuffer buffer);
 	}
 	
-	protected final void publishEvent(final long bucketId, final MetricMetaData metricMetaData, final MetricValueWriterDelegate writerDelegate) {
+	protected final void publishEvent(final long bucketId, final long bucketDuration, 
+			final MetricMetaData metricMetaData, final MetricValueWriterDelegate writerDelegate) {
 		final ResizingBuffer buffer = _eventPublisher.next();
 		PubSubPattern.writePubEvent(buffer, _pubEventHeader, _metricEvent, new EventWriter<OutgoingEventHeader, MetricEvent>() {
 
@@ -47,6 +48,7 @@ abstract class MetricEventQueuePublisherBase<TBuffer extends ResizingBuffer> {
 				event.setMetricId(metricMetaData.getMetricId());
 				event.setMetricType(_metricType);
 				event.setMetricBucketId(bucketId);
+				event.setBucketDuration(bucketDuration);
 				writerDelegate.write(event.getMetricValueSlice());
 			}
 		});

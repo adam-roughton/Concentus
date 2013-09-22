@@ -24,17 +24,21 @@ import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint;
 import com.adamroughton.concentus.disruptor.EventQueue;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
+import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
+import com.adamroughton.concentus.messaging.MessengerBridge;
+import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.SocketIdentity;
+import com.adamroughton.concentus.messaging.MessengerBridge.BridgeDelegate;
 import com.adamroughton.concentus.util.Mutex;
 
-public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable {
+public interface ZmqSocketManager<TBuffer extends ResizingBuffer> extends Closeable {
 	
 	public final int DEALER_SET = 101;
 	
 	/**
-	 * Gets a factory for creating {@link ResizingBuffer} instances that this {@link SocketManager}
+	 * Gets a factory for creating {@link ResizingBuffer} instances that this {@link ZmqSocketManager}
 	 * is compatible with.
 	 * @return a factory for creating {@linkplain ResizingBuffer} instances
 	 */
@@ -42,7 +46,7 @@ public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable
 	
 	/**
 	 * Creates a new factory for creating {@link EventQueue} instances that are filled with 
-	 * {@link ResizingBuffer} instances that this {@link SocketManager} is compatible with.
+	 * {@link ResizingBuffer} instances that this {@link ZmqSocketManager} is compatible with.
 	 * @param eventQueueFactory the event queue factory that will be used for creating the
 	 * underlying EventQueue for each message queue
 	 * @return a factory for creating message queues
@@ -51,9 +55,9 @@ public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable
 	
 	/**
 	 * Creates a new managed socket. The socket is not opened until
-	 * a call to {@link SocketManager#updateSettings(int, SocketSettings)} is made
+	 * a call to {@link ZmqSocketManager#updateSettings(int, SocketSettings)} is made
 	 * with a {@link SocketSettings} object that includes a port to bind to; or 
-	 * a call to {@link SocketManager#connectSocket(int, String)} is made.
+	 * a call to {@link ZmqSocketManager#connectSocket(int, String)} is made.
 	 * @param socketType the ZMQ socket type
 	 * @param name a name for the socket
 	 * @return the socketID which refers to the created socket
@@ -64,8 +68,8 @@ public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable
 	 * Creates a new managed socket. The socket is opened immediately if
 	 * the {@link SocketSettings} object includes a port to bind to; otherwise
 	 * the socket will remain closed until a call to 
-	 * {@link SocketManager#connectSocket(int, String)} is made, or the settings
-	 * are updated with a bound port through {@link SocketManager#updateSettings(int, SocketSettings)}.
+	 * {@link ZmqSocketManager#connectSocket(int, String)} is made, or the settings
+	 * are updated with a bound port through {@link ZmqSocketManager#updateSettings(int, SocketSettings)}.
 	 * @param socketType the ZMQ socket type
 	 * @param name a name for the socket
 	 * 
@@ -83,6 +87,13 @@ public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable
 	int[] getBoundPorts(int socketId);
 	
 	/**
+	 * Gets the first bound port for the given socket ID
+	 * @param socketId
+	 * @return the first bound port for the socket
+	 */
+	int getBoundPort(int socketId);
+	
+	/**
 	 * Updates the settings associated with the given socket. If the socket
 	 * is already open, the socket will first be closed. 
 	 * If the settings include a port to bind to, or their are
@@ -97,6 +108,15 @@ public interface SocketManager<TBuffer extends ResizingBuffer> extends Closeable
 	Mutex<Messenger<TBuffer>> getSocketMutex(int socketId);
 	
 	Mutex<Messenger<TBuffer>> createPollInSet(int... socketIds);
+	
+	MessengerBridge<TBuffer> newBridge(
+			int frontendSocketId, int backendSocketId,
+			BridgeDelegate<TBuffer> bridgeDelegate, 
+			IncomingEventHeader frontendHeader, OutgoingEventHeader backendHeader);
+	
+	MessengerBridge<TBuffer> newBridge(int frontendSocketId, int backendSocketId, 
+			MessengerBridge.BridgeDelegate<TBuffer> bridgeDelegate, int defaultBufferSize, 
+			IncomingEventHeader frontendHeader, OutgoingEventHeader backendHeader);
 	
 	SocketIdentity resolveIdentity(int socketId, String connectionString, long timeout, TimeUnit timeUnit) 
 			throws InterruptedException, TimeoutException, UnsupportedOperationException;

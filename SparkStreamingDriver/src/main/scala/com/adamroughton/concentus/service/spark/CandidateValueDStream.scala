@@ -44,6 +44,7 @@ import com.adamroughton.concentus.cluster.worker.ClusterHandle
 import java.util.UUID
 import com.adamroughton.concentus.util.Container
 import com.adamroughton.concentus.cluster.ClusterHandleSettings
+import com.adamroughton.concentus.cluster.worker.StateData
 
 private case class RegisterTickReceiver(streamId: Int, receiverActor: ActorRef, objId: String)
 private case class Tick(time: Long)
@@ -55,8 +56,7 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
     actionCollectorRecvBufferLength: Int,
     actionCollectorSendBufferLength: Int, 
     id: Int, 
-    zooKeeperAddress: String, 
-    zooKeeperAppRoot: String,
+    clusterHandleSettings: ClusterHandleSettings,
     resolver: ComponentResolver[_ <: ResizingBuffer]) 
 		extends NetworkInputDStream[CandidateValue](ssc_) {
 
@@ -65,7 +65,7 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
 	val env = SparkEnv.get
 
 	def getReceiver() = new ActionReceiver(actionCollectorPort, actionCollectorRecvBufferLength, 
-	    actionCollectorSendBufferLength, MEMORY_ONLY, id, zooKeeperAddress, zooKeeperAppRoot, resolver)
+	    actionCollectorSendBufferLength, MEMORY_ONLY, id, clusterHandleSettings, resolver)
 	
 	lazy private val tickManager = env.actorSystem.actorOf(Props(
 		new TickManagerActor(zeroTime.milliseconds, graph.batchDuration)), "TickManagerActor-" + id)
@@ -127,8 +127,7 @@ class ActionReceiver(
     actionCollectorSendBufferLength: Int,
     storageLevel: StorageLevel, 
 	id: Int, 
-	zooKeeperAddress: String,
-	zooKeeperAppRoot: String,
+	clusterHandleSettings: ClusterHandleSettings,
 	resolver: ComponentResolver[_ <: ResizingBuffer]) 
 		extends NetworkReceiver[CandidateValue] with TickDelegate {
 
@@ -137,7 +136,7 @@ class ActionReceiver(
 	val timeout = 5.seconds
 	
 	lazy private val tickActor = env.actorSystem.actorOf(
-	    	Props(new TickReceiverActor(id, zooKeeperAddress, zooKeeperAppRoot)), "ActionProcessor-" + streamId)
+	    	Props(new TickReceiverActor(id, clusterHandleSettings)), "ActionProcessor-" + streamId)
 	
 	protected def onStart() {
 		tickActor
@@ -156,8 +155,7 @@ class ActionReceiver(
 	}
 	
 	private class TickReceiverActor(id: Int,  
-				zooKeeperAddress: String,
-				zooKeeperAppRoot: String) extends Actor {
+				clusterHandleSettings: ClusterHandleSettings) extends Actor {
 		val ip = System.getProperty("spark.driver.host", "localhost")
 		val port = System.getProperty("spark.driver.port", "7077").toInt
 		val url = "akka://spark@%s:%s/user/TickManagerActor-%d".format(ip, port, streamId)
@@ -195,13 +193,13 @@ class ActionReceiver(
 			val receiverAddress = InetAddress.getByName(sparkIpProp)
 			
 			val serviceRef = new Container[ActionCollectorService[_ <: ResizingBuffer]]
-			val actionCollectorDeployment = new ActionCollectorServiceDeployment(actionCollectorPort, 
+			val actionCollectorDeployment = new ActionCollectorServiceDeployment(actionCollectorPort, -1, 
 			    actionCollectorRecvBufferLength, actionCollectorSendBufferLength, ActionReceiver.this, startTime, tickDuration) {
 			   
-			  override def createService[TBuffer <: ResizingBuffer](serviceId: Int, context: 
+			  override def createService[TBuffer <: ResizingBuffer](serviceId: Int, initData: StateData, context: 
 			      ServiceContext[ServiceState], handle: ConcentusHandle, metricContext: MetricContext,
 			      resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
-					  val service = super.createService(serviceId, context, handle, metricContext, resolver)
+					  val service = super.createService(serviceId, initData, context, handle, metricContext, resolver)
 							  .asInstanceOf[ActionCollectorService[_ <: ResizingBuffer]]
 					  serviceRef.set(service) 
 			    	  service
@@ -209,8 +207,10 @@ class ActionReceiver(
 			  
 			}
 			
-			val concentusHandle = new ConcentusHandle(new DefaultClock(), receiverAddress, zooKeeperAddress, Collections.emptySet())
-			val clusterHandleSettings = new ClusterHandleSettings(zooKeeperAddress, zooKeeperAppRoot, UUID.randomUUID, concentusHandle)
+			val concentusHandle = new ConcentusHandle(new DefaultClock(), 
+			    receiverAddress, 
+			    clusterHandleSettings.zooKeeperAddress(), 
+			    Collections.emptySet())
 			
 			val serviceContainer = new ServiceContainer(clusterHandleSettings, concentusHandle, 
 			    actionCollectorDeployment, resolver)

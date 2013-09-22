@@ -20,7 +20,7 @@ import com.adamroughton.concentus.messaging.MessagingUtil;
 import com.adamroughton.concentus.messaging.Messenger;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.Publisher;
-import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.ZmqSocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 import com.adamroughton.concentus.metric.LongValueMetricPublisher;
 import com.adamroughton.concentus.metric.MetricContextBase;
@@ -35,7 +35,7 @@ public class EventPublishingMetricContext<TBuffer extends ResizingBuffer> extend
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	
 	private final ClusterHandle _clusterHandle;
-	private final SocketManager<TBuffer> _metricSocketManager;
+	private final ZmqSocketManager<TBuffer> _metricSocketManager;
 	
 	private final EventQueue<TBuffer> _metricPubQueue;
 	private final OutgoingEventHeader _metricPubHeader;

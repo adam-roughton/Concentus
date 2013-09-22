@@ -32,7 +32,7 @@ public class NullMetricContext implements MetricContext {
 				new MetricPublisher<RunningStats>() {
 			
 			@Override
-			public void publish(long bucketId, MetricMetaData metricMetaData,
+			public void publish(long bucketId, long bucketDuration, MetricMetaData metricMetaData,
 					RunningStats metricValue) {
 			}
 		}, 1);
@@ -55,12 +55,12 @@ public class NullMetricContext implements MetricContext {
 		return new CountMetric(new MetricMetaData(0, 0, reference, metricName, type, isCumulative), _bucketInfo, new LongValueMetricPublisher() {
 			
 			@Override
-			public void publish(long bucketId, MetricMetaData metricMetaData,
+			public void publish(long bucketId, long bucketDuration, MetricMetaData metricMetaData,
 					Long metricValue) {
 			}
 			
 			@Override
-			public void publishDirect(long bucketId, MetricMetaData metricMetaData,
+			public void publishDirect(long bucketId, long bucketDuration, MetricMetaData metricMetaData,
 					long metricValue) {
 			}
 		}, 1);

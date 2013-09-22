@@ -47,7 +47,7 @@ public class LogMetricContext extends MetricContextBase {
 		return new MetricPublisher<RunningStats>() {
 			
 			@Override
-			public void publish(long bucketId, MetricMetaData metricMetaData,
+			public void publish(long bucketId, long bucketDuration, MetricMetaData metricMetaData,
 					RunningStats metricValue) {
 				pushEntry(bucketId, metricMetaData, String.format("%1$f (std = %2$f, n = %3$d, min = %4$f, max = %5$f)",
 						metricValue.getMean(), 
@@ -66,13 +66,13 @@ public class LogMetricContext extends MetricContextBase {
 		return new LongValueMetricPublisher() {
 			
 			@Override
-			public void publish(long bucketId, MetricMetaData metricMetaData,
+			public void publish(long bucketId, long bucketDuration, MetricMetaData metricMetaData,
 					Long metricValue) {
-				publishDirect(bucketId, metricMetaData, metricValue);
+				publishDirect(bucketId, bucketDuration, metricMetaData, metricValue);
 			}
 			
 			@Override
-			public void publishDirect(long bucketId, MetricMetaData metricMetaData,
+			public void publishDirect(long bucketId, long bucketDuration, MetricMetaData metricMetaData,
 					long metricValue) {
 				String entry;
 				MetricType type = metricMetaData.getMetricType();

@@ -33,7 +33,7 @@ import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
-import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.ZmqSocketManager;
 import com.adamroughton.concentus.messaging.zmq.StubSocketManager;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.util.Util;
@@ -59,7 +59,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 	private static class TestComponentResolver implements ComponentResolver<ResizingBuffer> {
 
 		@Override
-		public SocketManager<ResizingBuffer> newSocketManager(Clock clock) {
+		public ZmqSocketManager<ResizingBuffer> newSocketManager(Clock clock) {
 			return new StubSocketManager<>(new BufferFactory<ResizingBuffer>() {
 
 				@Override

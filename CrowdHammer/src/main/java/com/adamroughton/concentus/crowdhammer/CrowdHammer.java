@@ -26,8 +26,8 @@ import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.disruptor.StandardEventQueueFactory;
-import com.adamroughton.concentus.messaging.zmq.SocketManager;
-import com.adamroughton.concentus.messaging.zmq.SocketManagerImpl;
+import com.adamroughton.concentus.messaging.zmq.ZmqSocketManager;
+import com.adamroughton.concentus.messaging.zmq.ArrayBackedZmqSocketManagerImpl;
 import com.adamroughton.concentus.util.IdentityWrapper;
 import com.esotericsoftware.minlog.Log;
 import com.netflix.curator.framework.listen.Listenable;
@@ -161,8 +161,8 @@ public final class CrowdHammer implements Closeable {
 				resultDir, clusterHandle, concentusHandle, new ComponentResolver<ArrayBackedResizingBuffer>() {
 
 					@Override
-					public SocketManager<ArrayBackedResizingBuffer> newSocketManager(Clock clock) {
-						return new SocketManagerImpl(clock);
+					public ZmqSocketManager<ArrayBackedResizingBuffer> newSocketManager(Clock clock) {
+						return new ArrayBackedZmqSocketManagerImpl(clock);
 					}
 
 					@Override

@@ -7,7 +7,6 @@ import java.util.Collections;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateProcessor;
-import com.adamroughton.concentus.canonicalstate.TickTimer.TickStrategy;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.model.kryo.CandidateValue;
 import com.adamroughton.concentus.data.model.kryo.CollectiveVariable;
@@ -18,9 +17,8 @@ import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.MetricGroup;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.model.CollectiveVariableDefinition;
-import com.lmax.disruptor.LifecycleAware;
 
-public class DirectStateProcessor<TBuffer extends ResizingBuffer> implements DeadlineBasedEventHandler<ComputeStateEvent>, LifecycleAware {
+public class DirectStateProcessor<TBuffer extends ResizingBuffer> implements DeadlineBasedEventHandler<ComputeStateEvent> {
 
 	private final CollectiveVariableDefinition[] _variableDefinitions;
 	private final CanonicalStateProcessor<TBuffer> _canonicalStateProcessor;
@@ -31,22 +29,12 @@ public class DirectStateProcessor<TBuffer extends ResizingBuffer> implements Dea
 			CollectiveApplication application,
 			Clock clock,
 			SendQueue<OutgoingEventHeader, TBuffer> canonicalStatePubQueue,
-			TickStrategy tickStrategy,
 			MetricContext metricContext) {
 		_metricGroup = new MetricGroup();
-		_canonicalStateProcessor = new CanonicalStateProcessor<>(application, clock, canonicalStatePubQueue, tickStrategy, _metricGroup, metricContext);				
+		_canonicalStateProcessor = new CanonicalStateProcessor<>(application, canonicalStatePubQueue, 
+				_metricGroup, metricContext);				
 		_variablesMap = new Int2ObjectOpenHashMap<>();
 		_variableDefinitions = application.variableDefinitions();
-	}
-	
-	@Override
-	public void onStart() {
-		_canonicalStateProcessor.start();
-	}
-
-	@Override
-	public void onShutdown() {
-		_canonicalStateProcessor.stop();
 	}
 	
 	@Override

@@ -148,6 +148,11 @@ public class VersioningListenableContainer<TState, TListener> implements Version
 		return storedListenerEntry;
 	}
 	
+	@Override
+	public void clear() {
+		_listeners.clear();
+	}
+	
 	public static class VersionEntry<TState> {
 		
 		private final TState _state;
@@ -206,4 +211,5 @@ public class VersioningListenableContainer<TState, TListener> implements Version
 			updateVersion = new AtomicInteger(version);
 		}
 	}
+
 }

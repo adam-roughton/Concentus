@@ -17,9 +17,9 @@ final class RunningStatsMetricEventQueuePublisher<TBuffer extends ResizingBuffer
 	}
 
 	@Override
-	public void publish(long bucketId, MetricMetaData metricMetaData,
+	public void publish(long bucketId, long bucketDuration, MetricMetaData metricMetaData,
 			final RunningStats metricValue) {
-		publishEvent(bucketId, metricMetaData, new MetricValueWriterDelegate() {
+		publishEvent(bucketId, bucketDuration, metricMetaData, new MetricValueWriterDelegate() {
 			
 			@Override
 			public void write(ResizingBuffer buffer) {

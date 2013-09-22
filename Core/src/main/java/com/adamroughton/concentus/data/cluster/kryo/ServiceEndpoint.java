@@ -67,7 +67,11 @@ public final class ServiceEndpoint {
 		}
 		return true;
 	}
-	
-	
+
+	@Override
+	public String toString() {
+		return "ServiceEndpoint [endpointType=" + _endpointType
+				+ ", ipAddress=" + _ipAddress + ", port=" + _port + "]";
+	}
 	
 }

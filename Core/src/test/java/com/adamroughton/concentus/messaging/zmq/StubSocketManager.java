@@ -33,6 +33,8 @@ import com.adamroughton.concentus.disruptor.EventQueueFactory;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.MessageQueueFactory;
 import com.adamroughton.concentus.messaging.Messenger;
+import com.adamroughton.concentus.messaging.MessengerBridge;
+import com.adamroughton.concentus.messaging.MessengerBridge.BridgeDelegate;
 import com.adamroughton.concentus.messaging.MessengerMutex;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.SocketIdentity;
@@ -41,10 +43,10 @@ import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerFactory
 import com.adamroughton.concentus.messaging.MessengerMutex.MultiMessengerMutex;
 import com.adamroughton.concentus.messaging.StubMessenger.FakeRecvDelegate;
 import com.adamroughton.concentus.messaging.StubMessenger.FakeSendDelegate;
-import com.adamroughton.concentus.messaging.zmq.SocketManager;
+import com.adamroughton.concentus.messaging.zmq.ZmqSocketManager;
 import com.adamroughton.concentus.messaging.zmq.SocketSettings;
 
-public class StubSocketManager<TBuffer extends ResizingBuffer> implements SocketManager<TBuffer> {
+public class StubSocketManager<TBuffer extends ResizingBuffer> implements ZmqSocketManager<TBuffer> {
 
 	private final StubMessengerConfigurator<TBuffer> _configurator;
 	private final BufferFactory<TBuffer> _bufferFactory;
@@ -169,6 +171,23 @@ public class StubSocketManager<TBuffer extends ResizingBuffer> implements Socket
 			
 		}, messengerMutexes);
 	}
+	
+	@Override
+	public MessengerBridge<TBuffer> newBridge(
+			int frontendSocketId, int backendSocketId,
+			BridgeDelegate<TBuffer> bridgeDelegate,
+			IncomingEventHeader frontendHeader,
+			OutgoingEventHeader backendHeader) {
+		throw new UnsupportedOperationException("Not implemented");
+	}
+
+	@Override
+	public MessengerBridge<TBuffer> newBridge(int frontendSocketId,
+			int backendSocketId, BridgeDelegate<TBuffer> bridgeDelegate,
+			int defaultBufferSize, IncomingEventHeader frontendHeader,
+			OutgoingEventHeader backendHeader) {
+		throw new UnsupportedOperationException("Not implemented");
+	}
 
 	@Override
 	public int connectSocket(int socketId, String address) {
@@ -219,6 +238,11 @@ public class StubSocketManager<TBuffer extends ResizingBuffer> implements Socket
 	@Override
 	public int[] getBoundPorts(int socketId) {
 		return new int[0];
+	}
+	
+	@Override
+	public int getBoundPort(int socketId) {
+		throw new UnsupportedOperationException("Not implemented");
 	}
 
 	@Override
