@@ -22,6 +22,8 @@ public interface ClusterService<TState extends Enum<TState> & ClusterState> {
 	/**
 	 * Invoked when the coordinator signals a state change for this service.
 	 * @param newServiceState the state the service should enter
+	 * @param stateChangeIndex a number indicating the order of this state change - this represents
+	 * the identity of the current state
 	 * @param stateData a container holding
 	 * data that the coordinator assigned to the service
 	 * for this state change. The cluster service can communicate
@@ -31,7 +33,8 @@ public interface ClusterService<TState extends Enum<TState> & ClusterState> {
 	 * against the cluster
 	 * @throws Exception
 	 */
-	void onStateChanged(TState newServiceState, 
+	void onStateChanged(TState newServiceState,
+			int stateChangeIndex, 
 			StateData stateData,
 			ClusterHandle cluster) throws Exception;
 	

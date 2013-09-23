@@ -4,10 +4,15 @@ import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 
 public abstract class ConcentusServiceBase implements ClusterService<ServiceState> {
 	
+	private int _stateChangeIndex;
+	
 	@Override
 	public void onStateChanged(ServiceState newServiceState,
-			StateData stateData, ClusterHandle cluster)
+			int stateChangeIndex,
+			StateData stateData, 
+			ClusterHandle cluster)
 			throws Exception {
+		_stateChangeIndex = stateChangeIndex;
 		switch (newServiceState) {
 			case INIT:
 				onInit(stateData, cluster);
@@ -26,6 +31,14 @@ public abstract class ConcentusServiceBase implements ClusterService<ServiceStat
 				break;
 			default:
 		}
+	}
+	
+	/**
+	 * Gets the identity of the current state
+	 * @return
+	 */
+	protected int getStateChangeIndex() {
+		return _stateChangeIndex;
 	}
 
 	protected void onInit(StateData stateData, ClusterHandle cluster) throws Exception {

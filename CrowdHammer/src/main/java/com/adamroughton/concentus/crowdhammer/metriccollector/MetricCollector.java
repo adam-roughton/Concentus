@@ -155,6 +155,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 			
 			@Override
 			public void newMetric(MetricMetaData metricMetaData) {
+				Log.info("Adding new metric " + metricMetaData);
 				_internalWriter.writeEvent(metricMetaData);
 			}
 		};
@@ -179,7 +180,6 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 	public void newTestRun(String testName, int clientCount, 
 			long durationMillis, Class<? extends CollectiveApplication> applicationClass, 
 			Class<? extends ClientAgent> agentClass, Set<Pair<String, Integer>> deploymentInfo) {
-		_nextMetricSourceId = 0;
 		_currentTestRunId++;
 		
 		sendInternal(new NewTestRunEvent(testName, _currentTestRunId, clientCount, durationMillis, 

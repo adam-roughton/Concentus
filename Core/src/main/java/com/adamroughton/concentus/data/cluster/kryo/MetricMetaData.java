@@ -50,5 +50,13 @@ public final class MetricMetaData {
 	public boolean isCumulative() {
 		return _isCumulative;
 	}
+
+	@Override
+	public String toString() {
+		return "MetricMetaData [metricSourceId=" + _metricSourceId
+				+ ", metricId=" + _metricId + ", reference=" + _reference
+				+ ", metricName=" + _metricName + ", metricType="
+				+ _metricType + ", isCumulative=" + _isCumulative + "]";
+	}
 	
 }

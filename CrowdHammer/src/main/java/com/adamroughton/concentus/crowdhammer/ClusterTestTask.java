@@ -334,22 +334,6 @@ public class ClusterTestTask implements TestTask {
 								}
 							}
 							
-							// we need to initialise the workers with the client count they will
-							// be simulated
-							if (state == INIT && serviceType.equals(WorkerService.SERVICE_INFO.serviceType())) {
-								List<Pair<String, Integer>> maxClientCounts = new ArrayList<>();
-								for (ServiceHandle<ServiceState> workerService : group) {
-									int maxClientCount = workerService.getCurrentState().getStateData(Integer.class);
-									maxClientCounts.add(new Pair<>(workerService.getServicePath(), maxClientCount));
-								}
-								Map<String, Integer> workerAllocations = createWorkerAllocations(clientCount, maxClientCounts);
-								for (ServiceHandle<ServiceState> workerService : group) {
-									String workerPath = workerService.getServicePath();
-									int allocatedClientCount = workerAllocations.get(workerPath);
-									_clusterHandle.setServiceInitData(_metricCollector, workerPath, serviceType, allocatedClientCount);
-								}
-							}
-							
 							Log.info("Setting state to " + state + " for services of type " + serviceType + "...");
 							group.enterStateInBackground(state, timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 						}
@@ -397,11 +381,13 @@ public class ClusterTestTask implements TestTask {
 					// close all service handles in the group
 					for (ServiceHandle<ServiceState> serviceHandle : group) {
 						serviceHandle.close();
-						String serviceTypePath = ZKPaths.makePath(_clusterHandle.resolvePathFromRoot(SERVICES), serviceType);
-						_clusterHandle.deleteChildren(serviceTypePath);
 					}
+					group.getListenable().removeListener(_serviceGroupListener);
+					String serviceTypePath = ZKPaths.makePath(_clusterHandle.resolvePathFromRoot(SERVICES), serviceType);
+					_clusterHandle.deleteChildren(serviceTypePath);
 				}
 				cleanUp();
+				_exceptionRef.set(null);
 			}
 		} catch (InterruptedException eInterrupted) {
 			
@@ -485,7 +471,9 @@ public class ClusterTestTask implements TestTask {
 			deployment.getListenable().removeListener(_deploymentListener);
 			deployment.stop();
 		}
-		
+		_guardianDeployments.clear();
+		_groupStateLookup.clear();
+		_groupsByType.clear();
 		_clusterHandle.deleteChildren(_clusterHandle.resolvePathFromRoot(SERVICE_ENDPOINTS));
 	}
 	

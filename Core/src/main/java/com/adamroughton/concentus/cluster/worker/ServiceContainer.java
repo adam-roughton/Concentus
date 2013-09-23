@@ -61,6 +61,8 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 	private static class StateChangeEntry<TState extends Enum<TState> & ClusterState> {
 		public StateEntry<TState> signalEntry;
 		public TState expectedState;
+		public int expectedStateChangeIndex;
+		public boolean isInternal;
 	}
 	
 	private final Disruptor<StateChangeEntry<TState>> _serviceDisruptor;
@@ -77,6 +79,24 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 						long sequence) {
 					event.signalEntry = new StateEntry<TState>(_serviceInfo.stateType(), newState, signalData, -1);
 					event.expectedState = expectedCurrentState;
+					event.expectedStateChangeIndex = -1;
+					event.isInternal = true;
+				}
+			});
+		}
+
+		@Override
+		public void enterState(final TState newState, final Object signalData,
+				final int expectedStateChangeIndex) {
+			_serviceDisruptor.publishEvent(new EventTranslator<StateChangeEntry<TState>>() {
+
+				@Override
+				public void translateTo(StateChangeEntry<TState> event,
+						long sequence) {
+					event.signalEntry = new StateEntry<TState>(_serviceInfo.stateType(), newState, signalData, -1);
+					event.expectedState = null;
+					event.expectedStateChangeIndex = expectedStateChangeIndex;
+					event.isInternal = true;
 				}
 			});
 		}
@@ -86,6 +106,7 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 
 		private ClusterService<TState> _service;
 		private TState _currentState;
+		private int _stateChangeIndex = -1;
 		
 		@Override
 		public void onEvent(StateChangeEntry<TState> event, long sequence,
@@ -100,16 +121,19 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 			}
 			
 			StateDataHandle dataHandle = new StateDataHandle(event.signalEntry.getStateData(Object.class));
-			
+			if (event.expectedStateChangeIndex != -1 && event.expectedStateChangeIndex != _stateChangeIndex) {
+				return;
+			}
 			if (event.expectedState != null && event.expectedState != _currentState) {
 				return;
 			}
 			
 			// update the service
 			TState newState = event.signalEntry.getState();
-			Log.info("Entering service state: " + newState);
-			_service.onStateChanged(newState, dataHandle, _cluster);
-			Log.info("Entered state: " + newState);
+			Log.info("Entering service state: " + newState + ", with state change index " + (_stateChangeIndex + 1) + 
+					", from an " + (event.isInternal? "internal":"external") + " signal change");
+			_service.onStateChanged(newState, ++_stateChangeIndex, dataHandle, _cluster);
+			Log.info("Entered state: " + newState + ", with state change index " + _stateChangeIndex);
 			_currentState = newState;
 			
 			// carry the signal version over to the new state
@@ -135,6 +159,8 @@ public final class ServiceContainer<TState extends Enum<TState> & ClusterState> 
 						long sequence) {
 					event.signalEntry = newSignalEntry;
 					event.expectedState = null;
+					event.expectedStateChangeIndex = -1;
+					event.isInternal = false;
 				}
 			});
 		}

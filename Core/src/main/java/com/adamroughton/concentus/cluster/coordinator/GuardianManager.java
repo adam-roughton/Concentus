@@ -280,8 +280,12 @@ public final class GuardianManager implements Closeable {
 		}
 		
 		public void stop() {
-			_deployments.remove(_guardianPath);
-			_clusterHandle.setServiceSignal(_guardianPath, GuardianState.class, GuardianState.READY, null);
+			// only stop if this current deployment is still active on the guardian
+			if (_deployments.remove(_guardianPath, this)) {
+				if (_guardians.replace(_guardianPath, GuardianTrackerState.RUNNING, GuardianTrackerState.WAITING)) {
+					_clusterHandle.setServiceSignal(_guardianPath, GuardianState.class, GuardianState.READY, null);
+				}
+			}
 		}
 		
 		public String getGuardianPath() {

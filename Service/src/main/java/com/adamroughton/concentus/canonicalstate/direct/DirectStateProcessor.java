@@ -40,8 +40,26 @@ public class DirectStateProcessor<TBuffer extends ResizingBuffer> implements Dea
 	@Override
 	public void onEvent(ComputeStateEvent event, long sequence,
 			boolean endOfBatch) throws Exception {
+		int count = event.candidateValues.size();
+		
 		// sort the values
-		Collections.sort(event.candidateValues);
+		try {
+			Collections.sort(event.candidateValues);
+		} catch (IllegalArgumentException eSort) {
+			StringBuilder strBuilder = new StringBuilder();
+			strBuilder.append("[");
+			boolean isFirst = true;
+			for (CandidateValue value : event.candidateValues) {
+				if (isFirst) {
+					isFirst = false;
+				} else {
+					strBuilder.append(", ");
+				}
+				strBuilder.append(value.toString());
+			}
+			strBuilder.append("]");
+			throw new RuntimeException("Error sorting with count " + count + ", and values: " + strBuilder.toString(), eSort);
+		}
 		
 		long time = event.time;
 		prepareVariables(_variablesMap);

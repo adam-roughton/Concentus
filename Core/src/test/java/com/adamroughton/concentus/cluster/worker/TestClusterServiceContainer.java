@@ -175,10 +175,10 @@ public class TestClusterServiceContainer extends TestClusterBase {
 
 			@Override
 			public void onStateChanged(ServiceState newServiceState,
-					StateData stateData, ClusterHandle cluster)
+					int stateChangeIndex,StateData stateData, ClusterHandle cluster)
 					throws Exception {
 				barrier.await();
-				super.onStateChanged(newServiceState, stateData, cluster);
+				super.onStateChanged(newServiceState, stateChangeIndex, stateData, cluster);
 				barrier.await();
 			}
 			
@@ -225,7 +225,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 		ClusterService<ServiceState> service = new ClusterService<ServiceState>() {
 
 			@Override
-			public void onStateChanged(ServiceState newServiceState,
+			public void onStateChanged(ServiceState newServiceState, int stateChangeIndex,
 					StateData stateData, ClusterHandle cluster)
 					throws Exception {
 				stateData.setDataForCoordinator(expectedStateData);
@@ -345,7 +345,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 		private ValueCollector<StateChange<TState>> _collector = new ValueCollector<>();
 		
 		@Override
-		public void onStateChanged(TState newServiceState,
+		public void onStateChanged(TState newServiceState, int stateChangeIndex,
 				StateData stateData, ClusterHandle cluster) throws Exception {
 			StateChange<TState> change = new StateChange<>(newServiceState, stateData.getData(Object.class));
 			_collector.addValue(change);

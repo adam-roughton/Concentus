@@ -122,20 +122,20 @@ public final class Guardian implements ClusterService<GuardianState> {
 	}
 
 	@Override
-	public void onStateChanged(GuardianState newServiceState,
+	public void onStateChanged(GuardianState newServiceState, int stateChangeIndex,
 			StateData stateData, ClusterHandle cluster) throws Exception {
 		switch (newServiceState) {
 			case READY:
-				onReady(stateData, cluster);
+				onReady(stateChangeIndex, stateData, cluster);
 				break;
 			case RUN:
 				try {
-					onRun(stateData, cluster);
+					onRun(stateChangeIndex, stateData, cluster);
 				} catch (Exception e) {
 					_serviceContext.enterState(GuardianState.READY, 
 							new GuardianDeploymentReturnInfo(ReturnType.ERROR, "Failed to enter the run state: " 
 									+ Util.stackTraceToString(e)), 
-							GuardianState.RUN);
+							stateChangeIndex);
 				}
 				break;
 			case SHUTDOWN:
@@ -145,13 +145,13 @@ public final class Guardian implements ClusterService<GuardianState> {
 		}
 	}
 	
-	private void onReady(StateData stateData, ClusterHandle cluster) throws Exception {
+	private void onReady(int stateChangeIndex, StateData stateData, ClusterHandle cluster) throws Exception {
 		stopHostProcess();
 		GuardianDeploymentReturnInfo retInfo = stateData.getData(GuardianDeploymentReturnInfo.class);
 		stateData.setDataForCoordinator(retInfo);
 	}
 	
-	private void onRun(StateData stateData, final ClusterHandle cluster) throws Exception {	
+	private void onRun(final int stateChangeIndex, StateData stateData, final ClusterHandle cluster) throws Exception {	
 		stopHostProcess();
 		
 		// get allocated service deployment
@@ -202,7 +202,7 @@ public final class Guardian implements ClusterService<GuardianState> {
 					_serviceContext.enterState(GuardianState.READY, 
 							new GuardianDeploymentReturnInfo(ReturnType.ERROR, "Could not start the guardian service host process: " 
 									+ Util.stackTraceToString(eIO)), 
-							GuardianState.RUN);
+							stateChangeIndex);
 					return;
 				}
 				try {
@@ -235,9 +235,10 @@ public final class Guardian implements ClusterService<GuardianState> {
 					if (retCode == 0) {
 						retInfo = new GuardianDeploymentReturnInfo(ReturnType.OK, null);
 					} else {
-						retInfo = new GuardianDeploymentReturnInfo(ReturnType.ERROR, stdErrCollector.toString());
+						retInfo = new GuardianDeploymentReturnInfo(ReturnType.ERROR, stdErrBuilder.toString());
 					}
-					_serviceContext.enterState(GuardianState.READY, retInfo, GuardianState.RUN);
+					Log.info("Guardian.onRun: Signalling process death - retInfo=" + retInfo + ", stateChangeIndex=" + stateChangeIndex);
+					_serviceContext.enterState(GuardianState.READY, retInfo, stateChangeIndex);
 				} catch (InterruptedException eInterrupt) {
 					process.destroy();
 				} finally {

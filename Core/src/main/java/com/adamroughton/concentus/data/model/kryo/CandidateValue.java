@@ -95,28 +95,37 @@ public final class CandidateValue implements Comparable<CandidateValue> {
 		else {
 			// compare the data segments in long, int and then byte chunks
 			int[] chunkSegmentLengths = new int[] { LONG_SIZE, INT_SIZE, 1 };
-			int[] cursor = new int[] { 0 };
+			
+			byte[] thisData = this._valueData;
+			byte[] otherData = other._valueData;
+			
+			int cursor = 0;
 			for (int chunkLength : chunkSegmentLengths) {
-				int dataComparison = compareDataInChunks(this._valueData, other._valueData, cursor[0], chunkLength, cursor);
-				if (dataComparison != 0) {
-					return dataComparison;
+				int chunkCount = (thisData.length - cursor) / chunkLength;
+				for (int i = 0; i < chunkCount; i++) {
+					long otherDataSeg = readChunk(otherData, cursor + i * chunkLength, chunkLength);
+					long thisDataSeg = readChunk(thisData, cursor + i * chunkLength, chunkLength);
+					if (otherDataSeg != thisDataSeg) {
+						return (int) (otherDataSeg - thisDataSeg);
+					} 
 				}
+				cursor += chunkCount * chunkLength;
 			}
 			return 0;
 		}
 	}
 	
-	private int compareDataInChunks(byte[] thisData, byte[] otherData, int offset, int chunkLength, int[] offsetOut) {
-		int chunkCount = (this._valueData.length - offset) / chunkLength;
-		offsetOut[0] = chunkCount * chunkLength + offset;
-		for (int i = 0; i < chunkCount; i++) {
-			long otherDataSeg = BytesUtil.readLong(otherData, offset + i * chunkLength);
-			long thisDataSeg = BytesUtil.readLong(thisData, offset + i * chunkLength);
-			if (otherDataSeg != thisDataSeg) {
-				return (int) (otherDataSeg - thisDataSeg);
-			}
+	private long readChunk(byte[] data, int offset, int chunkLength) {
+		switch (chunkLength) {
+		case 8:
+			return BytesUtil.readLong(data, offset);
+		case 4:
+			return BytesUtil.readInt(data, offset);
+		case 1:
+			return data[offset];
+		default:
+			throw new IllegalArgumentException("Cannot read data in chunks of " + chunkLength);
 		}
-		return 0;
 	}
 	
 	public CandidateValueKey groupKey() {

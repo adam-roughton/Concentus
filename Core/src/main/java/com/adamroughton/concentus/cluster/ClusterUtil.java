@@ -195,7 +195,6 @@ public class ClusterUtil {
 					throws Exception {
 				if (event.getType() == CuratorEventType.CHILDREN) {
 					List<String> children = event.getChildren();
-					Log.info("waitForChildren: Got child count " + children.size());
 					if (children.size() >= count) {
 						if (childrenRef.compareAndSet(null, new ArrayList<>(children))) {
 							Log.info("waitForChildren: got req. count");
@@ -209,7 +208,6 @@ public class ClusterUtil {
 			
 			@Override
 			public void process(WatchedEvent event) throws Exception {
-				Log.info("waitForChildren: watch event " + event.toString());
 				if (event.getType() == EventType.NodeChildrenChanged) {
 					client.getChildren().usingWatcher(this).inBackground(callback).forPath(path);					
 				}
