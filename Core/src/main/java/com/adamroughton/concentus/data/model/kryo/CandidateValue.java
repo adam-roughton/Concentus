@@ -10,7 +10,7 @@ import static com.adamroughton.concentus.data.ResizingBuffer.*;
 /**
  * Represents a possible value for a collective variable.
  * 
- * Naturally ordered by score, the hash of the value data, the variable ID, and then by time.
+ * Naturally ordered by score, the length of the value data, the variable ID, and then by data content.
  * 
  * @author Adam Roughton
  *
@@ -86,8 +86,6 @@ public final class CandidateValue implements Comparable<CandidateValue> {
 	public int compareTo(CandidateValue other) {
 		if (other._score != this._score)
 			return other._score - this._score;
-		else if (other._valueDataHash != this._valueDataHash)
-			return other._valueDataHash - this._valueDataHash;
 		else if (other._valueData.length != this._valueData.length)
 			return other._valueData.length - this._valueData.length;
 		else if (other._variableId != this._variableId)

@@ -27,10 +27,18 @@ public class TestCandidateValueCompareTo {
 	}
 	
 	@Test
+	public void differentDataNonTransitiveHashCode() {
+		CandidateValue val1 = newValue(0, 100, 72, 111, 114, 97, 121, 33, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+		CandidateValue val2 = newValue(0, 100, 65, 119, 101, 115, 111, 109, 101, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+		CandidateValue val3 = newValue(0, 100, 84, 104, 97, 116, 32, 114, 101, 97, 108, 108, 121, 32, 115, 117, 99, 107, 115, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+		assertComparableCorrect(val1, val2, val3);
+	}
+	
+	@Test
 	public void differentData() {
-		CandidateValue val1 = newValue(0, 100, 255, 0, 0, 0);
-		CandidateValue val2 = newValue(0, 100, 0, 255, 0, 0);
-		CandidateValue val3 = newValue(0, 100, 0, 0, 255, 0);
+		CandidateValue val1 = newValue(0, 100, 0, 0, 0, 255);
+		CandidateValue val2 = newValue(0, 100, 0, 0, 255, 0);
+		CandidateValue val3 = newValue(0, 100, 0, 255, 0, 0);
 		assertComparableCorrect(val1, val2, val3);
 	}
 	
