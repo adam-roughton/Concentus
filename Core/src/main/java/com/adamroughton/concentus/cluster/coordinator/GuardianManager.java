@@ -21,8 +21,8 @@ import com.adamroughton.concentus.cluster.worker.Guardian;
 import com.adamroughton.concentus.cluster.worker.ServiceDeployment;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
-import com.adamroughton.concentus.data.cluster.kryo.GuardianDeploymentReturnInfo;
-import com.adamroughton.concentus.data.cluster.kryo.GuardianDeploymentReturnInfo.ReturnType;
+import com.adamroughton.concentus.data.cluster.kryo.ProcessReturnInfo;
+import com.adamroughton.concentus.data.cluster.kryo.ProcessReturnInfo.ReturnType;
 import com.adamroughton.concentus.data.cluster.kryo.GuardianState;
 import com.adamroughton.concentus.data.cluster.kryo.StateEntry;
 import com.adamroughton.concentus.util.TimeoutTracker;
@@ -88,7 +88,7 @@ public final class GuardianManager implements Closeable {
 							GuardianDeployment<?> guardianDeployment = _deployments.remove(guardianPath);
 							if (guardianDeployment != null) {
 								// check if we have return info from the last deployment
-								GuardianDeploymentReturnInfo depRetInfo = stateEntry.getStateData(GuardianDeploymentReturnInfo.class);
+								ProcessReturnInfo depRetInfo = stateEntry.getStateData(ProcessReturnInfo.class);
 								GuardianDeploymentState deploymentState;
 								if (depRetInfo != null) {
 									if (depRetInfo.getReturnType() == ReturnType.OK) {
@@ -238,7 +238,7 @@ public final class GuardianManager implements Closeable {
 		 */
 		void onDeploymentChange(GuardianDeployment<TState> guardianDeployment, 
 				GuardianDeploymentState newState, 
-				GuardianDeploymentReturnInfo retInfo);
+				ProcessReturnInfo retInfo);
 	}
 	
 	public class GuardianDeployment<TState extends Enum<TState> & ClusterState> {
@@ -254,7 +254,7 @@ public final class GuardianManager implements Closeable {
 							GuardianDeploymentStateEntry deploymentStateEntry,
 							int updateVersion) {
 						GuardianDeploymentState state = deploymentStateEntry.getState();
-						GuardianDeploymentReturnInfo retInfo = deploymentStateEntry.getRetInfo();
+						ProcessReturnInfo retInfo = deploymentStateEntry.getRetInfo();
 						listener.onDeploymentChange(GuardianDeployment.this, state, retInfo);
 					}
 					
@@ -267,7 +267,7 @@ public final class GuardianManager implements Closeable {
 		}
 		
 		private void changeState(GuardianDeploymentState newState, 
-				GuardianDeploymentReturnInfo retInfo) {
+				ProcessReturnInfo retInfo) {
 			_listenable.newListenerEvent(new GuardianDeploymentStateEntry(newState, retInfo));
 		}
 		
@@ -301,9 +301,9 @@ public final class GuardianManager implements Closeable {
 	public static class GuardianDeploymentStateEntry {
 		
 		private final GuardianDeploymentState _state;
-		private final GuardianDeploymentReturnInfo _retInfo;
+		private final ProcessReturnInfo _retInfo;
 		
-		public GuardianDeploymentStateEntry(GuardianDeploymentState state, GuardianDeploymentReturnInfo retInfo) {
+		public GuardianDeploymentStateEntry(GuardianDeploymentState state, ProcessReturnInfo retInfo) {
 			_state = Objects.requireNonNull(state);
 			_retInfo = retInfo;
 		}
@@ -317,7 +317,7 @@ public final class GuardianManager implements Closeable {
 		 * or {@link GuardianDeploymentState#RET_ERROR}.
 		 * @return the return info from the service last executed on the guardian
 		 */
-		public GuardianDeploymentReturnInfo getRetInfo() {
+		public ProcessReturnInfo getRetInfo() {
 			return _retInfo;
 		}
 

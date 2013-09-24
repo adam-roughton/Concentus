@@ -6,9 +6,6 @@ import spark.RDD
 import spark.{KryoRegistrator => SparkKyroRegistrator}
 import spark.streaming.StreamingContext._
 import com.adamroughton.concentus.data.ResizingBuffer
-import com.adamroughton.concentus.ConcentusHandle
-import com.adamroughton.concentus.config.Configuration
-import com.adamroughton.concentus.metric.MetricContext
 import com.adamroughton.concentus.util.Util
 import com.adamroughton.concentus.model.CollectiveApplication
 import com.adamroughton.concentus.data.model.kryo.CollectiveVariable
@@ -16,20 +13,20 @@ import com.esotericsoftware.minlog.Log
 import com.esotericsoftware.kryo.Kryo
 import com.adamroughton.concentus.canonicalstate.CanonicalStateProcessor
 import com.adamroughton.concentus.config.ConfigurationUtil
-import com.adamroughton.concentus.Constants
 import com.adamroughton.concentus.canonicalstate.TickTimer.TickStrategy
 import com.lmax.disruptor.YieldingWaitStrategy
 import com.adamroughton.concentus.messaging.OutgoingEventHeader
 import com.adamroughton.concentus.messaging.patterns.SendQueue
-import com.adamroughton.concentus.metric.MetricGroup
-import com.adamroughton.concentus.cluster.worker.ConcentusServiceBase
-import com.adamroughton.concentus.ComponentResolver
-import com.adamroughton.concentus.cluster.worker.StateData
-import com.adamroughton.concentus.cluster.worker.ClusterHandle
-import com.adamroughton.concentus.data.cluster.kryo.ServiceState
+import com.adamroughton.concentus.metric.{MetricContext, MetricGroup}
+import com.adamroughton.concentus.{ConcentusHandle, Constants, ComponentResolver}
 import com.adamroughton.concentus.cluster.ClusterHandleSettings
+import com.adamroughton.concentus.data.cluster.kryo.{ServiceState, ServiceInfo}
+import com.adamroughton.concentus.cluster.worker.{ConcentusServiceBase, StateData, ClusterHandle, 
+  ServiceContext, ClusterService, ServiceDeploymentBase}
+import it.unimi.dsi.fastutil.ints.{Int2ObjectArrayMap, Int2ObjectOpenHashMap}
 
 class SparkStreamingDriver[TBuffer <: ResizingBuffer](
+        receiverCount: Int,
 		actionCollectorPort: Int,
 		actionCollectorRecvBufferLength: Int,
 		actionCollectorSendBufferLength: Int,
@@ -38,6 +35,9 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		metricContext: MetricContext,
 		resolver: ComponentResolver[TBuffer]) 
 			extends ConcentusServiceBase {
+  
+  	System.setProperty("spark.serializer", "spark.KryoSerializer")
+    System.setProperty("spark.kryo.registrator", "concentus.service.spark.KryoRegistrator")
   
     val socketManager = resolver.newSocketManager(concentusHandle.getClock())
     var application: CollectiveApplication = null
@@ -64,18 +64,16 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
     		metricContext)
 	}
 	
-	protected override def onBind(stateData: StateData, cluster: ClusterHandle) = {
-    	/*
-    	 * We need spark to start the action collectors on the workers
-    	 * before moving to the next state as dependent services will look
-    	 * for them after bind.
-    	 */
-    	System.setProperty("spark.serializer", "spark.KryoSerializer")
-    	System.setProperty("spark.kryo.registrator", "concentus.service.spark.KryoRegistrator")
-	  
+	protected override def onBind(stateData: StateData, cluster: ClusterHandle) = {  
+    	val masterEndpoints = cluster.getAllServiceEndpoints(SparkMasterService.masterEndpointType)
+        val masterEndpoint = if (masterEndpoints.size < 1) {
+          throw new RuntimeException("There are no spark master services registered! Cannot start spark driver.");
+        } else {
+          masterEndpoints.get(0)
+        }
+ 
     	val tickDuration = application.getTickDuration
-    	val sparkMasterUrl = ""
-    	val sparkWorkerCount = 10
+    	val sparkMasterUrl = "spark://" + masterEndpoint.ipAddress + ":" + masterEndpoint.port
     	
     	val ssc = new StreamingContext(sparkMasterUrl, "Concentus", Milliseconds(tickDuration))
     	
@@ -83,7 +81,7 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
     	val topNMap = ssc.sparkContext.broadcast(
     	    application.variableDefinitions map { v => (v.getVariableId, v.getTopNCount) } toMap)
     	
-		val streams = for (id <- 1 to sparkWorkerCount) yield {
+		val streams = for (id <- 1 to receiverCount) yield {
 			val clusterHandleSettings = new ClusterHandleSettings(
 			    cluster.settings.zooKeeperAddress,
 			    cluster.settings.zooKeeperAppRoot,
@@ -103,7 +101,11 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 				} 
 			}
 			.reduceByKey((v1, v2) => v1.union(v2))
-			.foreach(rdd => rdd.collect())
+//			.foreach((rdd, time) => {
+//			  val collectiveVarMap = new Int2ObjectOpenHashMap[CollectiveVariable](rdd.count.asInstanceOf[Int])
+//			  rdd.foreach((varId, collectiveVar) => collectiveVarMap.put(varId, collectiveVar))
+//			  canonicalStateProcessor.onTickCompleted(time.milliseconds, collectiveVarMap)
+//			})
 		ssc.start
 	}
 
@@ -115,4 +117,30 @@ class KryoRegistrator extends SparkKyroRegistrator {
 	   Util.initialiseKryo(kryo)
 	}
   
+}
+
+object SparkStreamingDriver {
+  val serviceInfo = new ServiceInfo("sparkStreamingDriver", classOf[ServiceState], SparkWorkerService.serviceInfo)
+}
+
+class SparkStreamingDriverDeployment(
+		receiverCount: Int,
+		actionCollectorPort: Int,
+		actionCollectorRecvBufferLength: Int,
+		actionCollectorSendBufferLength: Int,
+		sendQueueSize: Int) extends ServiceDeploymentBase(SparkStreamingDriver.serviceInfo) {
+  
+  def this() = this(0, 0, 0, 0, 0)
+  
+  def onPreStart(stateData: StateData) = {}
+  
+  def createService[TBuffer <: ResizingBuffer](serviceId: Int,
+      initData: StateData,
+      serviceContext: ServiceContext[ServiceState],
+      concentusHandle: ConcentusHandle,
+      metricContext: MetricContext,
+      resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
+    new SparkStreamingDriver(receiverCount, actionCollectorPort, actionCollectorRecvBufferLength, 
+        actionCollectorSendBufferLength, sendQueueSize, concentusHandle, metricContext, resolver)
+  }
 }

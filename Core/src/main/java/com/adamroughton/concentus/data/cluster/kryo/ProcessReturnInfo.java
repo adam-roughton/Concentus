@@ -7,7 +7,7 @@ import com.esotericsoftware.kryo.KryoSerializable;
 import com.esotericsoftware.kryo.io.Input;
 import com.esotericsoftware.kryo.io.Output;
 
-public final class GuardianDeploymentReturnInfo implements KryoSerializable {
+public final class ProcessReturnInfo implements KryoSerializable {
 
 	public enum ReturnType {
 		OK,
@@ -19,9 +19,9 @@ public final class GuardianDeploymentReturnInfo implements KryoSerializable {
 	
 	// for Kryo
 	@SuppressWarnings("unused")
-	private GuardianDeploymentReturnInfo() { }
+	private ProcessReturnInfo() { }
 	
-	public GuardianDeploymentReturnInfo(ReturnType returnType, String reason) {
+	public ProcessReturnInfo(ReturnType returnType, String reason) {
 		_returnType = Objects.requireNonNull(returnType);
 		_reason = reason;
 	}

@@ -41,7 +41,7 @@ import com.adamroughton.concentus.cluster.worker.ServiceDeployment;
 import com.adamroughton.concentus.crowdhammer.metriccollector.MetricCollector;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService.WorkerServiceDeployment;
-import com.adamroughton.concentus.data.cluster.kryo.GuardianDeploymentReturnInfo;
+import com.adamroughton.concentus.data.cluster.kryo.ProcessReturnInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.metric.MetricBucketInfo;
@@ -126,7 +126,7 @@ public class ClusterTestTask implements TestTask {
 		public void onDeploymentChange(
 				GuardianDeployment<ServiceState> guardianDeployment,
 				GuardianDeploymentState newState,
-				GuardianDeploymentReturnInfo retInfo) {
+				ProcessReturnInfo retInfo) {
 			if (newState != GuardianDeploymentState.RUNNING) {
 				ServiceInfo<ServiceState> serviceInfo = guardianDeployment.getDeployment().serviceInfo();
 				_exceptionRef.compareAndSet(null, new RuntimeException("The deployment " + serviceInfo.serviceType() + 

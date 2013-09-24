@@ -27,11 +27,11 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectArrayMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
-import com.adamroughton.concentus.data.cluster.kryo.GuardianDeploymentReturnInfo;
 import com.adamroughton.concentus.data.cluster.kryo.GuardianInit;
 import com.adamroughton.concentus.data.cluster.kryo.GuardianState;
 import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.data.cluster.kryo.MetricSourceMetaData;
+import com.adamroughton.concentus.data.cluster.kryo.ProcessReturnInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInit;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
@@ -86,7 +86,7 @@ public enum DataType implements KryoRegistratorDelegate {
 	
 	GUARDIAN_INIT(200, KRYO, GuardianInit.class),
 	GUARDIAN_STATE(201, KRYO, GuardianState.class, new ClusterStateKryoRegistratorDelegate<>(GuardianState.class)),
-	GUARDIAN_DEPLOYMENT_RETURN_INFO(202, KRYO, GuardianDeploymentReturnInfo.class),
+	PROCESS_RETURN_INFO(202, KRYO, ProcessReturnInfo.class),
 	SERVICE_STATE(203, KRYO, ServiceState.class, new ClusterStateKryoRegistratorDelegate<>(ServiceState.class)),
 	STATE_ENTRY(204, KRYO, StateEntry.class),
 	SERVICE_INIT(205, KRYO, ServiceInit.class),

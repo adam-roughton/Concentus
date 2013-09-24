@@ -16,12 +16,12 @@ import com.adamroughton.concentus.ComponentResolver;
 import com.adamroughton.concentus.ConcentusExecutableOperations;
 import com.adamroughton.concentus.ConcentusHandle;
 import com.adamroughton.concentus.data.ResizingBuffer;
-import com.adamroughton.concentus.data.cluster.kryo.GuardianDeploymentReturnInfo;
 import com.adamroughton.concentus.data.cluster.kryo.GuardianInit;
 import com.adamroughton.concentus.data.cluster.kryo.GuardianState;
+import com.adamroughton.concentus.data.cluster.kryo.ProcessReturnInfo;
+import com.adamroughton.concentus.data.cluster.kryo.ProcessReturnInfo.ReturnType;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
-import com.adamroughton.concentus.data.cluster.kryo.GuardianDeploymentReturnInfo.ReturnType;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.util.TimeoutTracker;
 import com.adamroughton.concentus.util.Util;
@@ -133,7 +133,7 @@ public final class Guardian implements ClusterService<GuardianState> {
 					onRun(stateChangeIndex, stateData, cluster);
 				} catch (Exception e) {
 					_serviceContext.enterState(GuardianState.READY, 
-							new GuardianDeploymentReturnInfo(ReturnType.ERROR, "Failed to enter the run state: " 
+							new ProcessReturnInfo(ReturnType.ERROR, "Failed to enter the run state: " 
 									+ Util.stackTraceToString(e)), 
 							stateChangeIndex);
 				}
@@ -147,7 +147,7 @@ public final class Guardian implements ClusterService<GuardianState> {
 	
 	private void onReady(int stateChangeIndex, StateData stateData, ClusterHandle cluster) throws Exception {
 		stopHostProcess();
-		GuardianDeploymentReturnInfo retInfo = stateData.getData(GuardianDeploymentReturnInfo.class);
+		ProcessReturnInfo retInfo = stateData.getData(ProcessReturnInfo.class);
 		stateData.setDataForCoordinator(retInfo);
 	}
 	
@@ -200,7 +200,7 @@ public final class Guardian implements ClusterService<GuardianState> {
 					process = processBuilder.start();
 				} catch (IOException eIO) {
 					_serviceContext.enterState(GuardianState.READY, 
-							new GuardianDeploymentReturnInfo(ReturnType.ERROR, "Could not start the guardian service host process: " 
+							new ProcessReturnInfo(ReturnType.ERROR, "Could not start the guardian service host process: " 
 									+ Util.stackTraceToString(eIO)), 
 							stateChangeIndex);
 					return;
@@ -231,11 +231,11 @@ public final class Guardian implements ClusterService<GuardianState> {
 					int retCode = process.waitFor();
 					stdErrCollector.join();
 					
-					GuardianDeploymentReturnInfo retInfo;
+					ProcessReturnInfo retInfo;
 					if (retCode == 0) {
-						retInfo = new GuardianDeploymentReturnInfo(ReturnType.OK, null);
+						retInfo = new ProcessReturnInfo(ReturnType.OK, null);
 					} else {
-						retInfo = new GuardianDeploymentReturnInfo(ReturnType.ERROR, stdErrBuilder.toString());
+						retInfo = new ProcessReturnInfo(ReturnType.ERROR, stdErrBuilder.toString());
 					}
 					Log.info("Guardian.onRun: Signalling process death - retInfo=" + retInfo + ", stateChangeIndex=" + stateChangeIndex);
 					_serviceContext.enterState(GuardianState.READY, retInfo, stateChangeIndex);
