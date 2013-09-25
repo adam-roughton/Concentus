@@ -21,21 +21,44 @@ import com.adamroughton.concentus.data.model.kryo.CollectiveVariable;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.model.CollectiveVariableDefinition;
 import com.adamroughton.concentus.model.UserEffectSet;
+import com.adamroughton.concentus.service.spark.SparkMasterServiceDeployment;
+import com.adamroughton.concentus.service.spark.SparkStreamingDriverDeployment;
+import com.adamroughton.concentus.service.spark.SparkWorkerServiceDeployment;
 
 public class SimpleTest {
 
-	public static void main(String[] args) {
-		TestBuilder builder = new TestBuilder();
-		Test test = builder.usingName("simpleTest")
-			.withClientCounts(1000, 2000, 3000, 4000, 5000, 10000, 20000, 40000, 80000)
-			.withRunTime(15, TimeUnit.SECONDS)
-			.withService(new DirectCanonicalStateServiceDeployment(-1, -1, 2048, 2048, -1, 2048), 1)
-			.withService(new ClientHandlerServiceDeployment(-1, 2048, 2048), 2)
-			.withWorkerCount(2)
-			.withApplicationFactory(new SimpleApplicationFactory())
-			.withAgentFactory(new SimpleClientAgentFactory())
-			.build();
-		CrowdHammer.runTest(test);
+	public static void main(String[] args) throws InterruptedException {
+		
+//		TestBuilder builder = new TestBuilder();
+//		Test test = builder.usingName("spark")
+//			.withClientCounts(1000, 2000, 3000, 4000, 5000, 10000, 20000, 40000, 80000)
+//			.withRunTime(15, TimeUnit.SECONDS)
+//			.withService(new SparkMasterServiceDeployment(12000), 1)
+//			.withService(new SparkWorkerServiceDeployment(), 1)
+//			.withService(new SparkStreamingDriverDeployment(1, -1, 2048, 2048, -1, 2048), 1)
+//			.withService(new ClientHandlerServiceDeployment(-1, 2048, 2048), 1)
+//			.withWorkerCount(1)
+//			.withApplicationFactory(new SimpleApplicationFactory())
+//			.withAgentFactory(new SimpleClientAgentFactory())
+//			.build();
+//		CrowdHammer.runTest(test);
+		
+		TestBuilder builder;
+		Test test;
+		
+		for (int i = 0; i < 5; i++) {
+			builder = new TestBuilder();
+			test = builder.usingName("simpleTest")
+				.withClientCounts(100, 200, 300)
+				.withRunTime(15, TimeUnit.SECONDS)
+				.withService(new DirectCanonicalStateServiceDeployment(-1, -1, 2048, 2048, -1, 2048), 1)
+				.withService(new ClientHandlerServiceDeployment(-1, 2048, 2048), 2)
+				.withWorkerCount(2)
+				.withApplicationFactory(new SimpleApplicationFactory())
+				.withAgentFactory(new SimpleClientAgentFactory())
+				.build();
+			CrowdHammer.runTest(test);
+		}
 	}
 	
 	public static class SimpleApplicationFactory implements InstanceFactory<SimpleApplication> {

@@ -36,8 +36,9 @@ public final class CrowdHammer implements Closeable {
 	
 	private static CrowdHammer INSTANCE;
 	
-	public static void runTest(Test testRun) {
-		INSTANCE.startTest(testRun);
+	public static void runTest(Test testRun) throws InterruptedException {
+		TestTask testTask = INSTANCE.startTest(testRun);
+		testTask.waitForState(State.STOPPED);
 	}
 	
 	static <TBuffer extends ResizingBuffer> CrowdHammer createInstance(CoordinatorClusterHandle clusterHandle, 
@@ -199,13 +200,14 @@ public final class CrowdHammer implements Closeable {
 		return _listenable;
 	}
 	
-	public void startTest(Test test) {
+	public TestTask startTest(Test test) {
 		if (_currentTask != null && _currentTask.getState() != TestTask.State.STOPPED) {
 			throw new RuntimeException("The previous test task should be stopped before a new task is started.");
 		}
 		_currentTask = new ClusterTestTask(test, _concentusHandle.getClock(), _clusterHandle, _guardianManager, _metricCollector);
 		_currentTask.getListenable().addListener(_testListener);
 		_executor.execute(_currentTask);
+		return _currentTask;
 	}
 	
 	public void stopRun() throws InterruptedException {

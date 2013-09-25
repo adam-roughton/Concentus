@@ -24,12 +24,24 @@ import com.adamroughton.concentus.data.cluster.kryo.{ServiceState, ServiceInfo}
 import com.adamroughton.concentus.cluster.worker.{ConcentusServiceBase, StateData, ClusterHandle, 
   ServiceContext, ClusterService, ServiceDeploymentBase}
 import it.unimi.dsi.fastutil.ints.{Int2ObjectArrayMap, Int2ObjectOpenHashMap}
+import java.util.concurrent.Executors
+import com.adamroughton.concentus.pipeline.ProcessingPipeline
+import com.adamroughton.concentus.pipeline.PipelineProcess
+import com.adamroughton.concentus.messaging.zmq.SocketSettings
+import org.zeromq.ZMQ
+import com.adamroughton.concentus.messaging.MessagingUtil
+import com.adamroughton.concentus.messaging.Publisher
+import java.util.concurrent.TimeUnit
+import com.adamroughton.concentus.CoreServices
+import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint
+import com.adamroughton.concentus.actioncollector.ActionCollectorService
 
 class SparkStreamingDriver[TBuffer <: ResizingBuffer](
         receiverCount: Int,
 		actionCollectorPort: Int,
 		actionCollectorRecvBufferLength: Int,
 		actionCollectorSendBufferLength: Int,
+		canonicalStateUpdatePort: Int,
         sendQueueSize: Int,
 		concentusHandle: ConcentusHandle, 
 		metricContext: MetricContext,
@@ -39,23 +51,24 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
   	System.setProperty("spark.serializer", "spark.KryoSerializer")
     System.setProperty("spark.kryo.registrator", "concentus.service.spark.KryoRegistrator")
   
+    val executor = Executors.newCachedThreadPool()
     val socketManager = resolver.newSocketManager(concentusHandle.getClock())
     var application: CollectiveApplication = null
     var masterUrl: String = null
     var canonicalStateProcessor: CanonicalStateProcessor[TBuffer] = null
-    
-    val sendQueue = {
-       val sendHeader = new OutgoingEventHeader(0, 2)
-       new SendQueue(
-           "updateQueue",
-           sendHeader,
-           socketManager.newMessageQueueFactory(resolver.getEventQueueFactory())
+    val pubHeader = new OutgoingEventHeader(0, 2)
+  	val pubEventQueue = socketManager.newMessageQueueFactory(resolver.getEventQueueFactory())
     	.createSingleProducerQueue("updateSendQueue", sendQueueSize, 
-    	    Constants.DEFAULT_MSG_BUFFER_SIZE, new YieldingWaitStrategy))
-    }
+    	    Constants.DEFAULT_MSG_BUFFER_SIZE, new YieldingWaitStrategy)
+    var pipeline: ProcessingPipeline[TBuffer] = null
 	
 	protected override def onInit(stateData: StateData, cluster: ClusterHandle) = {
     	application = cluster.getApplicationInstanceFactory().newInstance()
+    	
+    	val sendQueue = new SendQueue(
+           "updateQueue",
+           pubHeader,
+           pubEventQueue)
     	
     	// create the canonical state processor
     	canonicalStateProcessor = new CanonicalStateProcessor(application, 
@@ -71,6 +84,9 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
         } else {
           masterEndpoints.get(0)
         }
+    	
+    	val zooKeeperAddress = cluster.settings.zooKeeperAddress
+		val zooKeeperAppRoot = cluster.settings.zooKeeperAppRoot
  
     	val tickDuration = application.getTickDuration
     	val sparkMasterUrl = "spark://" + masterEndpoint.ipAddress + ":" + masterEndpoint.port
@@ -82,12 +98,8 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
     	    application.variableDefinitions map { v => (v.getVariableId, v.getTopNCount) } toMap)
     	
 		val streams = for (id <- 1 to receiverCount) yield {
-			val clusterHandleSettings = new ClusterHandleSettings(
-			    cluster.settings.zooKeeperAddress,
-			    cluster.settings.zooKeeperAppRoot,
-			    concentusHandle)
 			val stream = new CandidateValueDStream(ssc, actionCollectorPort, actionCollectorRecvBufferLength, 
-			    actionCollectorSendBufferLength, id, clusterHandleSettings, resolver)
+			    actionCollectorSendBufferLength, id, zooKeeperAddress, zooKeeperAppRoot, resolver)
 			ssc.registerInputStream(stream)
 
 			stream.map(v => (v.groupKey, v))
@@ -101,14 +113,56 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 				} 
 			}
 			.reduceByKey((v1, v2) => v1.union(v2))
-//			.foreach((rdd, time) => {
-//			  val collectiveVarMap = new Int2ObjectOpenHashMap[CollectiveVariable](rdd.count.asInstanceOf[Int])
-//			  rdd.foreach((varId, collectiveVar) => collectiveVarMap.put(varId, collectiveVar))
-//			  canonicalStateProcessor.onTickCompleted(time.milliseconds, collectiveVarMap)
-//			})
+			.foreach((rdd, time) => {
+			  val collectiveVarMap = new Int2ObjectOpenHashMap[CollectiveVariable](rdd.count.asInstanceOf[Int])
+			  rdd.foreach(idVarPair => collectiveVarMap.put(idVarPair._1, idVarPair._2))
+			  canonicalStateProcessor.onTickCompleted(time.milliseconds, collectiveVarMap)
+			})
 		ssc.start
+		
+		// set up canonical state pub socket
+		
+		val pubSocketSettings = SocketSettings.create()
+			.bindToPort(canonicalStateUpdatePort);
+		val pubSocketId = socketManager.create(ZMQ.PUB, pubSocketSettings, "pubSocket")
+		val pubSocketMessenger = socketManager.getSocketMutex(pubSocketId)
+		val statePublisher = MessagingUtil.asSocketOwner("canonicalStatePublisher", pubEventQueue, new Publisher(pubHeader), pubSocketMessenger)
+		
+		// have an empty process up front in place of spark
+		val pipeline = ProcessingPipeline.build[TBuffer](new Runnable() { 
+		  def run() = {
+		    try {
+		      val waitMonitor = new Object
+		      waitMonitor.synchronized {
+		        waitMonitor.wait()
+		      }
+		    } catch {
+		      case eInterrupted: InterruptedException => {
+		         ssc.stop
+		      }
+		    }
+		  } 
+		}, concentusHandle.getClock())
+		.thenConnector(pubEventQueue)
+		.then(statePublisher)
+		.createPipeline(executor)
+		
+		// register the publish endpoint
+		val address = concentusHandle.getNetworkAddress.getHostAddress
+		val pubEndpoint = new ServiceEndpoint(CoreServices.CANONICAL_STATE.getId, address, canonicalStateUpdatePort)
+		cluster.registerServiceEndpoint(pubEndpoint)
 	}
-
+	
+	override def onStart(stateData: StateData, cluster: ClusterHandle) = {
+	  pipeline.start
+	}
+	
+	override def onShutdown(stateData: StateData, cluster: ClusterHandle) = {
+	  if (pipeline != null) {
+		  pipeline.halt(30, TimeUnit.SECONDS)
+	  }
+	}
+	
 }
 
 class KryoRegistrator extends SparkKyroRegistrator {
@@ -128,9 +182,12 @@ class SparkStreamingDriverDeployment(
 		actionCollectorPort: Int,
 		actionCollectorRecvBufferLength: Int,
 		actionCollectorSendBufferLength: Int,
-		sendQueueSize: Int) extends ServiceDeploymentBase(SparkStreamingDriver.serviceInfo) {
+		canonicalStateUpdatePort: Int,
+		sendQueueSize: Int) extends ServiceDeploymentBase[ServiceState](
+		    SparkStreamingDriver.serviceInfo, 
+		    ActionCollectorService.SERVICE_INFO) {
   
-  def this() = this(0, 0, 0, 0, 0)
+  def this() = this(0, 0, 0, 0, 0, 0)
   
   def onPreStart(stateData: StateData) = {}
   
@@ -141,6 +198,6 @@ class SparkStreamingDriverDeployment(
       metricContext: MetricContext,
       resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
     new SparkStreamingDriver(receiverCount, actionCollectorPort, actionCollectorRecvBufferLength, 
-        actionCollectorSendBufferLength, sendQueueSize, concentusHandle, metricContext, resolver)
+        actionCollectorSendBufferLength, canonicalStateUpdatePort, sendQueueSize, concentusHandle, metricContext, resolver)
   }
 }

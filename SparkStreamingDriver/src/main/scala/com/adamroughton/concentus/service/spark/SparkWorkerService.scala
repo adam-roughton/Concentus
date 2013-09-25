@@ -15,9 +15,9 @@ import com.adamroughton.concentus.metric.MetricContext
 import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint
 import java.nio.file.Path
 import com.esotericsoftware.minlog.Log
+import java.nio.file.Paths
 
-class SparkWorkerService(sparkHome: Path,
-    serviceContext: ServiceContext[ServiceState]) 
+class SparkWorkerService(serviceContext: ServiceContext[ServiceState]) 
 		extends ExternalProcessServiceBase(serviceContext) {
   
   override def onBind(stateData: StateData, cluster: ClusterHandle) = {
@@ -27,6 +27,7 @@ class SparkWorkerService(sparkHome: Path,
      } else {
        masterEndpoints.get(0)
      }     
+     val sparkHome = Paths.get(System.getProperty("user.dir"), "spark-0.7.3")
      val sparkWorkerCommand = sparkHome.resolve("run").toString() + 
     	" spark.deploy.worker.Worker spark://" + masterEndpoint.ipAddress + ":" + masterEndpoint.port
      startProcess(sparkWorkerCommand)
@@ -41,10 +42,8 @@ object SparkWorkerService {
   
 }
 
-class SparkWorkerServiceDeployment(sparkHome: Path) extends ServiceDeploymentBase(SparkWorkerService.serviceInfo) {
-  
-  def this() = this(null)
-  
+class SparkWorkerServiceDeployment extends ServiceDeploymentBase[ServiceState](SparkWorkerService.serviceInfo) {
+    
   def onPreStart(stateData: StateData) = {}
   
   def createService[TBuffer <: ResizingBuffer](serviceId: Int,
@@ -53,7 +52,7 @@ class SparkWorkerServiceDeployment(sparkHome: Path) extends ServiceDeploymentBas
       concentusHandle: ConcentusHandle,
       metricContext: MetricContext,
       resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
-    new SparkWorkerService(sparkHome, serviceContext)
+    new SparkWorkerService(serviceContext)
   }
   
 }

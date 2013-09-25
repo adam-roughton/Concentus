@@ -15,15 +15,16 @@ import com.adamroughton.concentus.metric.MetricContext
 import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint
 import java.nio.file.Path
 import com.esotericsoftware.minlog.Log
+import java.nio.file.Paths
 
 class SparkMasterService(
     masterAddress: String,
     masterPort: Int,
-    sparkHome: Path,
     serviceContext: ServiceContext[ServiceState]) 
 		extends ExternalProcessServiceBase(serviceContext) {
   
   override def onBind(stateData: StateData, cluster: ClusterHandle) = {
+     val sparkHome = Paths.get(System.getProperty("user.dir"), "spark-0.7.3")
      val sparkMasterCommand = sparkHome.resolve("run").toString() + 
     	" spark.deploy.master.Master -i " + masterAddress + " -p " + masterPort
      startProcess(sparkMasterCommand);
@@ -43,9 +44,10 @@ object SparkMasterService {
   
 }
 
-class SparkMasterServiceDeployment(masterPort: Int, sparkHome: Path) extends ServiceDeploymentBase(SparkMasterService.serviceInfo) {
+class SparkMasterServiceDeployment(masterPort: Int) 
+	extends ServiceDeploymentBase[ServiceState](SparkMasterService.serviceInfo) {
   
-  def this() = this(7077, null)
+  def this() = this(7077)
   
   def onPreStart(stateData: StateData) = {}
   
@@ -56,7 +58,7 @@ class SparkMasterServiceDeployment(masterPort: Int, sparkHome: Path) extends Ser
       metricContext: MetricContext,
       resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
     val masterAddress = concentusHandle.getNetworkAddress.getHostAddress
-    new SparkMasterService(masterAddress, masterPort, sparkHome, serviceContext)
+    new SparkMasterService(masterAddress, masterPort, serviceContext)
   }
   
 }

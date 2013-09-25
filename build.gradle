@@ -246,7 +246,19 @@ project(':CrowdHammer') {
 }
 
 project(':Tests') {
+	
+	// for spark
+	repositories {
+		maven {
+			url "http://repo.typesafe.com/typesafe/releases/"
+		}
+		maven {
+			url "http://repo.spray.cc/"
+		}
+	}
+	
 	dependencies {
 		compile project(':CrowdHammer')
+		compile project(':SparkStreamingDriver')
 	}
 }

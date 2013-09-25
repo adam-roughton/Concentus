@@ -37,6 +37,7 @@ import com.adamroughton.concentus.cluster.coordinator.ServiceGroup.ServiceGroupE
 import com.adamroughton.concentus.cluster.coordinator.ServiceGroup.ServiceGroupEvent.EventType;
 import com.adamroughton.concentus.cluster.coordinator.ServiceGroup.ServiceGroupListener;
 import com.adamroughton.concentus.cluster.coordinator.ServiceHandle;
+import com.adamroughton.concentus.cluster.worker.Guardian;
 import com.adamroughton.concentus.cluster.worker.ServiceDeployment;
 import com.adamroughton.concentus.crowdhammer.metriccollector.MetricCollector;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
@@ -190,6 +191,21 @@ public class ClusterTestTask implements TestTask {
 	}
 
 	@Override
+	public void waitForState(State state) throws InterruptedException {
+		boolean hasState;
+		_testStateLock.lock();
+		try {
+			hasState = _state.get() == state;
+			while (!hasState) {
+				_testStateCondition.await();
+				hasState = _state.get() == state;
+			}
+		} finally {
+			_testStateLock.unlock();
+		}
+	}
+	
+	@Override
 	public void waitForState(State state, long timeout, TimeUnit unit)
 			throws InterruptedException, TimeoutException {
 		boolean hasState;
@@ -197,7 +213,7 @@ public class ClusterTestTask implements TestTask {
 		_testStateLock.lock();
 		try {
 			hasState = _state.get() == state;
-			while (!hasState) {
+			while (!hasState && !timeoutTracker.hasTimedOut()) {
 				_testStateCondition.await(timeoutTracker.getTimeout(), 
 						timeoutTracker.getUnit());
 				hasState = _state.get() == state;
@@ -224,6 +240,7 @@ public class ClusterTestTask implements TestTask {
 	
 			Log.info("Setting up for test runs...");
 			assertRunning();
+			cleanUp();
 			CollectiveApplication application = _test.getApplicationFactory().newInstance();
 			ClientAgent agent = _test.getClientAgentFactory().newInstance();
 			
@@ -397,7 +414,11 @@ public class ClusterTestTask implements TestTask {
 			try {
 				// stop guardian deployments (ready)
 				Log.info("Stopping guardian deployments...");
-				cleanUp();
+				try {
+					cleanUp();
+				} catch (Exception e) {
+					Log.error("Error cleaning up", e);
+				}
 				
 				// remove application from ZooKeeper
 				String applicationPath = _clusterHandle.resolvePathFromRoot(APPLICATION);
@@ -466,7 +487,7 @@ public class ClusterTestTask implements TestTask {
 		}
 	}
 	
-	private void cleanUp() {	
+	private void cleanUp() throws Exception {	
 		for (GuardianDeployment<ServiceState> deployment : _guardianDeployments) {
 			deployment.getListenable().removeListener(_deploymentListener);
 			deployment.stop();
@@ -475,6 +496,18 @@ public class ClusterTestTask implements TestTask {
 		_groupStateLookup.clear();
 		_groupsByType.clear();
 		_clusterHandle.deleteChildren(_clusterHandle.resolvePathFromRoot(SERVICE_ENDPOINTS));
+		
+		// delete all services that are not guardian services
+		List<String> serviceTypes = _clusterHandle.getClient()
+				.getChildren()
+				.forPath(_clusterHandle.resolvePathFromRoot(SERVICES));
+		for (String serviceType : serviceTypes) {
+			if (!serviceType.equals(Guardian.SERVICE_TYPE)) {
+				String serviceTypePath = ZKPaths.makePath(_clusterHandle.resolvePathFromRoot(SERVICES), serviceType);
+				_clusterHandle.deleteChildren(serviceTypePath);
+				_clusterHandle.delete(serviceTypePath);
+			}
+		}
 	}
 	
 	private void setTestState(TestTask.State newState) {

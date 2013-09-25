@@ -45,6 +45,7 @@ import java.util.UUID
 import com.adamroughton.concentus.util.Container
 import com.adamroughton.concentus.cluster.ClusterHandleSettings
 import com.adamroughton.concentus.cluster.worker.StateData
+import com.adamroughton.concentus.FatalExceptionCallback
 
 private case class RegisterTickReceiver(streamId: Int, receiverActor: ActorRef, objId: String)
 private case class Tick(time: Long)
@@ -56,7 +57,8 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
     actionCollectorRecvBufferLength: Int,
     actionCollectorSendBufferLength: Int, 
     id: Int, 
-    clusterHandleSettings: ClusterHandleSettings,
+    zooKeeperAddress: String,
+    zooKeeperAppRoot: String,
     resolver: ComponentResolver[_ <: ResizingBuffer]) 
 		extends NetworkInputDStream[CandidateValue](ssc_) {
 
@@ -65,7 +67,7 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
 	val env = SparkEnv.get
 
 	def getReceiver() = new ActionReceiver(actionCollectorPort, actionCollectorRecvBufferLength, 
-	    actionCollectorSendBufferLength, MEMORY_ONLY, id, clusterHandleSettings, resolver)
+	    actionCollectorSendBufferLength, MEMORY_ONLY, id, zooKeeperAddress, zooKeeperAppRoot, resolver)
 	
 	lazy private val tickManager = env.actorSystem.actorOf(Props(
 		new TickManagerActor(zeroTime.milliseconds, graph.batchDuration)), "TickManagerActor-" + id)
@@ -127,7 +129,8 @@ class ActionReceiver(
     actionCollectorSendBufferLength: Int,
     storageLevel: StorageLevel, 
 	id: Int, 
-	clusterHandleSettings: ClusterHandleSettings,
+	zooKeeperAddress: String,
+	zooKeeperAppRoot: String,
 	resolver: ComponentResolver[_ <: ResizingBuffer]) 
 		extends NetworkReceiver[CandidateValue] with TickDelegate {
 
@@ -136,7 +139,7 @@ class ActionReceiver(
 	val timeout = 5.seconds
 	
 	lazy private val tickActor = env.actorSystem.actorOf(
-	    	Props(new TickReceiverActor(id, clusterHandleSettings)), "ActionProcessor-" + streamId)
+	    	Props(new TickReceiverActor(id, zooKeeperAddress, zooKeeperAppRoot)), "ActionProcessor-" + streamId)
 	
 	protected def onStart() {
 		tickActor
@@ -154,8 +157,9 @@ class ActionReceiver(
 		tickActor ! TickProcessingDone(time)
 	}
 	
-	private class TickReceiverActor(id: Int,  
-				clusterHandleSettings: ClusterHandleSettings) extends Actor {
+	private class TickReceiverActor(id: Int, 
+			zooKeeperAddress: String,
+			zooKeeperAppRoot: String) extends Actor {
 		val ip = System.getProperty("spark.driver.host", "localhost")
 		val port = System.getProperty("spark.driver.port", "7077").toInt
 		val url = "akka://spark@%s:%s/user/TickManagerActor-%d".format(ip, port, streamId)
@@ -205,13 +209,29 @@ class ActionReceiver(
 			    	  service
 			  }
 			  
-			}
+			}			
 			
+			/*
+			 * Pass a custom concentus handle that redirects termination calls/
+			 * exceptions to Spark
+			 */
 			val concentusHandle = new ConcentusHandle(new DefaultClock(), 
 			    receiverAddress, 
-			    clusterHandleSettings.zooKeeperAddress(), 
-			    Collections.emptySet())
+			    zooKeeperAddress, 
+			    Collections.emptySet()) {
+			  
+			  override def signalFatalException(ex: Throwable) = {
+			    stopOnError(new RuntimeException(ex));
+			  }
+			  
+			  override def shutdown() = {
+			    stop()
+			  }
+			  
+			}
 			
+			val clusterHandleSettings = new ClusterHandleSettings(zooKeeperAddress, 
+			    zooKeeperAppRoot, concentusHandle)
 			val serviceContainer = new ServiceContainer(clusterHandleSettings, concentusHandle, 
 			    actionCollectorDeployment, resolver)
 			(serviceRef.get(), serviceContainer)

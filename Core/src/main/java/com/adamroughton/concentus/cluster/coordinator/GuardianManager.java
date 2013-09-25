@@ -29,6 +29,7 @@ import com.adamroughton.concentus.util.TimeoutTracker;
 import com.adamroughton.concentus.util.Util;
 import com.adamroughton.concentus.cluster.VersioningListenableContainer.ListenerInvokeDelegate;
 import com.esotericsoftware.kryo.Kryo;
+import com.esotericsoftware.minlog.Log;
 import com.netflix.curator.framework.CuratorFramework;
 import com.netflix.curator.framework.api.BackgroundCallback;
 import com.netflix.curator.framework.api.CuratorEvent;
@@ -59,6 +60,7 @@ public final class GuardianManager implements Closeable {
 	private final ConcurrentMap<String, GuardianDeployment<?>> _deployments = new ConcurrentHashMap<>();
 	private final ConcurrentLinkedQueue<String> _readyHintQueue = new ConcurrentLinkedQueue<>();
 	private final String _guardiansRootPath;
+	private int _readyCount; // used for logging
 	
 	private final Kryo _kryo = Util.newKryoInstance();
 	
@@ -101,10 +103,13 @@ public final class GuardianManager implements Closeable {
 								}
 								guardianDeployment.changeState(deploymentState, depRetInfo);
 							}
+							Log.info("Guardian " + guardianPath + " in READY state");
 							_guardians.put(guardianPath, GuardianTrackerState.READY);
 							_readyHintQueue.add(guardianPath);
+							_readyCount++;
 							break;
 						case RUN:
+							Log.info("Guardian " + guardianPath + " in RUN state");
 							_guardians.put(guardianPath, GuardianTrackerState.RUNNING);
 						default:
 					}
@@ -180,8 +185,10 @@ public final class GuardianManager implements Closeable {
 		TimeoutTracker timeoutTracker = new TimeoutTracker(timeout, unit);
 		boolean deployed = false;
 		do {
+			Log.info("Waiting for available guardian (" + _readyCount + " reported as ready)");
 			String availableGuardian = _readyHintQueue.poll();
 			if (availableGuardian != null) {
+				_readyCount--;
 				if (_guardians.replace(availableGuardian, GuardianTrackerState.READY, GuardianTrackerState.WAITING)) {
 					GuardianDeployment<TState> guardianDeployment = 
 							new GuardianDeployment<>(availableGuardian, deployment);

@@ -4,8 +4,7 @@ function printUsage {
 	echo "Usage :"
 	echo "    $0 Coordinator"
 	echo " OR"
-	echo "    $0 InstanceType ZooKeeperAddress [additional flags as per instance]"
-    echo "   InstanceTypes: CanonicalState, ClientHandler, MetricListener, Worker"
+	echo "    $0 Guardian ZooKeeperAddress"
 }
 
 if [ -z "$1" ]
@@ -18,7 +17,12 @@ MAIN=""
 ADDITIONAL=""
 ADDRESS=`curl http://169.254.169.254/latest/meta-data/local-ipv4`
 
-if ! [[ $1 = "Coordinator" ]]
+if [[ $1 = "Coordinator" ]]
+then
+	MAIN="com.adamroughton.concentus.crowdhammer.CrowdHammerCli"
+	ZOO_KEEPER_ADDRESS="127.0.0.1"
+	VM_ARGS="-Djava.library.path=/usr/local/lib -Xmx4g -XX:+UseCompressedOops -server -d64"
+elif [[ $1 = "Guardian" ]]
 then
 	# ensure that the zookeeper address is given
 	if [ -z "$2" ]
@@ -27,37 +31,14 @@ then
 	    printUsage
 	    exit
 	fi
+	VM_ARGS="-Djava.library.path=/usr/local/lib"
 	ZOO_KEEPER_ADDRESS=$2
-  	
-  	case "$1" in
-	  CanonicalState) MAIN="com.adamroughton.concentus.crowdhammer.concentushost.CrowdHammerHostNode"
-	                  ADDITIONAL="-c com.adamroughton.concentus.canonicalstate.CanonicalStateNode"
-	                  ;;
-	                  
-	  ClientHandler)  MAIN="com.adamroughton.concentus.crowdhammer.concentushost.CrowdHammerHostNode"
-	                  ADDITIONAL="-c com.adamroughton.concentus.clienthandler.ClientHandlerNode"
-	                  ;;
-	  
-	  MetricListener) MAIN="com.adamroughton.concentus.crowdhammer.metriclistener.MetricListenerNode"
-	  				  ;;
-	  
-	  Worker)         MAIN="com.adamroughton.concentus.crowdhammer.worker.WorkerNode"
-	  				  if ! [[ "$3" =~ ^[0-9]+$ ]]
-					  then
-					     echo "Usage : $0 Worker ZooKeeperAddress MaxClientCount"
-					     exit
-					  fi
-					  ADDITIONAL="-n $3"
-					  ;;
-					  
-	  *) echo "Unknown InstanceType '$1'"
-	     printUsage
-	     exit
-	     ;;
-	esac
+	MAIN="com.adamroughton.concentus.cluster.worker.Guardian"
+	ADDITIONAL='-svmargs "-Djava.library.path=/usr/local/lib -Xmx2g -XX:+UseCompressedOops -server -d64"'
 else
-	MAIN="com.adamroughton.concentus.crowdhammer.CrowdHammerCoordinatorNode"
-	ZOO_KEEPER_ADDRESS="127.0.0.1"
+	echo "error: Unknown command $1"
+	printUsage
+	exit
 fi
 
 # go to the working directory (where this script is located)
@@ -71,8 +52,8 @@ if [[ $1 = "Coordinator" ]]; then
 fi
    
 # start the node
-CLASSPATH="concentus-core-1.0-SNAPSHOT.jar:concentus-crowdhammer-1.0-SNAPSHOT.jar:concentus-service-1.0-SNAPSHOT.jar:lib/*"
-java -cp $CLASSPATH -Djava.library.path=/usr/local/lib -Xmx4g -XX:+UseCompressedOops -server -d64 $MAIN -z $ZOO_KEEPER_ADDRESS:50000 -p config.yaml -a $ADDRESS $ADDITIONAL
+CLASSPATH="concentus-core-1.0-SNAPSHOT.jar:concentus-crowdhammer-1.0-SNAPSHOT.jar:concentus-service-1.0-SNAPSHOT.jar:concentus-sparkstreamingdriver-1.0-SNAPSHOT.jar:concentus-tests-1.0-SNAPSHOT.jar:lib/*"
+java -cp $CLASSPATH $VM_ARGS $MAIN -zkaddr $ZOO_KEEPER_ADDRESS:50000 -hostaddr $ADDRESS $ADDITIONAL
 
 if [[ $1 = "Coordinator" ]]; then
    # kill ZooKeeper

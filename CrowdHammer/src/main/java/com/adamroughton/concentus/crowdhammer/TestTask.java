@@ -22,6 +22,8 @@ public interface TestTask extends Runnable {
 	
 	State getState();
 	
+	void waitForState(State state) throws InterruptedException;
+	
 	void waitForState(State state, long timeout, TimeUnit unit) throws InterruptedException, 
 		TimeoutException;
 	

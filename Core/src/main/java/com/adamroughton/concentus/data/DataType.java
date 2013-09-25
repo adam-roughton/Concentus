@@ -99,7 +99,6 @@ public enum DataType implements KryoRegistratorDelegate {
 	 */
 	@SuppressWarnings("rawtypes")
 	PAIR(1000, KRYO, Pair.class, new TupleKryoRegistratorDelegate<Pair>(Pair.class)),
-	
 	;	
 	
 	public static int nextFreeId() {
@@ -290,4 +289,5 @@ public enum DataType implements KryoRegistratorDelegate {
 		}
 		
 	}
+
 }

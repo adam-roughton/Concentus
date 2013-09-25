@@ -72,5 +72,5 @@ public class ConcentusHandle implements FatalExceptionCallback {
 			System.exit(0);
 		}
 	}
-	
+
 }
