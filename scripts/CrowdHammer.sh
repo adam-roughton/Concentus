@@ -34,7 +34,7 @@ then
 	VM_ARGS="-Djava.library.path=/usr/local/lib"
 	ZOO_KEEPER_ADDRESS=$2
 	MAIN="com.adamroughton.concentus.cluster.worker.Guardian"
-	ADDITIONAL='-svmargs "-Djava.library.path=/usr/local/lib -Xmx2g -XX:+UseCompressedOops -server -d64"'
+	ADDITIONAL="-svmargs \"-Djava.library.path=/usr/local/lib -Xmx2g -XX:+UseCompressedOops -server -d64\""
 else
 	echo "error: Unknown command $1"
 	printUsage
