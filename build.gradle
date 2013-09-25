@@ -202,10 +202,6 @@ project(':SparkStreamingDriver') {
 		}
 	}
 	
-//	configurations {
-//		all*.exclude module:'zeromq-scala-binding_2.9.1' // clashes with jzmq
-//	}
-	
 	dependencies {
 		compile project(':Service')
 		compile ('org.spark-project:spark-streaming_2.9.3:0.7.3') {

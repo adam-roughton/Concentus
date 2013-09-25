@@ -178,11 +178,13 @@ public class ConcentusExecutableOperations {
 				super.processOption(arg, iter);
 			} else {
 				_unrecognisedArgs.add(arg);
-				String nextUnrecogArg;
+				String nextUnrecogArg = null;
 				while (iter.hasNext() && !getOptions().hasOption((nextUnrecogArg = (String) iter.next()))) {
 					_unrecognisedArgs.add(nextUnrecogArg);
 				}
-				iter.previous();
+				if (nextUnrecogArg != null) {
+					iter.previous();
+				}
 			}
 		}
 		
