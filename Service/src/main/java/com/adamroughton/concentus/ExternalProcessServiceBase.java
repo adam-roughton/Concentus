@@ -3,6 +3,9 @@ package com.adamroughton.concentus;
 import java.io.BufferedReader;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -25,17 +28,26 @@ public class ExternalProcessServiceBase extends ConcentusServiceBase {
 
 	private final ExecutorService _processMonitorExecutor = Executors.newSingleThreadExecutor();
 	private final ServiceContext<ServiceState> _serviceContext;
+	private final ConcentusHandle _concentusHandle;
 	private Future<?> _currentProcessTask = null;
 	
-	public ExternalProcessServiceBase(ServiceContext<ServiceState> serviceContext) {
+	public ExternalProcessServiceBase(ServiceContext<ServiceState> serviceContext, ConcentusHandle concentusHandle) {
 		_serviceContext = Objects.requireNonNull(serviceContext);
+		_concentusHandle = Objects.requireNonNull(concentusHandle);
+	}
+	
+	protected void startProcess(String command, String...args) {
+		startProcess(command, Arrays.asList(args));
 	}
 
-	protected void startProcess(String command) {
+	protected void startProcess(String command, List<String> args) {
 		if (_currentProcessTask != null) {
 			throw new IllegalStateException("Only one process can be active on this external process service");
 		}
-		final ProcessBuilder processBuilder = new ProcessBuilder(command);
+		List<String> commands = new ArrayList<>(args.size() + 1);
+		commands.add(command);
+		commands.addAll(args);
+		final ProcessBuilder processBuilder = new ProcessBuilder(commands);
 		final int stateChangeIndex = getStateChangeIndex();
 		processBuilder.inheritIO();
 		Runnable processTask = new Runnable() {
@@ -96,6 +108,13 @@ public class ExternalProcessServiceBase extends ConcentusServiceBase {
 	@Override
 	protected void onShutdown(StateData stateData, ClusterHandle cluster)
 			throws Exception {
+		if (stateData.hasData()) {
+			ProcessReturnInfo retInfo = stateData.getData(ProcessReturnInfo.class);
+			if (retInfo.getReturnType() == ReturnType.ERROR) {
+				_concentusHandle.signalFatalException(new RuntimeException(retInfo.getReason()));
+			}
+		}
+		
 		if (_currentProcessTask != null) {
 			// wait for the host process to stop
 			TimeoutTracker timeoutTracker = new TimeoutTracker(5000, TimeUnit.MILLISECONDS);

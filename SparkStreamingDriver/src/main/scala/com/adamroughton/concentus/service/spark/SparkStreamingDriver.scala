@@ -35,8 +35,12 @@ import java.util.concurrent.TimeUnit
 import com.adamroughton.concentus.CoreServices
 import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint
 import com.adamroughton.concentus.actioncollector.ActionCollectorService
+import java.net.URLDecoder
+import scala.collection.JavaConversions
 
 class SparkStreamingDriver[TBuffer <: ResizingBuffer](
+        sparkHome: String,
+        jarFilePaths: Array[String],
         receiverCount: Int,
 		actionCollectorPort: Int,
 		actionCollectorRecvBufferLength: Int,
@@ -49,7 +53,7 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 			extends ConcentusServiceBase {
   
   	System.setProperty("spark.serializer", "spark.KryoSerializer")
-    System.setProperty("spark.kryo.registrator", "concentus.service.spark.KryoRegistrator")
+    System.setProperty("spark.kryo.registrator", "com.adamroughton.concentus.service.spark.KryoRegistrator")
   
     val executor = Executors.newCachedThreadPool()
     val socketManager = resolver.newSocketManager(concentusHandle.getClock())
@@ -91,7 +95,8 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
     	val tickDuration = application.getTickDuration
     	val sparkMasterUrl = "spark://" + masterEndpoint.ipAddress + ":" + masterEndpoint.port
     	
-    	val ssc = new StreamingContext(sparkMasterUrl, "Concentus", Milliseconds(tickDuration))
+    	Log.info("Creating spark context")
+    	val ssc = new StreamingContext(sparkMasterUrl, "Concentus", Milliseconds(tickDuration), sparkHome, jarFilePaths, Map())
     	
     	// broadcast varId => topNCount mapping
     	val topNMap = ssc.sparkContext.broadcast(
@@ -118,7 +123,9 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 			  rdd.foreach(idVarPair => collectiveVarMap.put(idVarPair._1, idVarPair._2))
 			  canonicalStateProcessor.onTickCompleted(time.milliseconds, collectiveVarMap)
 			})
+		Log.info("Starting spark context")
 		ssc.start
+		Log.info("Spark context started")
 		
 		// set up canonical state pub socket
 		
@@ -129,7 +136,7 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		val statePublisher = MessagingUtil.asSocketOwner("canonicalStatePublisher", pubEventQueue, new Publisher(pubHeader), pubSocketMessenger)
 		
 		// have an empty process up front in place of spark
-		val pipeline = ProcessingPipeline.build[TBuffer](new Runnable() { 
+		pipeline = ProcessingPipeline.build[TBuffer](new Runnable() { 
 		  def run() = {
 		    try {
 		      val waitMonitor = new Object
@@ -174,10 +181,12 @@ class KryoRegistrator extends SparkKyroRegistrator {
 }
 
 object SparkStreamingDriver {
-  val serviceInfo = new ServiceInfo("sparkStreamingDriver", classOf[ServiceState], SparkWorkerService.serviceInfo)
+  val serviceInfo = new ServiceInfo(CoreServices.CANONICAL_STATE.getId(), classOf[ServiceState], SparkWorkerService.serviceInfo)
 }
 
 class SparkStreamingDriverDeployment(
+		sparkHome: String,
+		jarFilePaths: Array[String],
 		receiverCount: Int,
 		actionCollectorPort: Int,
 		actionCollectorRecvBufferLength: Int,
@@ -187,8 +196,8 @@ class SparkStreamingDriverDeployment(
 		    SparkStreamingDriver.serviceInfo, 
 		    ActionCollectorService.SERVICE_INFO) {
   
-  def this() = this(0, 0, 0, 0, 0, 0)
-  
+  def this() = this(null, Array[String](), 0, 0, 0, 0, 0, 0)
+		    
   def onPreStart(stateData: StateData) = {}
   
   def createService[TBuffer <: ResizingBuffer](serviceId: Int,
@@ -197,7 +206,7 @@ class SparkStreamingDriverDeployment(
       concentusHandle: ConcentusHandle,
       metricContext: MetricContext,
       resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
-    new SparkStreamingDriver(receiverCount, actionCollectorPort, actionCollectorRecvBufferLength, 
+    new SparkStreamingDriver(sparkHome, jarFilePaths, receiverCount, actionCollectorPort, actionCollectorRecvBufferLength, 
         actionCollectorSendBufferLength, canonicalStateUpdatePort, sendQueueSize, concentusHandle, metricContext, resolver)
   }
 }

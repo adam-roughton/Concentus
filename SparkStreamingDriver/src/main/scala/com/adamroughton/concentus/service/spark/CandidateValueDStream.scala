@@ -46,6 +46,7 @@ import com.adamroughton.concentus.util.Container
 import com.adamroughton.concentus.cluster.ClusterHandleSettings
 import com.adamroughton.concentus.cluster.worker.StateData
 import com.adamroughton.concentus.FatalExceptionCallback
+import com.esotericsoftware.minlog.Log
 
 private case class RegisterTickReceiver(streamId: Int, receiverActor: ActorRef, objId: String)
 private case class Tick(time: Long)
@@ -66,13 +67,17 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
 	val timeout = 2.seconds
 	val env = SparkEnv.get
 
-	def getReceiver() = new ActionReceiver(actionCollectorPort, actionCollectorRecvBufferLength, 
+	def getReceiver() = {
+	  Log.info("Creating receiver")
+	  new ActionReceiver(actionCollectorPort, actionCollectorRecvBufferLength, 
 	    actionCollectorSendBufferLength, MEMORY_ONLY, id, zooKeeperAddress, zooKeeperAppRoot, resolver)
+	}
 	
 	lazy private val tickManager = env.actorSystem.actorOf(Props(
 		new TickManagerActor(zeroTime.milliseconds, graph.batchDuration)), "TickManagerActor-" + id)
 	
 	override def start() {
+		Log.info("CandidateValueDStream.start")
 		super.start
 		tickManager
 	}
@@ -142,6 +147,7 @@ class ActionReceiver(
 	    	Props(new TickReceiverActor(id, zooKeeperAddress, zooKeeperAppRoot)), "ActionProcessor-" + streamId)
 	
 	protected def onStart() {
+		Log.info("ActionReceiver.onStart")
 		tickActor
 	}
 	
@@ -150,6 +156,7 @@ class ActionReceiver(
 	}
 	
 	def onTick(time: Long, candidateValuesIterator: java.util.Iterator[CandidateValue]) = {
+		Log.info("ActionReceiver.onTick")
 		val candidateValues = new ArrayBuffer[CandidateValue]
 		candidateValuesIterator.copyToBuffer(candidateValues)
 		
@@ -172,6 +179,7 @@ class ActionReceiver(
 		private var actionCollectorServiceContainer: ServiceContainer[ServiceState] = null
 
 		override def preStart() {
+			Log.info("TickReceiverActor.preStart")
 			val future = tickManager.ask(RegisterTickReceiver(streamId, self, this.toString))(timeout)
 			val initMsg = Await.result(future, timeout).asInstanceOf[Initialize]
 			this.lastTick = initMsg.lastTick
@@ -180,6 +188,7 @@ class ActionReceiver(
 			actionCollectorService = service
 			actionCollectorServiceContainer = container
 			actionCollectorServiceContainer.start()
+			Log.info("TickReceiverActor.preStart completed")
 		}
 		
 		override def postStop() {

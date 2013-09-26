@@ -138,8 +138,8 @@ public final class GuardianManager implements Closeable {
 		public void childEvent(CuratorFramework client, PathChildrenCacheEvent event)
 				throws Exception {
 			Type eventType = event.getType();
-			String guardianPath = event.getData().getPath();
 			if (eventType == CHILD_ADDED) {
+				String guardianPath = event.getData().getPath();
 				// new guardian added
 				String statePath = CorePath.SERVICE_STATE.getAbsolutePath(guardianPath);
 				_clusterHandle.ensureEphemeralPathCreated(statePath);
@@ -148,6 +148,7 @@ public final class GuardianManager implements Closeable {
 					.forPath(statePath);
 			} else if (eventType == CHILD_REMOVED) {
 				// guardian no longer available
+				String guardianPath = event.getData().getPath();
 				_guardians.remove(guardianPath);
 				GuardianDeployment<?> deployment = _deployments.remove(guardianPath);
 				if (deployment != null) {

@@ -18,16 +18,16 @@ import com.esotericsoftware.minlog.Log
 import java.nio.file.Paths
 
 class SparkMasterService(
+    sparkHome: String,
     masterAddress: String,
     masterPort: Int,
-    serviceContext: ServiceContext[ServiceState]) 
-		extends ExternalProcessServiceBase(serviceContext) {
+    serviceContext: ServiceContext[ServiceState],
+    concentusHandle: ConcentusHandle) 
+		extends ExternalProcessServiceBase(serviceContext, concentusHandle) {
   
   override def onBind(stateData: StateData, cluster: ClusterHandle) = {
-     val sparkHome = Paths.get(System.getProperty("user.dir"), "spark-0.7.3")
-     val sparkMasterCommand = sparkHome.resolve("run").toString() + 
-    	" spark.deploy.master.Master -i " + masterAddress + " -p " + masterPort
-     startProcess(sparkMasterCommand);
+     val sparkMasterCommand = Paths.get(sparkHome).resolve("run").toString
+     startProcess(sparkMasterCommand, "spark.deploy.master.Master", "-i", masterAddress, "-p", masterPort.toString);
      Log.info("Started spark master at spark://" + masterAddress + ":" + masterPort);
     
      val sparkMasterEndpoint = new ServiceEndpoint(SparkMasterService.masterEndpointType, 
@@ -44,10 +44,10 @@ object SparkMasterService {
   
 }
 
-class SparkMasterServiceDeployment(masterPort: Int) 
+class SparkMasterServiceDeployment(sparkHome: String, masterPort: Int) 
 	extends ServiceDeploymentBase[ServiceState](SparkMasterService.serviceInfo) {
   
-  def this() = this(7077)
+  def this() = this(null, 7077)
   
   def onPreStart(stateData: StateData) = {}
   
@@ -58,7 +58,7 @@ class SparkMasterServiceDeployment(masterPort: Int)
       metricContext: MetricContext,
       resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
     val masterAddress = concentusHandle.getNetworkAddress.getHostAddress
-    new SparkMasterService(masterAddress, masterPort, serviceContext)
+    new SparkMasterService(sparkHome, masterAddress, masterPort, serviceContext, concentusHandle)
   }
   
 }

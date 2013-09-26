@@ -214,7 +214,7 @@ public final class Guardian implements ClusterService<GuardianState> {
 								String readLine;
 								do {
 									readLine = stderrReader.readLine();
-									stdErrBuilder.append(readLine + '\n');
+									if (readLine != null) stdErrBuilder.append(readLine + '\n');
 								} while (readLine != null);
 							} catch (IOException eIO) {
 							}

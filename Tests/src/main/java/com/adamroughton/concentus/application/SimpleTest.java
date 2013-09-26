@@ -2,7 +2,17 @@ package com.adamroughton.concentus.application;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
+import java.io.IOException;
+import java.nio.file.DirectoryStream;
+import java.nio.file.DirectoryStream.Filter;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.TimeUnit;
+
+import org.apache.commons.io.FilenameUtils;
 
 import com.adamroughton.concentus.InstanceFactory;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService.ClientHandlerServiceDeployment;
@@ -24,27 +34,59 @@ import com.adamroughton.concentus.model.UserEffectSet;
 import com.adamroughton.concentus.service.spark.SparkMasterServiceDeployment;
 import com.adamroughton.concentus.service.spark.SparkStreamingDriverDeployment;
 import com.adamroughton.concentus.service.spark.SparkWorkerServiceDeployment;
+import com.esotericsoftware.minlog.Log;
+import com.google.common.base.Objects;
 
 public class SimpleTest {
 
-	public static void main(String[] args) throws InterruptedException {
+	public static void main(String[] args) throws Exception {
+		// running from the workingDirectory
+		Path workingDir = Paths.get(System.getProperty("user.dir"));
+		Path sparkHomePath = assertDirExists(workingDir.resolve("spark-0.7.3"));
+		String sparkHome = sparkHomePath.toString();
 		
-//		TestBuilder builder = new TestBuilder();
-//		Test test = builder.usingName("spark")
-//			.withClientCounts(1000, 2000, 3000, 4000, 5000, 10000, 20000, 40000, 80000)
-//			.withRunTime(15, TimeUnit.SECONDS)
-//			.withService(new SparkMasterServiceDeployment(12000), 1)
-//			.withService(new SparkWorkerServiceDeployment(), 1)
-//			.withService(new SparkStreamingDriverDeployment(1, -1, 2048, 2048, -1, 2048), 1)
-//			.withService(new ClientHandlerServiceDeployment(-1, 2048, 2048), 1)
-//			.withWorkerCount(1)
-//			.withApplicationFactory(new SimpleApplicationFactory())
-//			.withAgentFactory(new SimpleClientAgentFactory())
-//			.build();
-//		CrowdHammer.runTest(test);
+		// spark requires the path of the driver jar and all of its dependencies
+		List<String> jarFilePaths = new ArrayList<>();
+		for (String projectJar : new String[] {"concentus-core-1.0-SNAPSHOT.jar", 
+				"concentus-service-1.0-SNAPSHOT.jar", 
+				"concentus-sparkstreamingdriver-1.0-SNAPSHOT.jar"}) {
+			Path projectJarPath = assertFileExists(workingDir.resolve(projectJar));
+			jarFilePaths.add(projectJarPath.toString());
+		}
 		
-		TestBuilder builder;
-		Test test;
+		// not sure which specific libraries are needed, so just grab them all
+		Path libDir = assertDirExists(workingDir.resolve("lib"));
+		Filter<Path> jarFilter = new Filter<Path>() {
+			
+			@Override
+			public boolean accept(Path path) throws IOException {
+				if (Files.isDirectory(path)) return false;
+				String ext = FilenameUtils.getExtension(path.toString());
+				return Objects.equal(ext, "jar");
+			}
+		};
+		try (DirectoryStream<Path> libDirStream = Files.newDirectoryStream(libDir, jarFilter)) {
+			for (Path path : libDirStream) {
+				jarFilePaths.add(path.toString());
+			}
+		}
+		
+		TestBuilder builder = new TestBuilder();
+		Test test = builder.usingName("spark")
+			.withClientCounts(1000, 2000, 3000, 4000, 5000, 10000, 20000, 40000, 80000)
+			.withRunTime(15, TimeUnit.SECONDS)
+			.withService(new SparkMasterServiceDeployment(sparkHome, 12000), 1)
+			.withService(new SparkWorkerServiceDeployment(sparkHome), 1)
+			.withService(new SparkStreamingDriverDeployment(sparkHome, jarFilePaths.toArray(new String[jarFilePaths.size()]), 1, -1, 2048, 2048, -1, 2048), 1)
+			.withService(new ClientHandlerServiceDeployment(-1, 2048, 2048), 1)
+			.withWorkerCount(1)
+			.withApplicationFactory(new SimpleApplicationFactory())
+			.withAgentFactory(new SimpleClientAgentFactory())
+			.build();
+		CrowdHammer.runTest(test);
+		
+//		TestBuilder builder;
+//		Test test;
 		
 		for (int i = 0; i < 5; i++) {
 			builder = new TestBuilder();
@@ -59,6 +101,29 @@ public class SimpleTest {
 				.build();
 			CrowdHammer.runTest(test);
 		}
+	}
+	
+	private static Path assertDirExists(Path path) {
+		return assertPathExists(path, true);
+	}
+	
+	private static Path assertFileExists(Path path) {
+		return assertPathExists(path, false);
+	}
+	
+	private static Path assertPathExists(Path path, boolean isDir) {
+		if (isDir) {
+			if (!Files.isDirectory(path)) {
+				throw new RuntimeException("The folder '" + path.toString() + "' was not found: this test " +
+						"should be executed from the Concentus working directory");
+			}
+		} else {
+			if (!Files.exists(path)) {
+				throw new RuntimeException("The file '" + path.toString() + "' was not found: this test " +
+						"should be executed from the Concentus working directory");
+			}
+		}
+		return path;
 	}
 	
 	public static class SimpleApplicationFactory implements InstanceFactory<SimpleApplication> {

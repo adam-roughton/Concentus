@@ -20,7 +20,6 @@ public class GuardianServiceHost {
 	public static void main(String[] args) {
 		try {
 			Log.setLogger(new StdErrLogger());
-			Log.WARN();
 			
 			// read service in from StdIn
 			Kryo kryo = Util.newKryoInstance();
@@ -29,7 +28,7 @@ public class GuardianServiceHost {
 			Input input = new Input(new BufferedInputStream(System.in));
 			GuardianInit initMsg = (GuardianInit) kryo.readClassAndObject(input);
 			if (initMsg == null) {
-				System.exit(1); 
+				throw new RuntimeException("The initMsg was null"); 
 			}
 			System.out.println("Starting service...");
 		
@@ -37,17 +36,23 @@ public class GuardianServiceHost {
 					initMsg.deployment(), 
 					initMsg.componentResolver());
 		} catch (Exception e) {
-			e.printStackTrace();
+			Log.error("GuardianServiceHost.main", e);
 			System.exit(1);
 		}
 	}
 	
 	private final static class StdErrLogger extends Logger {
-
+		
 		@Override
-		protected void print(String message) {
-			System.err.println(message);
-			System.out.println(message);
+		public void log(int level, String category, String message, Throwable ex) {
+			super.log(level, category, message, ex);
+			if (level == Log.LEVEL_ERROR) {
+				captureError(message, ex);
+			}
+		}
+		
+		private void captureError(String message, Throwable ex) {
+			System.err.println(message + ex != null? ": " + Util.stackTraceToString(ex) : "");
 		}
 		
 	}
