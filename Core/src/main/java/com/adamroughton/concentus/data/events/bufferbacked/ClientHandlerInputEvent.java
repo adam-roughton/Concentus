@@ -25,8 +25,7 @@ public final class ClientHandlerInputEvent extends BufferBackedObject {
 	
 	private final Field clientHandlerIdField = super.getBaseField().then(INT_SIZE);
 	private final Field reliableSeqAckField = clientHandlerIdField.then(LONG_SIZE);
-	private final Field hasActionField = reliableSeqAckField.then(BOOL_SIZE);
-	private final Field actionField = hasActionField.thenVariableLength()
+	private final Field contentField = reliableSeqAckField.thenVariableLength()
 			.resolveOffsets();
 
 	public ClientHandlerInputEvent() {
@@ -35,7 +34,7 @@ public final class ClientHandlerInputEvent extends BufferBackedObject {
 	
 	@Override
 	protected Field getBaseField() {
-		return actionField;
+		return contentField;
 	}
 	
 	public int getClientHandlerId() {
@@ -54,16 +53,8 @@ public final class ClientHandlerInputEvent extends BufferBackedObject {
 		getBuffer().writeLong(reliableSeqAckField.offset, reliableSeqAck);
 	}
 	
-	public boolean hasAction() {
-		return getBuffer().readBoolean(hasActionField.offset);
-	}
-	
-	public void setHasAction(boolean hasAction) {
-		getBuffer().writeBoolean(hasActionField.offset, hasAction);
-	}
-	
-	public ResizingBuffer getActionSlice() {
-		return getBuffer().slice(actionField.offset);
+	public ResizingBuffer getContentSlice() {
+		return getBuffer().slice(contentField.offset);
 	}
 	
 	@Override
@@ -76,8 +67,7 @@ public final class ClientHandlerInputEvent extends BufferBackedObject {
 			strBuilder.append("[");
 			strBuilder.append("clientHandlerId=" + getClientHandlerId() + ", ");
 			strBuilder.append("reliableSeqAck=" + getReliableSeqAck() + ", ");
-			strBuilder.append("hasAction=" + hasAction() + ", ");
-			strBuilder.append("actionData=" + getActionSlice().toString());
+			strBuilder.append("data=" + getContentSlice().toString());
 			strBuilder.append("]");
 		}
 		return strBuilder.toString();

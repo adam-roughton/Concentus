@@ -109,13 +109,13 @@ public class ResultExtractor {
 								int partialCount = 0;
 								
 								@Override
-								public void push(ResultSet resultSet, boolean isLastRecordForBucketId) throws SQLException {
-									int connectedClientCount = resultSet.getInt("count");
-									partialCount += connectedClientCount;
-									if (isLastRecordForBucketId) {
+								public void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException {
+									if (isNewBucketId) {
 										testRunResultSet.connectedClientCount.push(partialCount);
 										partialCount = 0;
 									}
+									int connectedClientCount = resultSet.getInt("count");
+									partialCount += connectedClientCount;
 								}
 							});
 						
@@ -126,20 +126,20 @@ public class ResultExtractor {
 							long bucketDuration = -1;
 							
 							@Override
-							public void push(ResultSet resultSet, boolean isLastRecordForBucketId) throws SQLException {
-								if (bucketDuration == -1) {
-									bucketDuration = resultSet.getLong("duration");
-								}
-								
-								int sentActionCount = resultSet.getInt("count");
-								partialCount += sentActionCount;
-								if (isLastRecordForBucketId) {
+							public void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException {
+								if (isNewBucketId) {
 									// work out throughput
 									double throughput = (double) partialCount / bucketDuration * TimeUnit.SECONDS.toMillis(1);
 									testRunResultSet.sentActionThroughput.push(throughput);
 									partialCount = 0;
 									bucketDuration = -1;
 								}
+								
+								if (bucketDuration == -1) {
+									bucketDuration = resultSet.getLong("duration");
+								}
+								int sentActionCount = resultSet.getInt("count");
+								partialCount += sentActionCount;
 							}
 						});
 						
@@ -147,7 +147,7 @@ public class ResultExtractor {
 						collectMetric(statsMetricStatement, test, run, "actionToCanonicalStateLatency", new AggregateDelegate() {
 								
 								@Override
-								public void push(ResultSet resultSet, boolean isLastRecordForBucketId) throws SQLException {
+								public void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException {
 									int count = resultSet.getInt("count");
 									double mean = resultSet.getDouble("mean");
 									double sumSqrs = resultSet.getDouble("sumSqrs");
@@ -161,7 +161,7 @@ public class ResultExtractor {
 						collectMetric(countMetricStatement, test, run, "lateActionToCanonicalStateCount", new AggregateDelegate() {
 							
 							@Override
-							public void push(ResultSet resultSet, boolean isLastRecordForBucketId) throws SQLException {
+							public void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException {
 								int lateCount = resultSet.getInt("count");
 								testRunResultSet.lateActionToCanonicalStateLatency += lateCount;
 							}
@@ -180,7 +180,7 @@ public class ResultExtractor {
 	}
 	
 	private static interface AggregateDelegate {
-		void push(ResultSet resultSet, boolean isLastRecordForBucketId) throws SQLException;
+		void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException;
 	}
 	
 	private static void collectMetric(PreparedStatement statement, TestInfo test, 

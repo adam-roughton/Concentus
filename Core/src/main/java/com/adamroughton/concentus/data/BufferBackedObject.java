@@ -19,7 +19,7 @@ package com.adamroughton.concentus.data;
 import static com.adamroughton.concentus.data.ResizingBuffer.*;
 
 public abstract class BufferBackedObject {
-
+	
 	protected static class Field {
 		public final int size;
 		public int offset;

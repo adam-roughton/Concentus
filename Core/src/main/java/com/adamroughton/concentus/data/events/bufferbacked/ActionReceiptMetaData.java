@@ -16,24 +16,32 @@
 package com.adamroughton.concentus.data.events.bufferbacked;
 
 import com.adamroughton.concentus.data.BufferBackedObject;
-import com.adamroughton.concentus.data.ChunkReader;
-import com.adamroughton.concentus.data.ChunkWriter;
 import com.adamroughton.concentus.data.DataType;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.model.ClientId;
 
 import static com.adamroughton.concentus.data.ResizingBuffer.*;
 
-public final class ActionReceiptEvent extends BufferBackedObject {
+/**
+ * Data object internal to Action Collectors that allows a minimal amount
+ * of information to be stored for an action receipt (clientId, actionId, 
+ * start time, and the collective variable IDs affected). This information 
+ * can be used to generate a fresh receipt with the most up to date 
+ * information when action receipts are lost in transmission.
+ * @author Adam Roughton
+ *
+ */
+public final class ActionReceiptMetaData extends BufferBackedObject {
 
 	private final Field clientIdField = super.getBaseField().then(LONG_SIZE);
 	private final Field actionIdField = clientIdField.then(LONG_SIZE);
 	private final Field startTimeField = actionIdField.then(LONG_SIZE);
-	private final Field effectDataField = startTimeField.thenVariableLength()
+	private final Field varIdCountField = startTimeField.then(SHORT_SIZE);
+	private final Field varIdsOffset = varIdCountField.thenVariableLength()
 			.resolveOffsets();
 	
-	public ActionReceiptEvent() {
-		super(DataType.ACTION_RECEIPT_EVENT);
+	public ActionReceiptMetaData() {
+		super(DataType.ACTION_RECEIPT_META_DATA);
 	}
 	
 	public long getClientIdBits() {
@@ -68,16 +76,16 @@ public final class ActionReceiptEvent extends BufferBackedObject {
 		getBuffer().writeLong(startTimeField.offset, startTime);
 	}
 	
-	public ChunkReader getEffects() {
-		return new ChunkReader(getBuffer(), effectDataField.offset);
+	public int getVarIdCount() {
+		return getBuffer().readShort(varIdCountField.offset);
 	}
 	
-	public ChunkWriter getEffectsWriter() {
-		return new ChunkWriter(getBuffer(), effectDataField.offset);
+	public void setVarIdCount(int count) {
+		getBuffer().writeShort(varIdCountField.offset, (short) count);
 	}
 	
-	public ResizingBuffer getEffectDataSlice() {
-		return getBuffer().slice(effectDataField.offset);
+	public ResizingBuffer getVarIdsSlice() {
+		return getBuffer().slice(varIdsOffset.offset);
 	}
 	
 }

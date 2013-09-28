@@ -28,14 +28,18 @@ import uk.co.real_logic.intrinsics.StructuredArray;
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ChunkReader;
+import com.adamroughton.concentus.data.DataType;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.events.bufferbacked.ActionReceiptEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientConnectEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientDisconnectedEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientHandlerInputEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientHandlerUpdateEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ConnectResponseEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ReplayRequestEvent;
 import com.adamroughton.concentus.data.model.ClientId;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
@@ -61,8 +65,6 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	
 	private final ActionCollectorAllocationStrategy _actionProcessorAllocator;
 	private final int _clientHandlerId;
-	private final int _routerSocketId;
-	private final int _subSocketId;
 	
 	private final SendQueue<OutgoingEventHeader, TBuffer> _routerSendQueue;
 	
@@ -85,6 +87,8 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	private final CanonicalStateUpdate _canonicalStateUpdate = new CanonicalStateUpdate();
 	private final ClientUpdateEvent _clientUpdateEvent = new ClientUpdateEvent();
 	private final ClientDisconnectedEvent _clientDisconnectedEvent = new ClientDisconnectedEvent();
+	private final ReplayRequestEvent _replayRequestEvent = new ReplayRequestEvent();
+	private final ClientHandlerUpdateEvent _clientHandlerUpdateEvent = new ClientHandlerUpdateEvent();
 	
 	private final CanonicalStateUpdate _latestCanonicalState = new CanonicalStateUpdate();
 	private final ArrayBackedResizingBuffer _latestCanonicalStateBuffer;
@@ -98,6 +102,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	private final CountMetric _updateSendThroughputMetric;
 	private final CountMetric _activeClientCountMetric;
 	private final CountMetric _droppedClientCountMetric;
+	private final CountMetric _actionReceiptNackCountMetric;
 	
 	private long _nextDeadline = 0;
 
@@ -105,8 +110,6 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 			ActionCollectorAllocationStrategy actionProcessorAllocator,
 			Clock clock,
 			final int clientHandlerId,
-			int routerSocketId,
-			int subSocketId,
 			SendQueue<OutgoingEventHeader, TBuffer> routerSendQueue,
 			IncomingEventHeader routerRecvHeader,
 			IncomingEventHeader subRecvHeader,
@@ -114,8 +117,6 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 		_clock = Objects.requireNonNull(clock);
 		_actionProcessorAllocator = Objects.requireNonNull(actionProcessorAllocator);
 		_clientHandlerId = clientHandlerId;
-		_routerSocketId = routerSocketId;
-		_subSocketId = subSocketId;
 		
 		_routerSendQueue = Objects.requireNonNull(routerSendQueue);
 		
@@ -142,6 +143,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 		_updateSendThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "updateSendThroughput", false));
 		_activeClientCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "activeClientCount", true));
 		_droppedClientCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "droppedClientCount", true));
+		_actionReceiptNackCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "actionReceiptNackCount", false));
 		
 		/*
 		 * Create canonical state buffer
@@ -175,58 +177,49 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 		
 		_incomingThroughputMetric.push(1);
 		
-		if (_routerRecvHeader.hasMyHeader(eventBuffer) && _routerRecvHeader.getSocketId(eventBuffer) == _routerSocketId) {
-			if (_routerRecvHeader.isMessagingEvent(eventBuffer)) {
-				_routerSendQueue.send(eventBuffer, _routerRecvHeader);
-				return;
-			}
-			
-			int eventTypeId = EventPattern.getEventType(eventBuffer, _routerRecvHeader);
-			final SocketIdentity senderRef = RouterPattern.getSocketId(eventBuffer, _routerRecvHeader);
-			if (eventTypeId == CLIENT_CONNECT_EVENT.getId()) {
-				EventPattern.readContent(eventBuffer, _routerRecvHeader, _clientConnectEvent, new EventReader<IncomingEventHeader, ClientConnectEvent>() {
+		if (_routerRecvHeader.isMessagingEvent(eventBuffer)) {
+			_routerSendQueue.send(eventBuffer, _routerRecvHeader);
+			return;
+		}
+		
+		int eventTypeId = EventPattern.getEventType(eventBuffer, _routerRecvHeader);		
+		final SocketIdentity senderRef = RouterPattern.getSocketId(eventBuffer, _routerRecvHeader);
+		if (eventTypeId == CLIENT_CONNECT_EVENT.getId()) {
+			EventPattern.readContent(eventBuffer, _routerRecvHeader, _clientConnectEvent, new EventReader<IncomingEventHeader, ClientConnectEvent>() {
 
-					@Override
-					public void read(IncomingEventHeader header, ClientConnectEvent event) {
-						onClientConnected(senderRef, event);
-					}
-					
-				});				
-			} else if (eventTypeId == CLIENT_INPUT_EVENT.getId()) {
-				EventPattern.readContent(eventBuffer, _routerRecvHeader, _clientInputEvent, new EventReader<IncomingEventHeader, ClientInputEvent>() {
+				@Override
+				public void read(IncomingEventHeader header, ClientConnectEvent event) {
+					onClientConnected(senderRef, event);
+				}
+				
+			});				
+		} else if (eventTypeId == CLIENT_INPUT_EVENT.getId()) {
+			EventPattern.readContent(eventBuffer, _routerRecvHeader, _clientInputEvent, new EventReader<IncomingEventHeader, ClientInputEvent>() {
 
-					@Override
-					public void read(IncomingEventHeader header, ClientInputEvent event) {
-						onClientInput(senderRef, event);
-					}
-				});
-			} else if (eventTypeId == ACTION_RECEIPT_EVENT.getId()) {
-				EventPattern.readContent(eventBuffer, _routerRecvHeader, _actionReceiptEvent, new EventReader<IncomingEventHeader, ActionReceiptEvent>() {
+				@Override
+				public void read(IncomingEventHeader header, ClientInputEvent event) {
+					onClientInput(senderRef, event);
+				}
+			});
+		} else if (eventTypeId == CLIENT_HANDLER_UPDATE_EVENT.getId()) {
+			EventPattern.readContent(eventBuffer, _routerRecvHeader, _clientHandlerUpdateEvent, new EventReader<IncomingEventHeader, ClientHandlerUpdateEvent>() {
 
-					@Override
-					public void read(IncomingEventHeader header, ActionReceiptEvent event) {
-						onActionReceipt(senderRef, event);
-					}
-				});
-			} else {
-				Log.warn(String.format("Unknown event type %d received on the router socket.", eventTypeId));
-			}
-		} else if (_subRecvHeader.hasMyHeader(eventBuffer) && _subRecvHeader.getSocketId(eventBuffer) == _subSocketId) {
-			int eventTypeId = EventPattern.getEventType(eventBuffer, _subRecvHeader);
-			if (eventTypeId == CANONICAL_STATE_UPDATE.getId()) {
-				EventPattern.readContent(eventBuffer, _subRecvHeader, _canonicalStateUpdate, new EventReader<IncomingEventHeader, CanonicalStateUpdate>() {
+				@Override
+				public void read(IncomingEventHeader header, ClientHandlerUpdateEvent event) {
+					onClientHandlerUpdateEvent(senderRef, event);
+				}
+			});
+		} else if (eventTypeId == CANONICAL_STATE_UPDATE.getId()) {
+			EventPattern.readContent(eventBuffer, _routerRecvHeader, _canonicalStateUpdate, new EventReader<IncomingEventHeader, CanonicalStateUpdate>() {
 
-					@Override
-					public void read(IncomingEventHeader header, CanonicalStateUpdate canonicalStateUpdate) {
-						onCanonicalStateUpdate(canonicalStateUpdate);
-					}
-					
-				});				
-			} else {
-				Log.warn(String.format("Unknown event type %d received on the sub socket.", eventTypeId));
-			}
+				@Override
+				public void read(IncomingEventHeader header, CanonicalStateUpdate canonicalStateUpdate) {
+					onCanonicalStateUpdate(canonicalStateUpdate);
+				}
+				
+			});
 		} else {
-			Log.warn(String.format("Unknown header ID: %d", EventHeader.getHeaderId(eventBuffer, 0)));
+			Log.warn(String.format("Unknown event type %d received on the router socket.", eventTypeId));
 		}
 	}
 	
@@ -307,8 +300,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 										ClientHandlerInputEvent event) throws Exception {
 									event.setClientHandlerId(_clientHandlerId);
 									event.setReliableSeqAck(reliableSeqAck);
-									event.setHasAction(true);
-									inputEvent.getActionSlice().copyTo(event.getActionSlice());
+									inputEvent.getActionSlice().copyTo(event.getContentSlice());
 								}
 					}));
 				}
@@ -351,14 +343,54 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 		}
 	}
 	
-	private void onActionReceipt(SocketIdentity senderRef, ActionReceiptEvent receiptEvent) {
-		int actionCollectorId = receiptEvent.getActionCollectorId();
-		long reliableSeq = receiptEvent.getReliableSeq();
+	private void onClientHandlerUpdateEvent(SocketIdentity senderRef, ClientHandlerUpdateEvent clientHandlerUpdateEvent) {
+		int actionCollectorId = clientHandlerUpdateEvent.getActionCollectorId();
+		long reliableSeq = clientHandlerUpdateEvent.getReliableSeq();
 		long lastKnownReliableSeq = _actionCollectorToReliableSeqLookup.get(actionCollectorId);
 		if (reliableSeq > lastKnownReliableSeq) {
+			final long nextExpectedSeq = lastKnownReliableSeq + 1;
+			if (reliableSeq > nextExpectedSeq) {
+				// send NACK
+				final int count = (int) (reliableSeq - nextExpectedSeq);
+				_actionReceiptNackCountMetric.push(count);
+				_routerSendQueue.send(RouterPattern.asReliableTask(senderRef, _clientHandlerInputEvent, 
+						new EventWriter<OutgoingEventHeader, ClientHandlerInputEvent>() {
+	
+							@Override
+							public void write(OutgoingEventHeader header,
+									ClientHandlerInputEvent event) throws Exception {
+								event.setClientHandlerId(_clientHandlerId);
+								_replayRequestEvent.attachToBuffer(event.getContentSlice());
+								try {
+									_replayRequestEvent.writeTypeId();
+									_replayRequestEvent.setStartSequence(nextExpectedSeq);
+									_replayRequestEvent.setCount(count);
+								} finally {
+									_replayRequestEvent.releaseBuffer();
+								}
+							}
+				}));
+			}
 			_actionCollectorToReliableSeqLookup.put(actionCollectorId, reliableSeq);
+			
+			ChunkReader chunkReader = clientHandlerUpdateEvent.getChunkedContent();
+			for (ResizingBuffer chunk : chunkReader.asBuffers()) {
+				int dataTypeId = chunk.readInt(0);
+				if (dataTypeId == DataType.ACTION_RECEIPT_EVENT.getId()) {
+					_actionReceiptEvent.attachToBuffer(chunk);
+					try {
+						onActionReceipt(senderRef, _actionReceiptEvent);
+					} finally {
+						_actionReceiptEvent.releaseBuffer();
+					}
+				} else {
+					Log.warn("Unknown data type " + dataTypeId);
+				}
+			}
 		}
-		
+	}
+	
+	private void onActionReceipt(SocketIdentity senderRef, ActionReceiptEvent receiptEvent) {
 		try {
 			final ClientProxy client = _clientLookup.get(receiptEvent.getClientId().getClientIndex());
 			if (client.isActive()) {

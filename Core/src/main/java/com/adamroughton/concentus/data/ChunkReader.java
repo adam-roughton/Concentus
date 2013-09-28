@@ -18,5 +18,32 @@ public final class ChunkReader implements Iterable<byte[]> {
 	public Iterator<byte[]> iterator() {
 		return new ChunkIterator(_backingBuffer);
 	}
+	
+	public Iterable<ResizingBuffer> asBuffers() {
+		return new Iterable<ResizingBuffer>() {
+			
+			@Override
+			public Iterator<ResizingBuffer> iterator() {
+				final Iterator<byte[]> backingIterator = ChunkReader.this.iterator();
+				return new Iterator<ResizingBuffer>() {
+
+					@Override
+					public boolean hasNext() {
+						return backingIterator.hasNext();
+					}
+
+					@Override
+					public ResizingBuffer next() {
+						return new ArrayBackedResizingBuffer(backingIterator.next());
+					}
+
+					@Override
+					public void remove() {
+						backingIterator.remove();
+					}
+				};
+			}
+		};
+	}
 
 }

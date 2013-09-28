@@ -12,6 +12,7 @@ import java.util.NoSuchElementException;
 import java.util.Set;
 
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.NullResizingBuffer;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.model.ClientId;
 import com.adamroughton.concentus.data.model.Effect;
@@ -22,7 +23,7 @@ import com.adamroughton.concentus.model.UserEffectSet;
 import com.adamroughton.concentus.util.Util;
 
 public final class ActionProcessingLogic {
-
+	
 	private final CollectiveApplication _application;
 	private final long _tickDuration;
 	private final Object2ObjectMap<ClientVarKey, ArrayBackedResizingBuffer> _effects;
@@ -147,6 +148,15 @@ public final class ActionProcessingLogic {
 		}
 		
 		return updatedEffectsMap.values().iterator();
+	}
+	
+	public ResizingBuffer getEffectData(long clientIdBits, int varId) {
+		ClientVarKey clientVarKey = new ClientVarKey(clientIdBits, varId);
+		ResizingBuffer effectData = _effects.get(clientVarKey);
+		if (effectData == null) {
+			effectData = new NullResizingBuffer();
+		}
+		return effectData;
 	}
 	
 	public Iterator<CandidateValue> tick(final long time) {

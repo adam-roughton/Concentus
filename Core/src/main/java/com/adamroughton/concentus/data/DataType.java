@@ -64,14 +64,16 @@ public enum DataType implements KryoRegistratorDelegate {
 	CLIENT_INPUT_EVENT(4, BUFFER_BACKED, ClientInputEvent.class),
 	CLIENT_UPDATE_EVENT(5, BUFFER_BACKED, ClientUpdateEvent.class),
 	CLIENT_HANDLER_INPUT_EVENT(6, BUFFER_BACKED, ClientHandlerInputEvent.class),
+	CLIENT_HANDLER_UPDATE_EVENT(7, BUFFER_BACKED, ClientHandlerUpdateEvent.class),
 	
-	ACTION_EVENT(7, BUFFER_BACKED, ActionEvent.class),
-	ACTION_RECEIPT_EVENT(8, BUFFER_BACKED, ActionReceiptEvent.class),
-	TICK_EVENT(9, BUFFER_BACKED, TickEvent.class),
-	FULL_COLLECTIVE_VAR_INPUT_EVENT(10, BUFFER_BACKED, FullCollectiveVarInputEvent.class),
-	PARTIAL_COLLECTIVE_VAR_INPUT_EVENT(11, BUFFER_BACKED, PartialCollectiveVarInputEvent.class),
+	REPLAY_REQUEST_EVENT(8, BUFFER_BACKED, ReplayRequestEvent.class),
+	ACTION_EVENT(9, BUFFER_BACKED, ActionEvent.class),
+	ACTION_RECEIPT_EVENT(10, BUFFER_BACKED, ActionReceiptEvent.class),
+	TICK_EVENT(11, BUFFER_BACKED, TickEvent.class),
+	FULL_COLLECTIVE_VAR_INPUT_EVENT(12, BUFFER_BACKED, FullCollectiveVarInputEvent.class),
+	PARTIAL_COLLECTIVE_VAR_INPUT_EVENT(13, BUFFER_BACKED, PartialCollectiveVarInputEvent.class),
 	
-	METRIC_EVENT(12, BUFFER_BACKED, MetricEvent.class),
+	METRIC_EVENT(14, BUFFER_BACKED, MetricEvent.class),
 	
 	/*
 	 * Model types
@@ -81,6 +83,7 @@ public enum DataType implements KryoRegistratorDelegate {
 	CANDIDATE_VALUE(102, KRYO, CandidateValue.class),
 	CANONICAL_STATE_UPDATE(103, BUFFER_BACKED, CanonicalStateUpdate.class),
 	ACTION_RECEIPT(104, BUFFER_BACKED, ActionReceipt.class),
+	ACTION_RECEIPT_META_DATA(105, BUFFER_BACKED, ActionReceiptMetaData.class),
 	
 	/*
 	 * Cluster types

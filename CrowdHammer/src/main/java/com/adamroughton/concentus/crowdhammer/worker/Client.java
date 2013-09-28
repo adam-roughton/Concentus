@@ -68,8 +68,8 @@ public final class Client {
 
 			@Override
 			public void initialise(SentActionInfo sentActionInfo) {
-				sentActionInfo.sentTime = 0;
-				sentActionInfo.startTime = 0;
+				sentActionInfo.sentTime = -1;
+				sentActionInfo.startTime = -1;
 			}
 			
 		});
@@ -326,7 +326,8 @@ public final class Client {
 		for (long actionId = tailId; actionId <= headId; actionId++) {
 			if (_actionIdToSentActionInfoLookup.containsIndex(actionId)) {
 				SentActionInfo sentAction = _actionIdToSentActionInfoLookup.get(actionId);
-				if (sentAction.startTime <= _simTime) {
+				long startTime = sentAction.startTime;
+				if (startTime != -1 && startTime <= _simTime) {
 					_actionToCanonicalStateLatencyMetric.push(recvTime - sentAction.sentTime);
 					_actionIdToSentActionInfoLookup.remove(actionId);
 				}

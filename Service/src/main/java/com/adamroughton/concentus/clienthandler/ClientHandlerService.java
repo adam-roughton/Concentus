@@ -121,7 +121,8 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 	private final IncomingEventHeader _subRecvHeader;
 	
 	private Future<?> _routerDealerSetBridgeTask;
-	private EventListener<TBuffer> _subListener;
+	//private EventListener<TBuffer> _subListener;
+	private Runnable _subToRecvUpdateBridge;
 	private EventListener<TBuffer> _routerListener;
 	private EventProcessor _dealerSetPublisher;
 	//private SendRecvMessengerReactor<TBuffer> _routerReactor;
@@ -152,7 +153,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 		MessageQueueFactory<TBuffer> messageQueueFactory = _socketManager.newMessageQueueFactory(
 				resolver.getEventQueueFactory());
 		
-		_recvQueue = messageQueueFactory.createMultiProducerQueue(
+		_recvQueue = messageQueueFactory.createSingleProducerQueue(
 				"recvQueue",
 				recvBufferLength, 
 				MSG_BUFFER_ENTRY_LENGTH, 
@@ -170,6 +171,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 		 */
 		// router socket
 		SocketSettings routerSocketSetting = SocketSettings.create()
+				.bindToInprocName("recvInternal")
 				.bindToPort(recvPort);
 		_routerSocketId = _socketManager.create(ZMQ.ROUTER, routerSocketSetting, "input_recv");
 		int[] boundPorts = _socketManager.getBoundPorts(_routerSocketId);
@@ -185,6 +187,35 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 		SocketSettings subSocketSetting = SocketSettings.create()
 				.subscribeTo(DataType.CANONICAL_STATE_UPDATE);
 		_subSocketId = _socketManager.create(ZMQ.SUB, subSocketSetting, "sub");
+		
+		/*
+		 * We receive updates far less frequently than all other events, so it makes sense
+		 * to optimise the processing of other events with a small bit of latency for
+		 * updates.
+		 */
+		int subToRecvInternal = _socketManager.create(ZMQ.DEALER, "subToRecvInternal");
+		_socketManager.connectSocket(subToRecvInternal, "inproc://recvInternal");
+		_subToRecvUpdateBridge = _socketManager.newBridge(_subSocketId, subToRecvInternal, new BridgeDelegate<TBuffer>() {
+
+			@Override
+			public void onMessageReceived(TBuffer recvBuffer,
+					TBuffer sendBuffer, Messenger<TBuffer> sendMessenger,
+					IncomingEventHeader recvHeader,
+					OutgoingEventHeader sendHeader) {
+				if (!EventHeader.isValid(recvBuffer, 0)) return;
+				
+				int recvContentMetaData = recvHeader.getSegmentMetaData(recvBuffer, 0);
+				int recvContentOffset = EventHeader.getSegmentOffset(recvContentMetaData);
+				int contentLength = EventHeader.getSegmentLength(recvContentMetaData);
+				
+				int sendContentOffset = sendHeader.getEventOffset();
+				recvBuffer.copyTo(sendBuffer, recvContentOffset, sendContentOffset, contentLength);
+				sendHeader.setSegmentMetaData(sendBuffer, 0, sendContentOffset, contentLength);
+				sendHeader.setIsValid(sendBuffer, true);
+				
+				sendMessenger.send(sendBuffer, sendHeader, true);
+			}
+		}, _subRecvHeader, new OutgoingEventHeader(0, 1));
 	}
 		
 	@Override
@@ -205,14 +236,14 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 				new Publisher<TBuffer>(_outgoingHeader), 
 				dealerSetSocketPackageMutex);	
 		
-		// infrastructure for sub socket
-		Mutex<Messenger<TBuffer>> subSocketPackageMutex = _socketManager.getSocketMutex(_subSocketId);
-		_subListener = new EventListener<>(
-				"updateListener",
-				_subRecvHeader,
-				subSocketPackageMutex, 
-				_recvQueue, 
-				_concentusHandle);
+//		// infrastructure for sub socket
+//		Mutex<Messenger<TBuffer>> subSocketPackageMutex = _socketManager.getSocketMutex(_subSocketId);
+//		_subListener = new EventListener<>(
+//				"updateListener",
+//				_subRecvHeader,
+//				subSocketPackageMutex, 
+//				_recvQueue, 
+//				_concentusHandle);
 
 		SendQueue<OutgoingEventHeader, TBuffer> routerSendQueue = new SendQueue<>("processor", _outgoingHeader, _routerSendQueue);
 
@@ -221,15 +252,13 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 				_actionProcAllocationStrategy,
 				_concentusHandle.getClock(), 
 				_clientHandlerId, 
-				_routerSocketId, 
-				_subSocketId, 
 				routerSendQueue, 
 				_routerRecvHeader, 
 				_subRecvHeader, 
 				_metricContext);		
 		
 		// create processing pipeline
-		PipelineSection<TBuffer> subRecvSection = ProcessingPipeline.<TBuffer>build(_subListener, _concentusHandle.getClock())
+		PipelineSection<TBuffer> subRecvSection = ProcessingPipeline.<TBuffer>build(_subToRecvUpdateBridge, _concentusHandle.getClock())
 				.thenConnector(_recvQueue)
 				.asSection();
 		_pipeline = ProcessingPipeline.<TBuffer>build(_routerListener, _concentusHandle.getClock())
@@ -295,6 +324,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 							
 							recvBuffer.copyTo(sendBuffer, segmentOffset, cursor, segmentLength);
 							sendHeader.setSegmentMetaData(sendBuffer, i, cursor, segmentLength);
+							cursor += segmentLength;
 						}
 						sendMessenger.send(sendBuffer, sendHeader, true);
 					}
