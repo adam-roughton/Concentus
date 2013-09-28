@@ -15,6 +15,8 @@
  */
 package com.adamroughton.concentus.clienthandler;
 
+import org.javatuples.Pair;
+
 import uk.co.real_logic.intrinsics.ComponentFactory;
 
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
@@ -36,6 +38,7 @@ public final class ClientProxy {
 	private final ClientId _clientId;
 	private final long _clientIdBits;
 	private SocketIdentity _clientRef;
+	private int _actionCollectorId;
 	private SocketIdentity _actionCollectorRef;
 	private long _lastMsgTime;
 	private long _lastCanonicalStateUpdateId;
@@ -111,8 +114,13 @@ public final class ClientProxy {
 		return _clientRef;
 	}
 	
-	public void setActionCollectorRef(SocketIdentity actionCollectorRef) {
-		_actionCollectorRef = actionCollectorRef;
+	public void setActionCollectorAllocation(Pair<Integer, SocketIdentity> actionCollectorRef) {
+		_actionCollectorId = actionCollectorRef.getValue0();
+		_actionCollectorRef = actionCollectorRef.getValue1();
+	}
+	
+	public int getActionCollectorId() {
+		return _actionCollectorId;
 	}
 	
 	public SocketIdentity getActionCollectorRef() {
@@ -145,7 +153,7 @@ public final class ClientProxy {
 		if (ackSeq + 1 < tailSeq) {
 			// signal that the client has been disconnected
 			Log.warn(String.format("Disconnecting client %d: requested %d, but %d " +
-					"was the lowest seq available", _clientId, ackSeq + 1, tailSeq));
+					"was the lowest seq available", _clientIdBits, ackSeq + 1, tailSeq));
 			_shouldDropFlag = true;
 			return;
 		}
@@ -181,6 +189,11 @@ public final class ClientProxy {
 	}
 	
 	public void processActionReceipt(ActionReceiptEvent actionReceiptEvent) {
+		if (actionReceiptEvent.getClientIdBits() != _clientIdBits) {
+			throw new RuntimeException("ActionReceipt sent to the wrong client proxy! " +
+					"(got receipt for client " + ClientId.fromBits(actionReceiptEvent.getClientIdBits()) + " in " + _clientId);
+		}
+		
 		// create actionReceipt
 		long seq = _reliableDataMap.advance();
 		_actionReceiptData.attachToBuffer(_reliableDataMap.get(seq));

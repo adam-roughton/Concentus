@@ -163,7 +163,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 		
 		// advertise collector endpoint
 		String metricCollectorEndpointPath = _clusterHandle.resolvePathFromRoot(CorePath.METRIC_COLLECTOR);
-		ServiceEndpoint metricCollectorEndpoint = new ServiceEndpoint("metricCollector", 
+		ServiceEndpoint metricCollectorEndpoint = new ServiceEndpoint(-1, "metricCollector", 
 				_concentusHandle.getNetworkAddress().getHostAddress(), _metricPort);
 		_clusterHandle.createOrSetEphemeral(metricCollectorEndpointPath, metricCollectorEndpoint);
 	}
@@ -178,12 +178,12 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 	}
 	
 	public void newTestRun(String testName, int clientCount, 
-			long durationMillis, Class<? extends CollectiveApplication> applicationClass, 
+			long durationMillis, Class<? extends CollectiveApplication> applicationClass, String deploymentName,
 			Class<? extends ClientAgent> agentClass, Set<Pair<String, Integer>> deploymentInfo) {
 		_currentTestRunId++;
 		
 		sendInternal(new NewTestRunEvent(testName, _currentTestRunId, clientCount, durationMillis, 
-				applicationClass, agentClass, deploymentInfo));
+				applicationClass, deploymentName, agentClass, deploymentInfo));
 	}
 	
 	public int newMetricSource(String name, String serviceType) {
@@ -315,6 +315,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 					event.clientCount, 
 					event.durationMillis, 
 					event.applicationClass, 
+					event.deploymentName,
 					event.agentClass, 
 					event.deploymentInfo);
 		}
@@ -358,7 +359,6 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 							bucketId, duration, valueSlice.readRunningStats(0));
 					break;
 			}
-			
 		}
 		
 		private boolean shouldCollect(MetricEvent metricEvent) {
@@ -388,6 +388,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 		public int clientCount; 
 		public long durationMillis; 
 		public Class<? extends CollectiveApplication> applicationClass; 
+		public String deploymentName;
 		public Class<? extends ClientAgent> agentClass;
 		public Set<Pair<String, Integer>> deploymentInfo;
 		
@@ -397,12 +398,14 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 		
 		public NewTestRunEvent(String testName, int runId, int clientCount, 
 			long durationMillis, Class<? extends CollectiveApplication> applicationClass, 
-			Class<? extends ClientAgent> agentClass, Set<Pair<String, Integer>> deploymentInfo) {
+			String deploymentName, Class<? extends ClientAgent> agentClass, 
+			Set<Pair<String, Integer>> deploymentInfo) {
 			this.testName = testName;
 			this.runId = runId;
 			this.clientCount = clientCount;
 			this.durationMillis = durationMillis;
 			this.applicationClass = applicationClass;
+			this.deploymentName = deploymentName;
 			this.agentClass = agentClass;
 			this.deploymentInfo = deploymentInfo;
 		}

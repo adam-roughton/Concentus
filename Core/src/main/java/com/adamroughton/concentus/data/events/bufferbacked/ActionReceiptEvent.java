@@ -26,7 +26,9 @@ import static com.adamroughton.concentus.data.ResizingBuffer.*;
 
 public final class ActionReceiptEvent extends BufferBackedObject {
 
-	private final Field clientIdField = super.getBaseField().then(LONG_SIZE);
+	private final Field actionCollectorIdField = super.getBaseField().then(INT_SIZE);
+	private final Field reliableSeqField = actionCollectorIdField.then(LONG_SIZE);
+	private final Field clientIdField = reliableSeqField.then(LONG_SIZE);
 	private final Field actionIdField = clientIdField.then(LONG_SIZE);
 	private final Field startTimeField = actionIdField.then(LONG_SIZE);
 	private final Field effectDataField = startTimeField.thenVariableLength()
@@ -34,6 +36,31 @@ public final class ActionReceiptEvent extends BufferBackedObject {
 	
 	public ActionReceiptEvent() {
 		super(DataType.ACTION_RECEIPT_EVENT);
+	}
+	
+	/**
+	 * The action collector that processed the action.
+	 * @return the ID of the action collector that processed the action.
+	 */
+	public int getActionCollectorId() {
+		return getBuffer().readInt(actionCollectorIdField.offset);
+	}
+	
+	public void setActionCollectorId(int actionCollectorId) {
+		getBuffer().writeInt(actionCollectorIdField.offset, actionCollectorId);
+	}
+	
+	/**
+	 * The sequence number of this receipt for the given client handler - action
+	 * collector pairing. 
+	 * @return
+	 */
+	public long getReliableSeq() {
+		return getBuffer().readLong(reliableSeqField.offset);
+	}
+	
+	public void setReliableSeq(long reliableSeq) {
+		getBuffer().writeLong(reliableSeqField.offset, reliableSeq);
 	}
 	
 	public long getClientIdBits() {

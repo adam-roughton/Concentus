@@ -2,28 +2,21 @@ package com.adamroughton.concentus.application;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
-import java.io.IOException;
-import java.nio.file.DirectoryStream;
-import java.nio.file.DirectoryStream.Filter;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.TimeUnit;
-
-import org.apache.commons.io.FilenameUtils;
 
 import com.adamroughton.concentus.InstanceFactory;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService.ClientHandlerServiceDeployment;
 import com.adamroughton.concentus.crowdhammer.ClientAgent;
 import com.adamroughton.concentus.crowdhammer.CrowdHammer;
+import com.adamroughton.concentus.crowdhammer.ListClientCount;
 import com.adamroughton.concentus.crowdhammer.Test;
-import com.adamroughton.concentus.crowdhammer.TestBuilder;
-import com.adamroughton.concentus.canonicalstate.direct.DirectCanonicalStateService.DirectCanonicalStateServiceDeployment;
+import com.adamroughton.concentus.crowdhammer.TestDeploymentSet;
+import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ChunkReader;
 import com.adamroughton.concentus.data.ChunkWriter;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.events.bufferbacked.ActionEvent;
+import com.adamroughton.concentus.data.model.ClientId;
 import com.adamroughton.concentus.data.model.Effect;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 import com.adamroughton.concentus.data.model.kryo.CandidateValue;
@@ -31,99 +24,27 @@ import com.adamroughton.concentus.data.model.kryo.CollectiveVariable;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.model.CollectiveVariableDefinition;
 import com.adamroughton.concentus.model.UserEffectSet;
-import com.adamroughton.concentus.service.spark.SparkMasterServiceDeployment;
-import com.adamroughton.concentus.service.spark.SparkStreamingDriverDeployment;
-import com.adamroughton.concentus.service.spark.SparkWorkerServiceDeployment;
 import com.esotericsoftware.minlog.Log;
-import com.google.common.base.Objects;
 
 public class SimpleTest {
 
 	public static void main(String[] args) throws Exception {
-		// running from the workingDirectory
-		Path workingDir = Paths.get(System.getProperty("user.dir"));
-		Path sparkHomePath = assertDirExists(workingDir.resolve("spark-0.7.3"));
-		String sparkHome = sparkHomePath.toString();
+		SimpleApplicationFactory applicationFactory = new SimpleApplicationFactory();
+		SimpleClientAgentFactory agentFactory = new SimpleClientAgentFactory();
+		ListClientCount clientCountIterable = new ListClientCount(1000, 2000, 3000, 4000, 5000, 10000, 20000, 40000, 80000);
+		DeploymentConfigurator[] canonicalStateDepConditions = new DeploymentConfigurator[] { new SingleDisruptorConfigurator(), new SparkDriverConfigurator() };
 		
-		// spark requires the path of the driver jar and all of its dependencies
-		List<String> jarFilePaths = new ArrayList<>();
-		for (String projectJar : new String[] {"concentus-core-1.0-SNAPSHOT.jar", 
-				"concentus-service-1.0-SNAPSHOT.jar", 
-				"concentus-sparkstreamingdriver-1.0-SNAPSHOT.jar"}) {
-			Path projectJarPath = assertFileExists(workingDir.resolve(projectJar));
-			jarFilePaths.add(projectJarPath.toString());
-		}
-		
-		// not sure which specific libraries are needed, so just grab them all
-		Path libDir = assertDirExists(workingDir.resolve("lib"));
-		Filter<Path> jarFilter = new Filter<Path>() {
-			
-			@Override
-			public boolean accept(Path path) throws IOException {
-				if (Files.isDirectory(path)) return false;
-				String ext = FilenameUtils.getExtension(path.toString());
-				return Objects.equal(ext, "jar");
-			}
-		};
-		try (DirectoryStream<Path> libDirStream = Files.newDirectoryStream(libDir, jarFilter)) {
-			for (Path path : libDirStream) {
-				jarFilePaths.add(path.toString());
+		Test test;
+		for (DeploymentConfigurator configurator : canonicalStateDepConditions) {
+			for (int i = 0; i < 5; i++) {
+				TestDeploymentSet deploymentSet = new TestDeploymentSet(configurator.deploymentName(), agentFactory);
+					configurator.configure(deploymentSet, 1)
+					.addDeployment(new ClientHandlerServiceDeployment(-1, 2048, 2048), 1)
+					.setWorkerCount(1);
+				test = new Test("simple", applicationFactory, deploymentSet, clientCountIterable, 2, TimeUnit.MINUTES);
+				CrowdHammer.runTest(test);
 			}
 		}
-		
-		TestBuilder builder = new TestBuilder();
-		Test test = builder.usingName("spark")
-			.withClientCounts(1000, 2000, 3000, 4000, 5000, 10000, 20000, 40000, 80000)
-			.withRunTime(15, TimeUnit.SECONDS)
-			.withService(new SparkMasterServiceDeployment(sparkHome, 12000), 1)
-			.withService(new SparkWorkerServiceDeployment(sparkHome), 1)
-			.withService(new SparkStreamingDriverDeployment(sparkHome, jarFilePaths.toArray(new String[jarFilePaths.size()]), 1, -1, 2048, 2048, -1, 2048), 1)
-			.withService(new ClientHandlerServiceDeployment(-1, 2048, 2048), 1)
-			.withWorkerCount(1)
-			.withApplicationFactory(new SimpleApplicationFactory())
-			.withAgentFactory(new SimpleClientAgentFactory())
-			.build();
-		CrowdHammer.runTest(test);
-		
-//		TestBuilder builder;
-//		Test test;
-		
-		for (int i = 0; i < 5; i++) {
-			builder = new TestBuilder();
-			test = builder.usingName("simpleTest")
-				.withClientCounts(100, 200, 300)
-				.withRunTime(15, TimeUnit.SECONDS)
-				.withService(new DirectCanonicalStateServiceDeployment(-1, -1, 2048, 2048, -1, 2048), 1)
-				.withService(new ClientHandlerServiceDeployment(-1, 2048, 2048), 2)
-				.withWorkerCount(2)
-				.withApplicationFactory(new SimpleApplicationFactory())
-				.withAgentFactory(new SimpleClientAgentFactory())
-				.build();
-			CrowdHammer.runTest(test);
-		}
-	}
-	
-	private static Path assertDirExists(Path path) {
-		return assertPathExists(path, true);
-	}
-	
-	private static Path assertFileExists(Path path) {
-		return assertPathExists(path, false);
-	}
-	
-	private static Path assertPathExists(Path path, boolean isDir) {
-		if (isDir) {
-			if (!Files.isDirectory(path)) {
-				throw new RuntimeException("The folder '" + path.toString() + "' was not found: this test " +
-						"should be executed from the Concentus working directory");
-			}
-		} else {
-			if (!Files.exists(path)) {
-				throw new RuntimeException("The file '" + path.toString() + "' was not found: this test " +
-						"should be executed from the Concentus working directory");
-			}
-		}
-		return path;
 	}
 	
 	public static class SimpleApplicationFactory implements InstanceFactory<SimpleApplication> {
@@ -214,6 +135,13 @@ public class SimpleTest {
 	
 	public static class SimpleClientAgent implements ClientAgent {
 
+		private long _clientIdBits = -1;
+		
+		@Override
+		public void setClientId(long clientIdBits) {
+			_clientIdBits = clientIdBits;
+		}
+		
 		@Override
 		public boolean onInputGeneration(ActionEvent actionEvent) {
 			actionEvent.setActionTypeId(0);
@@ -222,7 +150,30 @@ public class SimpleTest {
 
 		@Override
 		public void onUpdate(CanonicalStateUpdate update) {
+			if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
+				ChunkReader updateChunkReader = new ChunkReader(update.getData());
+				StringBuilder stateBuilder = new StringBuilder();
+				stateBuilder.append("update [");
+				boolean isFirst = true;
+				for (byte[] chunk : updateChunkReader) {
+					if (isFirst) {
+						isFirst = false;
+					} else {
+						stateBuilder.append(", ");
+					}
+					
+					ArrayBackedResizingBuffer chunkBuffer = new ArrayBackedResizingBuffer(chunk);
+					int score = chunkBuffer.readInt(0);
+					String data = new String(chunkBuffer.readBytes(ResizingBuffer.INT_SIZE, chunk.length - ResizingBuffer.INT_SIZE));
+					stateBuilder.append(String.format("{'%s': %d}", data, score));
+				}
+				stateBuilder.append("]");
+				Log.info(stateBuilder.toString());
+			}
+			
 		}
+
+
 		
 	}
 	

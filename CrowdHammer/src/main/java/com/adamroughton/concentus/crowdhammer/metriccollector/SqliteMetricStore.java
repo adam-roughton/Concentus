@@ -44,7 +44,7 @@ public class SqliteMetricStore implements MetricStore {
 			_connection = DriverManager.getConnection(String.format("jdbc:sqlite:%s", databasePath.toString()));
 			prepareTables();
 			_connection.setAutoCommit(false);
-			_insertRunMetaDataStatement = newPreparedStatement("insert into RunMetaData values (?, ?, ?, ?, ?, ?)");
+			_insertRunMetaDataStatement = newPreparedStatement("insert into RunMetaData values (?, ?, ?, ?, ?, ?, ?)");
 			_insertRunDeploymentDataStatement = newPreparedStatement("insert into RunDeploymentData values (?, ?, ?)");
 			_insertSourceDataStatement = newPreparedStatement("insert into SourceData values (?, ?, ?, ?)");
 			_insertMetricMetaDataStatement = newPreparedStatement("insert into MetricMetaData values (?, ?, ?, ?, ?, ?)");
@@ -67,7 +67,7 @@ public class SqliteMetricStore implements MetricStore {
 	 * ========
 	 * 
 	 * 	RunMetaData:
-	 * 		| runId (INT) | name (TEXT) | clientCount (INT) | duration (BIGINT) | applicationClass (TEXT) | agentClass (TEXT)
+	 * 		| runId (INT) | name (TEXT) | clientCount (INT) | duration (BIGINT) | applicationClass (TEXT) | deploymentName (TEXT) | agentClass (TEXT)
 	 * 
 	 *  RunDeploymentData:
 	 *      | runId (INT) | serviceType (TEXT) | count (INT)
@@ -91,7 +91,7 @@ public class SqliteMetricStore implements MetricStore {
 		Statement prepareTablesStatement = _connection.createStatement();
 		prepareTablesStatement.setQueryTimeout(30);
 		prepareTablesStatement.executeUpdate("create table if not exists RunMetaData(runId INT, name TEXT, clientCount INT, duration BIGINT, " +
-				"applicationClass TEXT, agentClass TEXT)");
+				"applicationClass TEXT, deploymentName TEXT, agentClass TEXT)");
 		prepareTablesStatement.executeUpdate("create table if not exists RunDeploymentData(runId INT, serviceType TEXT, count INT)");
 		prepareTablesStatement.executeUpdate("create table if not exists SourceData(runId INT, sourceId INT, name TEXT, serviceType TEXT)");
 		prepareTablesStatement.executeUpdate("create table if not exists MetricMetaData(runId INT, sourceId INT, metricId INT, " +
@@ -116,7 +116,7 @@ public class SqliteMetricStore implements MetricStore {
 	@Override
 	public void pushTestRunMetaData(int runId, String name, int clientCount, 
 			long durationMillis, Class<? extends CollectiveApplication> applicationClass, 
-			Class<? extends ClientAgent> agentClass, Set<Pair<String, Integer>> deploymentInfo) {
+			String deploymentName, Class<? extends ClientAgent> agentClass, Set<Pair<String, Integer>> deploymentInfo) {
 		
 		try {
 			_insertRunMetaDataStatement.setInt(1, runId);
@@ -124,7 +124,8 @@ public class SqliteMetricStore implements MetricStore {
 			_insertRunMetaDataStatement.setInt(3, clientCount);
 			_insertRunMetaDataStatement.setLong(4, durationMillis);
 			_insertRunMetaDataStatement.setString(5, applicationClass.getName());
-			_insertRunMetaDataStatement.setString(6, agentClass.getName());
+			_insertRunMetaDataStatement.setString(6, deploymentName);
+			_insertRunMetaDataStatement.setString(7, agentClass.getName());
 			_insertRunMetaDataStatement.execute();
 			
 			for (Pair<String, Integer> deployment : deploymentInfo) {

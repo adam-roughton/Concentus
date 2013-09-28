@@ -32,6 +32,7 @@ import com.adamroughton.concentus.data.cluster.kryo.GuardianState;
 import com.adamroughton.concentus.data.cluster.kryo.MetricMetaData;
 import com.adamroughton.concentus.data.cluster.kryo.MetricSourceMetaData;
 import com.adamroughton.concentus.data.cluster.kryo.ProcessReturnInfo;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceDeploymentPackage;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInit;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
@@ -62,14 +63,15 @@ public enum DataType implements KryoRegistratorDelegate {
 	CLIENT_DISCONNECTED_EVENT(3, BUFFER_BACKED, ClientDisconnectedEvent.class),
 	CLIENT_INPUT_EVENT(4, BUFFER_BACKED, ClientInputEvent.class),
 	CLIENT_UPDATE_EVENT(5, BUFFER_BACKED, ClientUpdateEvent.class),
+	CLIENT_HANDLER_INPUT_EVENT(6, BUFFER_BACKED, ClientHandlerInputEvent.class),
 	
-	ACTION_EVENT(6, BUFFER_BACKED, ActionEvent.class),
-	ACTION_RECEIPT_EVENT(7, BUFFER_BACKED, ActionReceiptEvent.class),
-	TICK_EVENT(8, BUFFER_BACKED, TickEvent.class),
-	FULL_COLLECTIVE_VAR_INPUT_EVENT(9, BUFFER_BACKED, FullCollectiveVarInputEvent.class),
-	PARTIAL_COLLECTIVE_VAR_INPUT_EVENT(10, BUFFER_BACKED, PartialCollectiveVarInputEvent.class),
+	ACTION_EVENT(7, BUFFER_BACKED, ActionEvent.class),
+	ACTION_RECEIPT_EVENT(8, BUFFER_BACKED, ActionReceiptEvent.class),
+	TICK_EVENT(9, BUFFER_BACKED, TickEvent.class),
+	FULL_COLLECTIVE_VAR_INPUT_EVENT(10, BUFFER_BACKED, FullCollectiveVarInputEvent.class),
+	PARTIAL_COLLECTIVE_VAR_INPUT_EVENT(11, BUFFER_BACKED, PartialCollectiveVarInputEvent.class),
 	
-	METRIC_EVENT(10, BUFFER_BACKED, MetricEvent.class),
+	METRIC_EVENT(12, BUFFER_BACKED, MetricEvent.class),
 	
 	/*
 	 * Model types
@@ -93,6 +95,7 @@ public enum DataType implements KryoRegistratorDelegate {
 	METRIC_META_DATA(206, KRYO, MetricMetaData.class),
 	METRIC_SOURCE_META_DATA(207, KRYO, MetricSourceMetaData.class),
 	SERVICE_INFO(208, KRYO, ServiceInfo.class),
+	SERVICE_DEPLOYMENT_PACKAGE(209, KRYO, ServiceDeploymentPackage.class),
 	
 	/*
 	 * Utility types

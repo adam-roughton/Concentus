@@ -107,8 +107,9 @@ public class TestSqliteMetricStore {
 		deploymentInfo.add(new Pair<>("worker", 5));
 		deploymentInfo.add(new Pair<>("clientHandler", 10));
 		deploymentInfo.add(new Pair<>("canonicalState", 1));
+		final String deploymentName = "deployment0";
 		
-		_metricStore.pushTestRunMetaData(0, "testRun0", 1000, 2000, TestApplicationClass.class, TestAgentClass.class, deploymentInfo);
+		_metricStore.pushTestRunMetaData(0, "testRun0", 1000, 2000, TestApplicationClass.class, deploymentName, TestAgentClass.class, deploymentInfo);
 		_metricStore.onEndOfBatch();
 		assertDbState("select * from RunMetaData", new AssertDelegate() {
 
@@ -119,6 +120,7 @@ public class TestSqliteMetricStore {
 				assertEquals(1000, resultSet.getInt("clientCount"));
 				assertEquals(2000, resultSet.getLong("duration"));
 				assertEquals(TestApplicationClass.class.getName(), resultSet.getString("applicationClass"));
+				assertEquals(deploymentName, resultSet.getString("deploymentName"));
 				assertEquals(TestAgentClass.class.getName(), resultSet.getString("agentClass"));
 				assertFalse(resultSet.next());
 			}
@@ -194,14 +196,15 @@ public class TestSqliteMetricStore {
 
 		@Override
 		public boolean onInputGeneration(ActionEvent actionEvent) {
-			// TODO Auto-generated method stub
 			return false;
 		}
 
 		@Override
 		public void onUpdate(CanonicalStateUpdate update) {
-			// TODO Auto-generated method stub
-			
+		}
+
+		@Override
+		public void setClientId(long clientIdBits) {
 		}
 		
 	}

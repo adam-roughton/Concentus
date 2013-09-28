@@ -15,7 +15,12 @@
  */
 package com.adamroughton.concentus.clienthandler;
 
+import it.unimi.dsi.fastutil.ints.Int2LongMap;
+import it.unimi.dsi.fastutil.ints.Int2LongOpenHashMap;
+
 import java.util.Objects;
+
+import org.javatuples.Pair;
 
 import uk.co.real_logic.intrinsics.ComponentFactory;
 import uk.co.real_logic.intrinsics.StructuredArray;
@@ -24,10 +29,10 @@ import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.data.ResizingBuffer;
-import com.adamroughton.concentus.data.events.bufferbacked.ActionEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ActionReceiptEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientConnectEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientDisconnectedEvent;
+import com.adamroughton.concentus.data.events.bufferbacked.ClientHandlerInputEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ConnectResponseEvent;
@@ -54,7 +59,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	
 	private final Clock _clock;
 	
-	private final ActionProcessorAllocationStrategy _actionProcessorAllocator;
+	private final ActionCollectorAllocationStrategy _actionProcessorAllocator;
 	private final int _clientHandlerId;
 	private final int _routerSocketId;
 	private final int _subSocketId;
@@ -67,8 +72,12 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	private long _nextClientIndex = 0;
 	
 	private final StructuredArray<ClientProxy> _clientLookup;
+	private final Int2LongMap _actionCollectorToReliableSeqLookup = new Int2LongOpenHashMap();
+	{
+		_actionCollectorToReliableSeqLookup.defaultReturnValue(-1);
+	}
 	
-	private final ActionEvent _actionEvent = new ActionEvent();
+	private final ClientHandlerInputEvent _clientHandlerInputEvent = new ClientHandlerInputEvent();
 	private final ActionReceiptEvent _actionReceiptEvent = new ActionReceiptEvent();
 	private final ConnectResponseEvent _connectResEvent = new ConnectResponseEvent();
 	private final ClientConnectEvent _clientConnectEvent = new ClientConnectEvent();
@@ -93,7 +102,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	private long _nextDeadline = 0;
 
 	public ClientHandlerProcessor(
-			ActionProcessorAllocationStrategy actionProcessorAllocator,
+			ActionCollectorAllocationStrategy actionProcessorAllocator,
 			Clock clock,
 			final int clientHandlerId,
 			int routerSocketId,
@@ -256,8 +265,8 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 			newClient.setLastMsgTime(_clock.currentMillis());
 			newClient.setClientRef(clientSocketId);
 			
-			SocketIdentity actionProcessorRef = _actionProcessorAllocator.allocateClient(newClientIndex);
-			newClient.setActionCollectorRef(actionProcessorRef);
+			Pair<Integer, SocketIdentity> actionCollectorAllocation = _actionProcessorAllocator.allocateClient(newClientIndex);
+			newClient.setActionCollectorAllocation(actionCollectorAllocation);
 			
 			newClient.setIsActive(true);
 			
@@ -287,13 +296,19 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 				 * Send any action
 				 */
 				if (inputEvent.hasAction()) {
-					_routerSendQueue.send(RouterPattern.asReliableTask(client.getActionCollectorRef(), _actionEvent, 
-							new EventWriter<OutgoingEventHeader, ActionEvent>() {
+					int actionCollectorId = client.getActionCollectorId();
+					final long reliableSeqAck = _actionCollectorToReliableSeqLookup.get(actionCollectorId);
+
+					_routerSendQueue.send(RouterPattern.asReliableTask(client.getActionCollectorRef(), _clientHandlerInputEvent, 
+							new EventWriter<OutgoingEventHeader, ClientHandlerInputEvent>() {
 	
 								@Override
 								public void write(OutgoingEventHeader header,
-										ActionEvent event) throws Exception {
-									inputEvent.getActionSlice().copyTo(event.getBuffer());
+										ClientHandlerInputEvent event) throws Exception {
+									event.setClientHandlerId(_clientHandlerId);
+									event.setReliableSeqAck(reliableSeqAck);
+									event.setHasAction(true);
+									inputEvent.getActionSlice().copyTo(event.getActionSlice());
 								}
 					}));
 				}
@@ -337,6 +352,13 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	}
 	
 	private void onActionReceipt(SocketIdentity senderRef, ActionReceiptEvent receiptEvent) {
+		int actionCollectorId = receiptEvent.getActionCollectorId();
+		long reliableSeq = receiptEvent.getReliableSeq();
+		long lastKnownReliableSeq = _actionCollectorToReliableSeqLookup.get(actionCollectorId);
+		if (reliableSeq > lastKnownReliableSeq) {
+			_actionCollectorToReliableSeqLookup.put(actionCollectorId, reliableSeq);
+		}
+		
 		try {
 			final ClientProxy client = _clientLookup.get(receiptEvent.getClientId().getClientIndex());
 			if (client.isActive()) {

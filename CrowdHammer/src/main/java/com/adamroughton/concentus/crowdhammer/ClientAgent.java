@@ -20,6 +20,8 @@ import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 
 public interface ClientAgent {
 	
+	void setClientId(long clientIdBits);
+	
 	boolean onInputGeneration(ActionEvent actionEvent);
 	
 	void onUpdate(CanonicalStateUpdate update);

@@ -4,6 +4,7 @@ import java.util.Objects;
 
 public final class ServiceEndpoint {
 
+	private int _serviceId;
 	private String _endpointType;
 	private String _ipAddress;
 	private int _port;
@@ -12,10 +13,15 @@ public final class ServiceEndpoint {
 	@SuppressWarnings("unused")
 	private ServiceEndpoint() {	}
 	
-	public ServiceEndpoint(String endpointType, String ipAddress, int port) {
+	public ServiceEndpoint(int serviceId, String endpointType, String ipAddress, int port) {
+		_serviceId = serviceId;
 		_endpointType = Objects.requireNonNull(endpointType);
 		_ipAddress = Objects.requireNonNull(ipAddress);
 		_port = port;
+	}
+	
+	public int serviceId() {
+		return _serviceId;
 	}
 	
 	public String type() {
@@ -34,6 +40,7 @@ public final class ServiceEndpoint {
 	public int hashCode() {
 		final int prime = 31;
 		int result = 1;
+		result = prime * result + _serviceId;
 		result = prime * result
 				+ ((_endpointType == null) ? 0 : _endpointType.hashCode());
 		result = prime * result
@@ -48,6 +55,9 @@ public final class ServiceEndpoint {
 			return false;
 		}
 		ServiceEndpoint other = (ServiceEndpoint) obj;
+		if (_serviceId != other._serviceId) {
+			return false;
+		}
 		if (_endpointType == null) {
 			if (other._endpointType != null) {
 				return false;
@@ -70,7 +80,7 @@ public final class ServiceEndpoint {
 
 	@Override
 	public String toString() {
-		return "ServiceEndpoint [endpointType=" + _endpointType
+		return "ServiceEndpoint [serviceId=" + _serviceId + ", endpointType=" + _endpointType
 				+ ", ipAddress=" + _ipAddress + ", port=" + _port + "]";
 	}
 	

@@ -23,6 +23,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 
+import org.javatuples.Pair;
 import org.zeromq.ZMQ;
 
 import com.adamroughton.concentus.ComponentResolver;
@@ -241,7 +242,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 				.createPipeline(_executor);
 		
 		// register the service
-		ServiceEndpoint clientHandlerEndpoint = new ServiceEndpoint(ConcentusEndpoints.CLIENT_HANDLER.getId(), 
+		ServiceEndpoint clientHandlerEndpoint = new ServiceEndpoint(_clientHandlerId, ConcentusEndpoints.CLIENT_HANDLER.getId(), 
 				_concentusHandle.getNetworkAddress().getHostAddress(), 
 				_routerPort);
 		cluster.registerServiceEndpoint(clientHandlerEndpoint);
@@ -309,11 +310,13 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 		/*
 		 * Get the socket identities for all action processors
 		 */
-		ArrayList<SocketIdentity> actionProcessorRefs = new ArrayList<>(actionProcessorEndpoints.size());
+		ArrayList<Pair<Integer, SocketIdentity>> actionCollectorRefs = new ArrayList<>(actionProcessorEndpoints.size());
 		for (ServiceEndpoint endpoint : actionProcessorEndpoints) {
-			actionProcessorRefs.add(_socketManager.resolveIdentity(_dealerSetSocketId, endpoint, 10, TimeUnit.SECONDS));
+			int actionCollectorId = endpoint.serviceId();
+			SocketIdentity actionCollectorRef = _socketManager.resolveIdentity(_dealerSetSocketId, endpoint, 10, TimeUnit.SECONDS);
+			actionCollectorRefs.add(new Pair<>(actionCollectorId, actionCollectorRef));
 		}
-		_actionProcAllocationStrategy.setActionProcessorRefs(actionProcessorRefs);
+		_actionProcAllocationStrategy.setActionCollectorAllocations(actionCollectorRefs);
 	}
 	
 	@Override

@@ -107,7 +107,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 				ComponentResolver<TBuffer> resolver) {
 			return new DirectCanonicalStateService<>(_actionCollectorPort, _actionCollectorTickSubPort, 
 					_actionCollectorRecvBufferLength, _actionCollectorSendBufferLength, _pubPort, 
-					_pubBufferLength, handle, metricContext, resolver);
+					_pubBufferLength, serviceId, handle, metricContext, resolver);
 		}
 		
 	}
@@ -132,6 +132,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 	
 	private ServiceContainer<ServiceState> _tickTimerContainer;
 	
+	private final int _serviceId;
 	private final int _actionCollectorPort;
 	private final int _actionCollectorTickSubPort;
 	private final int _actionCollectorRecvQueueLength;
@@ -146,6 +147,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 			int actionCollectorSendQueueLength,
 			int pubPort,
 			int pubSendQueueLength,
+			int serviceId,
 			ConcentusHandle concentusHandle, 
 			MetricContext metricContext, 
 			ComponentResolver<TBuffer> resolver) {
@@ -154,6 +156,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 		_actionCollectorRecvQueueLength = actionCollectorRecvQueueLength;
 		_actionCollectorSendQueueLength = actionCollectorSendQueueLength;
 		
+		_serviceId = serviceId;
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_metricContext = Objects.requireNonNull(metricContext);
 		_componentResolver = Objects.requireNonNull(resolver);
@@ -220,7 +223,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 		Mutex<Messenger<TBuffer>> pubSocketPackageMutex = _socketManager.getSocketMutex(_pubSocketId);
 		_publisher = MessagingUtil.asSocketOwner("publisher", _outputQueue, new Publisher<TBuffer>(_pubHeader), pubSocketPackageMutex);
 		
-		ServiceEndpoint endpoint = new ServiceEndpoint(ConcentusEndpoints.CANONICAL_STATE_PUB.getId(), 
+		ServiceEndpoint endpoint = new ServiceEndpoint(_serviceId, ConcentusEndpoints.CANONICAL_STATE_PUB.getId(), 
 				_concentusHandle.getNetworkAddress().getHostAddress(),
 				_pubPort);
 		Log.info("Registering endpoint " + endpoint);

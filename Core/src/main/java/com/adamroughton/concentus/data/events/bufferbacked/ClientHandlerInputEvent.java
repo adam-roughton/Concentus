@@ -18,20 +18,19 @@ package com.adamroughton.concentus.data.events.bufferbacked;
 import com.adamroughton.concentus.data.BufferBackedObject;
 import com.adamroughton.concentus.data.DataType;
 import com.adamroughton.concentus.data.ResizingBuffer;
-import com.adamroughton.concentus.data.model.ClientId;
 
 import static com.adamroughton.concentus.data.ResizingBuffer.*;
 
-public final class ClientInputEvent extends BufferBackedObject {
+public final class ClientHandlerInputEvent extends BufferBackedObject {
 	
-	private final Field clientIdField = super.getBaseField().then(LONG_SIZE);
-	private final Field reliableSeqAckField = clientIdField.then(LONG_SIZE);
+	private final Field clientHandlerIdField = super.getBaseField().then(INT_SIZE);
+	private final Field reliableSeqAckField = clientHandlerIdField.then(LONG_SIZE);
 	private final Field hasActionField = reliableSeqAckField.then(BOOL_SIZE);
 	private final Field actionField = hasActionField.thenVariableLength()
 			.resolveOffsets();
 
-	public ClientInputEvent() {
-		super(DataType.CLIENT_INPUT_EVENT);
+	public ClientHandlerInputEvent() {
+		super(DataType.CLIENT_HANDLER_INPUT_EVENT);
 	}
 	
 	@Override
@@ -39,20 +38,12 @@ public final class ClientInputEvent extends BufferBackedObject {
 		return actionField;
 	}
 	
-	public ClientId getClientId() {
-		return getBuffer().readClientId(clientIdField.offset);
+	public int getClientHandlerId() {
+		return getBuffer().readInt(clientHandlerIdField.offset);
 	}
 
-	public void setClientId(ClientId clientId) {
-		getBuffer().writeClientId(clientIdField.offset, clientId);
-	}
-	
-	public void setClientId(long clientIdBits) {
-		getBuffer().writeLong(clientIdField.offset, clientIdBits);
-	}
-	
-	public long getClientIdBits() {
-		return getBuffer().readLong(clientIdField.offset);
+	public void setClientHandlerId(int clientHandlerId) {
+		getBuffer().writeInt(clientHandlerIdField.offset, clientHandlerId);
 	}
 	
 	public long getReliableSeqAck() {
@@ -78,12 +69,12 @@ public final class ClientInputEvent extends BufferBackedObject {
 	@Override
 	public String toString() {
 		StringBuilder strBuilder = new StringBuilder();
-		strBuilder.append("ClientInputEvent: ");
+		strBuilder.append("ClientHandlerInputEvent: ");
 		if (getBuffer() == null) {
 			strBuilder.append("[Not attached to a buffer]");
 		} else {
 			strBuilder.append("[");
-			strBuilder.append("clientId=" + getClientIdBits() + ", ");
+			strBuilder.append("clientHandlerId=" + getClientHandlerId() + ", ");
 			strBuilder.append("reliableSeqAck=" + getReliableSeqAck() + ", ");
 			strBuilder.append("hasAction=" + hasAction() + ", ");
 			strBuilder.append("actionData=" + getActionSlice().toString());

@@ -41,8 +41,8 @@ import com.adamroughton.concentus.cluster.worker.Guardian;
 import com.adamroughton.concentus.cluster.worker.ServiceDeployment;
 import com.adamroughton.concentus.crowdhammer.metriccollector.MetricCollector;
 import com.adamroughton.concentus.crowdhammer.worker.WorkerService;
-import com.adamroughton.concentus.crowdhammer.worker.WorkerService.WorkerServiceDeployment;
 import com.adamroughton.concentus.data.cluster.kryo.ProcessReturnInfo;
+import com.adamroughton.concentus.data.cluster.kryo.ServiceDeploymentPackage;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.metric.MetricBucketInfo;
@@ -248,22 +248,17 @@ public class ClusterTestTask implements TestTask {
 			String applicationPath = _clusterHandle.resolvePathFromRoot(APPLICATION);
 			_clusterHandle.createOrSetEphemeral(applicationPath, _test.getApplicationFactory());
 			
-			// prepare worker deployment
-			ServiceDeployment<ServiceState> workerDeployment = new WorkerServiceDeployment(_test.getClientAgentFactory(), 32000, -1, 2048, 2048);
-			
 			// prepare dependency info
-			List<Pair<ServiceDeployment<ServiceState>, Integer>> deploymentCountPairs = _test.getServiceDeployments();
-			// add worker deployments
-			deploymentCountPairs.add(new Pair<ServiceDeployment<ServiceState>, Integer>(workerDeployment, _test.getWorkerCount()));
+			TestDeploymentSet deploymentSet = _test.getDeploymentSet();
 			
 			// generate dependency set and deployment info
 			ServiceDependencySet dependencySet = new ServiceDependencySet();
 			Map<String, Integer> serviceCountLookup = new HashMap<>();
 
 			Log.info("Deployment Plan:");
-			for (Pair<ServiceDeployment<ServiceState>, Integer> deploymentCountPair : deploymentCountPairs) {
-				ServiceDeployment<ServiceState> deployment = deploymentCountPair.getValue0();
-				int count = deploymentCountPair.getValue1();
+			for (ServiceDeploymentPackage<ServiceState> deploymentPackage : deploymentSet) {
+				ServiceDeployment<ServiceState> deployment = deploymentPackage.deployment();
+				int count = deploymentPackage.count();
 				
 				ServiceInfo<ServiceState> serviceInfo = deployment.serviceInfo();
 				dependencySet.addDependencies(serviceInfo.serviceType(), serviceInfo.dependencies());
@@ -285,7 +280,7 @@ public class ClusterTestTask implements TestTask {
 			}
 			
 			Log.info("Starting test runs...");
-			for (int clientCount : _test.getClientCounts()) {
+			for (int clientCount : _test.getClientCountIterable()) {
 				assertRunning();
 				Log.info("Doing run with client count: " + clientCount);
 				TimeoutTracker timeoutTracker = new TimeoutTracker(10, TimeUnit.MINUTES);
@@ -294,18 +289,19 @@ public class ClusterTestTask implements TestTask {
 						clientCount, 
 						_test.getTestDurationMillis(), 
 						application.getClass(), 
+						deploymentSet.getDeploymentName(),
 						agent.getClass(), 
 						mapToPairSet(serviceCountLookup.entrySet()));
 				
 				Log.info("Deploying services...");
-				for (Pair<ServiceDeployment<ServiceState>, Integer> deploymentCountPair : deploymentCountPairs) {
-					ServiceDeployment<ServiceState> deployment = deploymentCountPair.getValue0();
-					int count = deploymentCountPair.getValue1();
+				for (ServiceDeploymentPackage<ServiceState> deploymentPackage : deploymentSet) {
+					ServiceDeployment<ServiceState> deployment = deploymentPackage.deployment();
+					int count = deploymentPackage.count();
 					Log.info("Deploying: " + count + " instance" + (count == 1? "": "s") +" of " + deployment.serviceInfo().serviceType());
-					for (int i = 0; i < deploymentCountPair.getValue1(); i++) {
+					for (int i = 0; i < deploymentPackage.count(); i++) {
 						assertRunning();
 						GuardianDeployment<ServiceState> guardianDeployment = _guardianManager.deploy(deployment,
-								_test.getComponentResolver(),
+								deploymentPackage.componentResolver(),
 								timeoutTracker.getTimeout(), 
 								timeoutTracker.getUnit());
 						guardianDeployment.getListenable().addListener(_deploymentListener, _backgroundExecutor);

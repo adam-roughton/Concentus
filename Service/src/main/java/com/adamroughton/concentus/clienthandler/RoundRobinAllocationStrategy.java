@@ -1,33 +1,28 @@
 package com.adamroughton.concentus.clienthandler;
 
+import java.util.ArrayList;
 import java.util.Collection;
-import java.util.Objects;
+
+import org.javatuples.Pair;
 
 import com.adamroughton.concentus.messaging.SocketIdentity;
 
-public class RoundRobinAllocationStrategy implements ActionProcessorAllocationStrategy {
+public class RoundRobinAllocationStrategy implements ActionCollectorAllocationStrategy {
 	
-	private SocketIdentity[] _actionProcessorRefs;
+	private final ArrayList<Pair<Integer, SocketIdentity>> _actionCollectorAllocations;
 	private long _nextSeq = 0;
 	
 	public RoundRobinAllocationStrategy() {
-		_actionProcessorRefs = new SocketIdentity[] { new SocketIdentity(new byte[0]) };
+		_actionCollectorAllocations = new ArrayList<>();
 	}
 	
-	public void setActionProcessorRefs(Collection<SocketIdentity> actionProcessorRefs) {
-		setActionProcessorRefs(actionProcessorRefs.toArray(new SocketIdentity[actionProcessorRefs.size()]));
-	}
-	
-	public void setActionProcessorRefs(SocketIdentity[] actionProcessorRefs) {
-		Objects.requireNonNull(actionProcessorRefs);
-		if (_actionProcessorRefs.length > 0) {
-			_actionProcessorRefs = actionProcessorRefs;
-		}
+	public void setActionCollectorAllocations(Collection<Pair<Integer, SocketIdentity>> actionCollectorRefs) {
+		_actionCollectorAllocations.addAll(actionCollectorRefs);
 	}
 	
 	@Override
-	public SocketIdentity allocateClient(long clientId) {
-		return _actionProcessorRefs[(int)(_nextSeq++ % _actionProcessorRefs.length)];
+	public Pair<Integer, SocketIdentity> allocateClient(long clientId) {
+		return _actionCollectorAllocations.get((int)(_nextSeq++ % _actionCollectorAllocations.size()));
 	}
 
 }

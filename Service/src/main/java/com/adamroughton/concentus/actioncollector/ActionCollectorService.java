@@ -103,6 +103,7 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 		
 	}
 	
+	private final int _actionCollectorId;
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	private final ZmqSocketManager<TBuffer> _socketManager;
 	private final ConcentusHandle _concentusHandle;
@@ -139,6 +140,7 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 			TickDelegate tickDelegate,
 			long startTime,
 			long tickDuration) {
+		_actionCollectorId = serviceId;
 		_concentusHandle = concentusHandle;
 		_socketManager = Objects.requireNonNull(resolver.newSocketManager(concentusHandle.getClock()));
 		_tickDelegate = Objects.requireNonNull(tickDelegate);
@@ -250,14 +252,14 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 		MessengerBridge<TBuffer> tickRouterBridge = _socketManager.newBridge(tickSubSocketId, tickBridgeSocketId, 
 				tickBridgeDelegate, new IncomingEventHeader(0, 1), new OutgoingEventHeader(0, 1));
 		
-		ServiceEndpoint tickSubEndpoint = new ServiceEndpoint(ConcentusEndpoints.ACTION_COLLECTOR_TICK_SUB.getId(), 
+		ServiceEndpoint tickSubEndpoint = new ServiceEndpoint(_actionCollectorId, ConcentusEndpoints.ACTION_COLLECTOR_TICK_SUB.getId(), 
 				_concentusHandle.getNetworkAddress().getHostAddress(), tickSubPort);
 		cluster.registerServiceEndpoint(tickSubEndpoint);
 		
 		SendQueue<OutgoingEventHeader, TBuffer> sendQueueWrapper = 
 				new SendQueue<OutgoingEventHeader, TBuffer>("sendQueue", _sendHeader, _sendQueue);
 		
-		ActionCollectorProcessor<TBuffer> processor = new ActionCollectorProcessor<>(_recvHeader, 
+		ActionCollectorProcessor<TBuffer> processor = new ActionCollectorProcessor<>(_actionCollectorId, _recvHeader, 
 				_application, _tickDelegate, sendQueueWrapper, _startTime, _tickDuration);
 		
 		Mutex<Messenger<TBuffer>> dealerSetMessenger = _socketManager.getSocketMutex(dealerSetSocketId);
@@ -276,7 +278,7 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 				.then(dealerSetPublisher)
 				.createPipeline(_executor);
 		
-		ServiceEndpoint endpoint = new ServiceEndpoint(ConcentusEndpoints.ACTION_COLLECTOR.getId(), 
+		ServiceEndpoint endpoint = new ServiceEndpoint(_actionCollectorId, ConcentusEndpoints.ACTION_COLLECTOR.getId(), 
 				_concentusHandle.getNetworkAddress().getHostAddress(), 
 				recvPort);
 		cluster.registerServiceEndpoint(endpoint);

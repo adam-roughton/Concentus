@@ -48,7 +48,7 @@ public class TestClusterWorkerClient extends TestClusterBase {
 	
 	@Test
 	public void registerServiceEndpoint() throws Throwable {
-		ServiceEndpoint endpoint = new ServiceEndpoint("test", "123.456.789.012", 1000);
+		ServiceEndpoint endpoint = new ServiceEndpoint(0, "test", "123.456.789.012", 1000);
 		
 		_workerClient.registerServiceEndpoint(endpoint);
 		_exCallback.throwAnyExceptions();
@@ -72,7 +72,7 @@ public class TestClusterWorkerClient extends TestClusterBase {
 		List<Pair<String, ServiceEndpoint>> expected = new ArrayList<>();
 		for (int i = 0; i < 5; i++) {
 			String type = "Test" + i;
-			expected.add(new Pair<>(type, new ServiceEndpoint(type, String.format("123.456.789.%03d", i), 8080 + i)));
+			expected.add(new Pair<>(type, new ServiceEndpoint(i, type, String.format("123.456.789.%03d", i), 8080 + i)));
 		}
 		
 		for (Pair<String, ServiceEndpoint> endpointTuple : expected) {
@@ -112,7 +112,7 @@ public class TestClusterWorkerClient extends TestClusterBase {
 		for (int typeId = 0; typeId < types.length; typeId++) {
 			for (int serviceId = 0; serviceId < 10; serviceId++) {
 				UUID fakeServiceId = new UUID(5678, serviceId);
-				ServiceEndpoint endpoint = new ServiceEndpoint(types[typeId], String.format("123.456.789.%03d", serviceId), 8080 + typeId);
+				ServiceEndpoint endpoint = new ServiceEndpoint(serviceId, types[typeId], String.format("123.456.789.%03d", serviceId), 8080 + typeId);
 				fakeEndpoints.add(new Pair<>(fakeServiceId, endpoint));
 				
 				List<ServiceEndpoint> typeList;
@@ -148,7 +148,7 @@ public class TestClusterWorkerClient extends TestClusterBase {
 		// generate fake end-points
 		for (int serviceId = 0; serviceId < 10; serviceId++) {
 			UUID fakeServiceId = new UUID(5678, serviceId);
-			ServiceEndpoint endpoint = new ServiceEndpoint(type, String.format("123.456.789.%03d", serviceId), 8080);
+			ServiceEndpoint endpoint = new ServiceEndpoint(serviceId, type, String.format("123.456.789.%03d", serviceId), 8080);
 			fakeEndpoints.add(new Pair<>(fakeServiceId, endpoint));
 			expected.add(endpoint);
 		}

@@ -8,6 +8,7 @@ public final class SocketIdentity {
 	public final byte[] buffer;
 	public final int offset;
 	public final int length;
+	private int _hashCodeCache = -1;
 	
 	public SocketIdentity(byte[] identityBytes) {
 		this(identityBytes, 0, identityBytes.length);
@@ -21,11 +22,14 @@ public final class SocketIdentity {
 
 	@Override
 	public int hashCode() {
-		int result = 1;
-		for (int i = offset; i < offset + length; i++) {
-			result = result * 31 * buffer[i];
+		if (_hashCodeCache == -1) {
+			int result = 1;
+			for (int i = offset; i < offset + length; i++) {
+				result = result * 31 * buffer[i];
+			}
+			_hashCodeCache = result;
 		}
-		return result;
+		return _hashCodeCache;
 	}
 	
 	public SocketIdentity copyWithNewArray() {

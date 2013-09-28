@@ -1,5 +1,6 @@
 package com.adamroughton.concentus.application;
 
+import java.io.IOException;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -10,7 +11,8 @@ import com.adamroughton.concentus.canonicalstate.direct.DirectCanonicalStateServ
 import com.adamroughton.concentus.clienthandler.ClientHandlerService.ClientHandlerServiceDeployment;
 import com.adamroughton.concentus.crowdhammer.ClientAgent;
 import com.adamroughton.concentus.crowdhammer.CrowdHammer;
-import com.adamroughton.concentus.crowdhammer.TestBuilder;
+import com.adamroughton.concentus.crowdhammer.ListClientCount;
+import com.adamroughton.concentus.crowdhammer.TestDeploymentSet;
 import com.adamroughton.concentus.data.BytesUtil;
 import com.adamroughton.concentus.data.ChunkWriter;
 import com.adamroughton.concentus.data.ResizingBuffer;
@@ -22,36 +24,42 @@ import com.adamroughton.concentus.data.model.kryo.CollectiveVariable;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.model.CollectiveVariableDefinition;
 import com.adamroughton.concentus.model.UserEffectSet;
+import com.adamroughton.concentus.service.spark.SparkMasterServiceDeployment;
 
 public class Experiment {
-
+	
 	public static void main(String[] args) throws Exception {
 		long[] tickDurations = new long[] { 1000, 500, 100 };
 		int[] valDataRanges = new int[] { 16, 1024 * 1024 };
+		ListClientCount clientCountIterable = new ListClientCount(1000, 2000, 4000, 8000, 16000, 32000);
+		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SingleDisruptorConfigurator(), 
+				new SparkDriverConfigurator() };
 		
 		for (long tickDuration: tickDurations) {
 			for (int valDataRange : valDataRanges) {
-				// single variable
-				TestBuilder builder = new TestBuilder();
-				builder.usingName("singleVar_tickDur_" + tickDuration + "_valDataRange_" + valDataRange);
 				
-				TestVariable var = new TestVariable(25, 1000, 8, valDataRange, 8);
-				ExperimentApplicationFactory applicationFactory = new ExperimentApplicationFactory(tickDuration, 1, var);
-				ExperimentClientAgentFactory agentFactory = new ExperimentClientAgentFactory(1, new int[] {8});
 				
-				builder.withApplicationFactory(applicationFactory)
-					   .withAgentFactory(agentFactory);
-				
-				builder.withClientCounts(1000, 2000, 4000, 10000, 20000)
-					   .withRunTime(2, TimeUnit.MINUTES)
-					   .withService(new DirectCanonicalStateServiceDeployment(-1, -1, 2048, 2048, -1, 2048), 1)
-					   .withService(new ClientHandlerServiceDeployment(-1, 2048, 2048), 2)
-					   .withWorkerCount(2);
-				
-				CrowdHammer.runTest(builder.build());
+//				// single variable
+//				builder.usingName("singleVar_tickDur_" + tickDuration + "_valDataRange_" + valDataRange);
+//				
+//				TestVariable var = new TestVariable(25, 1000, 8, valDataRange, 8);
+//				ExperimentApplicationFactory applicationFactory = new ExperimentApplicationFactory(tickDuration, 1, var);
+//				ExperimentClientAgentFactory agentFactory = new ExperimentClientAgentFactory(1, new int[] {8});
+//				
+//				builder.withApplicationFactory(applicationFactory)
+//					   .withAgentFactory(agentFactory);
+//				
+//				builder.withClientCounts(1000, 2000, 4000, 10000, 20000)
+//					   .withRunTime(2, TimeUnit.MINUTES)
+//					   .withService(new DirectCanonicalStateServiceDeployment(-1, -1, 2048, 2048, -1, 2048), 1)
+//					   .withService(new ClientHandlerServiceDeployment(-1, 2048, 2048), 2)
+//					   .withWorkerCount(2);
+//				
+//				CrowdHammer.runTest(builder.build());
 			}
 		}	
 	}
+	
 
 	/**
 	 * Simplifies the independent variables into a set that has the most impact. Though each 
@@ -78,7 +86,7 @@ public class Experiment {
 			if (candidateValDataRange > (candidateValDataSize << 8)) {
 				throw new IllegalArgumentException("The specified data range (" + candidateValDataRange + ") " +
 						"is greater than the maximum range for the given data size " +
-						"(data size = " + candidateValDataSize + ", maximum range = " + (candidateValDataSize << 8) + ")");
+						"(data size = " + candidateValDataSize + ", maximum range = " + (1 << (candidateValDataSize * 8)) + ")");
 			}
 			_topNCount = topNCount;
 			_effectDataSize = effectDataSize;
@@ -259,8 +267,14 @@ public class Experiment {
 		}
 
 		@Override
+		public void setClientId(long clientIdBits) {
+		}
+		
+		@Override
 		public void onUpdate(CanonicalStateUpdate update) {
 		}
+
+
 		
 	}
 	

@@ -315,7 +315,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 		getTestClient().create().creatingParentsIfNeeded().forPath(serviceInitPath, Util.toKryoBytes(_kryo, serviceInitData));
 		
 		// create fake metric endpoint
-		ServiceEndpoint metricEndpoint = new ServiceEndpoint("metricCollector", "127.0.0.1", 8080);
+		ServiceEndpoint metricEndpoint = new ServiceEndpoint(-1, "metricCollector", "127.0.0.1", 8080);
 		String metricEndpointPath = CorePath.METRIC_COLLECTOR.getAbsolutePath(ROOT);
 		getTestClient().create().creatingParentsIfNeeded().forPath(metricEndpointPath, Util.toKryoBytes(_kryo, metricEndpoint));
 		

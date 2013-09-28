@@ -47,6 +47,7 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		actionCollectorSendBufferLength: Int,
 		canonicalStateUpdatePort: Int,
         sendQueueSize: Int,
+        serviceId: Int,
 		concentusHandle: ConcentusHandle, 
 		metricContext: MetricContext,
 		resolver: ComponentResolver[TBuffer]) 
@@ -156,7 +157,7 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		
 		// register the publish endpoint
 		val address = concentusHandle.getNetworkAddress.getHostAddress
-		val pubEndpoint = new ServiceEndpoint(CoreServices.CANONICAL_STATE.getId, address, canonicalStateUpdatePort)
+		val pubEndpoint = new ServiceEndpoint(serviceId, CoreServices.CANONICAL_STATE.getId, address, canonicalStateUpdatePort)
 		cluster.registerServiceEndpoint(pubEndpoint)
 	}
 	
@@ -207,6 +208,6 @@ class SparkStreamingDriverDeployment(
       metricContext: MetricContext,
       resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
     new SparkStreamingDriver(sparkHome, jarFilePaths, receiverCount, actionCollectorPort, actionCollectorRecvBufferLength, 
-        actionCollectorSendBufferLength, canonicalStateUpdatePort, sendQueueSize, concentusHandle, metricContext, resolver)
+        actionCollectorSendBufferLength, canonicalStateUpdatePort, sendQueueSize, serviceId, concentusHandle, metricContext, resolver)
   }
 }

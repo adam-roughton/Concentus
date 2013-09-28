@@ -18,18 +18,19 @@ package com.adamroughton.concentus.crowdhammer.worker;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
+import uk.co.real_logic.intrinsics.ComponentFactory;
+
 
 import com.adamroughton.concentus.Clock;
+import com.adamroughton.concentus.InitialiseDelegate;
 import com.adamroughton.concentus.crowdhammer.ClientAgent;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
-import com.adamroughton.concentus.data.ChunkReader;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.events.bufferbacked.ActionEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientConnectEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ConnectResponseEvent;
-import com.adamroughton.concentus.data.model.ClientId;
 import com.adamroughton.concentus.data.model.bufferbacked.ActionReceipt;
 import com.adamroughton.concentus.data.model.bufferbacked.BufferBackedEffect;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
@@ -39,10 +40,9 @@ import com.adamroughton.concentus.messaging.patterns.RouterPattern;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.StatsMetric;
-import com.adamroughton.concentus.util.SlidingWindowLongMap;
+import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.util.IntArray;
-import com.esotericsoftware.minlog.Log;
 
 import static com.adamroughton.concentus.Constants.TIME_STEP_IN_MS;
 
@@ -55,8 +55,25 @@ public final class Client {
 	public final static int WINDOW_SIZE = Util.nextPowerOf2((int)(10000 / TIME_STEP_IN_MS));	
 	private static final long CONNECT_TIMEOUT = TimeUnit.SECONDS.toMillis(10);	
 	
-	private final SlidingWindowLongMap _actionIdToSentTimeLookup = new SlidingWindowLongMap(WINDOW_SIZE);
-	private final SlidingWindowLongMap _actionIdToStartTimeLookup = new SlidingWindowLongMap(WINDOW_SIZE);
+	private final StructuredSlidingWindowMap<SentActionInfo> _actionIdToSentActionInfoLookup = 
+			new StructuredSlidingWindowMap<>(WINDOW_SIZE, SentActionInfo.class, 
+		new ComponentFactory<SentActionInfo>() {
+
+			@Override
+			public SentActionInfo newInstance(Object[] initArgs) {
+				return new SentActionInfo();
+			}
+		
+		}, new InitialiseDelegate<SentActionInfo>() {
+
+			@Override
+			public void initialise(SentActionInfo sentActionInfo) {
+				sentActionInfo.sentTime = 0;
+				sentActionInfo.startTime = 0;
+			}
+			
+		});
+	
 	private final ClientAgent _agent;
 	private long _simTime = 0;
 		
@@ -198,27 +215,30 @@ public final class Client {
 		_connectReqSendTime = _clock.currentMillis();
 	}
 	
-	private long _windowCursor = 0;
-	private ArrayBackedResizingBuffer[] _updateWindow = new ArrayBackedResizingBuffer[5];
-	{
-		for (int i = 0; i < _updateWindow.length; i++) {
-			_updateWindow[i] = new ArrayBackedResizingBuffer(512);
-		}
-	}
+//	private long _windowCursor = 0;
+//	private ArrayBackedResizingBuffer[] _updateWindow = new ArrayBackedResizingBuffer[5];
+//	{
+//		for (int i = 0; i < _updateWindow.length; i++) {
+//			_updateWindow[i] = new ArrayBackedResizingBuffer(512);
+//		}
+//	}
 	
 	public void onClientUpdate(ClientUpdateEvent updateEvent) {
 		long updateRecvTime = _clock.currentMillis();
 		
-		ResizingBuffer cachedBuffer = _updateWindow[(int)(_windowCursor++ % _updateWindow.length)];
-		cachedBuffer.reset();
-		updateEvent.getBuffer().copyTo(cachedBuffer);
+		//ResizingBuffer cachedBuffer = _updateWindow[(int)(_windowCursor++ % _updateWindow.length)];
+		//cachedBuffer.reset();
+		//updateEvent.getBuffer().copyTo(cachedBuffer);
 
 		IntArray intArray = new IntArray();
+		if (updateEvent.getClientId() != _clientId) {
+			throw new RuntimeException("ClientUpdate received by the wrong client! " +
+					"(got update for " + updateEvent.getClientId() + " in " + _clientId);
+		}
 		
 		try {
 			for (byte[] chunk : updateEvent.getChunkedContent()) {
 				intArray.add(chunk.length);
-				if (intArray.size > 1000) throw new RuntimeException("Over 1000 chunks!");
 				ArrayBackedResizingBuffer chunkBuffer = new ArrayBackedResizingBuffer(chunk);
 				int cursor = 0;
 				long reliableSeq = chunkBuffer.readLong(cursor);
@@ -258,13 +278,13 @@ public final class Client {
 				}
 			}
 		} catch (RuntimeException eRuntime) {
-			Log.error("Error on update for client: " + _clientId);
-			Log.error("Last valid chunk lengths: " + intArray.toString());
-			Log.error("Last updates recved: ");
-			for (long cursor = _windowCursor - 1; cursor >= Math.max(0, _windowCursor - _updateWindow.length); cursor--) {
-				ResizingBuffer cachedUpdateBuffer = _updateWindow[(int)(cursor % _updateWindow.length)];
-				Log.info("Update: (content length = " + cachedUpdateBuffer.getContentSize() + ") " + cachedUpdateBuffer.toString() + '\n');
-			}
+//			Log.error("Error on update for client: " + _clientId);
+//			Log.error("Last valid chunk lengths: " + intArray.toString());
+//			Log.error("Last updates recved: ");
+//			for (long cursor = _windowCursor - 1; cursor >= Math.max(0, _windowCursor - _updateWindow.length); cursor--) {
+//				ResizingBuffer cachedUpdateBuffer = _updateWindow[(int)(cursor % _updateWindow.length)];
+//				Log.info("Update: (content length = " + cachedUpdateBuffer.getContentSize() + ") " + cachedUpdateBuffer.toString() + '\n');
+//			}
 			throw eRuntime;
 		}
 	}
@@ -274,22 +294,26 @@ public final class Client {
 		 * if any actions drop out of the sliding window, they are
 		 * considered unacknowledged
 		 */
-		long prevTailId = _actionIdToSentTimeLookup.getHeadIndex() - _actionIdToSentTimeLookup.getLength() + 1;
-		if (_actionIdToSentTimeLookup.containsIndex(prevTailId)) {
+		long prevTailId = _actionIdToSentActionInfoLookup.getHeadIndex() - _actionIdToSentActionInfoLookup.getLength() + 1;
+		if (_actionIdToSentActionInfoLookup.containsIndex(prevTailId)) {
 			_lateActionToCanonicalStateCountMetric.push(1);
 		}
-		return _actionIdToSentTimeLookup.add(sendTime);
+		long nextActionId = _actionIdToSentActionInfoLookup.advance();
+		_actionIdToSentActionInfoLookup.get(nextActionId).sentTime = sendTime;
+		
+		return nextActionId;
 	}
 	
 	private void onActionReceipt(ActionReceipt receipt, long recvTime) {
 		long actionId = receipt.getActionId();
 		long startTime = receipt.getStartTime();
-		if (_actionIdToSentTimeLookup.containsIndex(actionId)) {
+		if (_actionIdToSentActionInfoLookup.containsIndex(actionId)) {
+			SentActionInfo sentAction = _actionIdToSentActionInfoLookup.get(actionId);
 			if (_simTime < startTime) {
-				_actionIdToStartTimeLookup.put(actionId, startTime);
+				sentAction.startTime = startTime;
 			} else {
-				_actionToCanonicalStateLatencyMetric.push(recvTime - _actionIdToSentTimeLookup.getDirect(actionId));
-				_actionIdToSentTimeLookup.remove(actionId);
+				_actionToCanonicalStateLatencyMetric.push(recvTime - sentAction.sentTime);
+				_actionIdToSentActionInfoLookup.remove(actionId);
 			}
 		}
 	}
@@ -297,41 +321,18 @@ public final class Client {
 	private void onCanonicalStateUpdate(CanonicalStateUpdate update, long recvTime) {
 		// search through pending actions to work out latency
 		_simTime = Math.max(_simTime, update.getTime());
-		long headId = _actionIdToStartTimeLookup.getHeadIndex();
-		long tailId = headId - _actionIdToStartTimeLookup.getLength() + 1;
+		long headId = _actionIdToSentActionInfoLookup.getHeadIndex();
+		long tailId = headId - _actionIdToSentActionInfoLookup.getLength() + 1;
 		for (long actionId = tailId; actionId <= headId; actionId++) {
-			if (_actionIdToStartTimeLookup.containsIndex(actionId)) {
-				long startTime = _actionIdToStartTimeLookup.getDirect(actionId);
-				if (startTime <= _simTime) {
-					_actionToCanonicalStateLatencyMetric.push(recvTime - _actionIdToSentTimeLookup.getDirect(actionId));
-					_actionIdToSentTimeLookup.remove(actionId);
-					_actionIdToStartTimeLookup.remove(actionId);
+			if (_actionIdToSentActionInfoLookup.containsIndex(actionId)) {
+				SentActionInfo sentAction = _actionIdToSentActionInfoLookup.get(actionId);
+				if (sentAction.startTime <= _simTime) {
+					_actionToCanonicalStateLatencyMetric.push(recvTime - sentAction.sentTime);
+					_actionIdToSentActionInfoLookup.remove(actionId);
 				}
 			}
 		}
 		_agent.onUpdate(update);
-		
-		if (ClientId.fromBits(_clientId).getClientIndex() == 0) {
-			ChunkReader updateChunkReader = new ChunkReader(update.getData());
-			StringBuilder stateBuilder = new StringBuilder();
-			stateBuilder.append("update [");
-			boolean isFirst = true;
-			for (byte[] chunk : updateChunkReader) {
-				if (isFirst) {
-					isFirst = false;
-				} else {
-					stateBuilder.append(", ");
-				}
-				
-				ArrayBackedResizingBuffer chunkBuffer = new ArrayBackedResizingBuffer(chunk);
-				int score = chunkBuffer.readInt(0);
-				String data = new String(chunkBuffer.readBytes(ResizingBuffer.INT_SIZE, chunk.length - ResizingBuffer.INT_SIZE));
-				stateBuilder.append(String.format("{'%s': %d}", data, score));
-			}
-			stateBuilder.append("]");
-			Log.info(stateBuilder.toString());
-		}
-
 	}
 	
 	private void onEffectUpdate(BufferBackedEffect effect, long recvTime) {
@@ -345,6 +346,7 @@ public final class Client {
 					connectResEvent.getResponseCode(), ConnectResponseEvent.RES_OK));
 		}
 		_clientId = connectResEvent.getClientIdBits();
+		_agent.setClientId(_clientId);
 		_isConnecting = false;
 		_connectedClientCountMetric.push(1);
 	}
@@ -353,10 +355,14 @@ public final class Client {
 		_isConnecting = false;
 		_clientId = -1;
 		_isActive = false;
-		_actionIdToSentTimeLookup.clear();
-		_actionIdToStartTimeLookup.clear();
+		_actionIdToSentActionInfoLookup.clear();
 		_simTime = -1;
 		unsetMetricCollectors();
+	}
+	
+	private static class SentActionInfo {
+		public long sentTime;
+		public long startTime;
 	}
 
 }

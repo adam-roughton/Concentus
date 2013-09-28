@@ -96,13 +96,21 @@ public class RunningStats {
 	
 	public void merge(int count, double mean, double sumSqrs, double min, double max) {
 		if (count > 0) {
-			double meanDiff = _mean - mean;
-			int newN = count + _count;
-			_mean = (_count * _mean + count * mean) / (newN);
-			_sumSqrs += sumSqrs + (meanDiff * meanDiff) * (_count * count / newN);
-			_min = (min < _min)? min : _min;
-			_max = (max > _max)? max : _max;
-			_count = newN;
+			if (_count == 0) {
+				_mean = mean;
+				_sumSqrs = sumSqrs;
+				_min = min;
+				_max = max;
+				_count = count;
+			} else {
+				double meanDiff = _mean - mean;
+				int newN = count + _count;
+				_mean = (_count * _mean + count * mean) / (newN);
+				_sumSqrs += sumSqrs + (meanDiff * meanDiff) * (_count * count / newN);
+				_min = Math.min(min, _min);
+				_max = Math.max(max, _max);
+				_count = newN;
+			}
 		}
 	}
 	

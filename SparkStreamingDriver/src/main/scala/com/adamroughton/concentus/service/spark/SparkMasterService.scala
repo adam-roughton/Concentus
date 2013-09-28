@@ -16,11 +16,13 @@ import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint
 import java.nio.file.Path
 import com.esotericsoftware.minlog.Log
 import java.nio.file.Paths
+import com.adamroughton.concentus.cluster.worker.ServiceDeployment
 
 class SparkMasterService(
     sparkHome: String,
     masterAddress: String,
     masterPort: Int,
+    serviceId: Int,
     serviceContext: ServiceContext[ServiceState],
     concentusHandle: ConcentusHandle) 
 		extends ExternalProcessServiceBase(serviceContext, concentusHandle) {
@@ -30,7 +32,7 @@ class SparkMasterService(
      startProcess(sparkMasterCommand, "spark.deploy.master.Master", "-i", masterAddress, "-p", masterPort.toString);
      Log.info("Started spark master at spark://" + masterAddress + ":" + masterPort);
     
-     val sparkMasterEndpoint = new ServiceEndpoint(SparkMasterService.masterEndpointType, 
+     val sparkMasterEndpoint = new ServiceEndpoint(serviceId, SparkMasterService.masterEndpointType, 
          masterAddress, masterPort)
 	 cluster.registerServiceEndpoint(sparkMasterEndpoint)
   }
@@ -45,7 +47,7 @@ object SparkMasterService {
 }
 
 class SparkMasterServiceDeployment(sparkHome: String, masterPort: Int) 
-	extends ServiceDeploymentBase[ServiceState](SparkMasterService.serviceInfo) {
+	extends ServiceDeploymentBase(SparkMasterService.serviceInfo) {
   
   def this() = this(null, 7077)
   
@@ -58,7 +60,7 @@ class SparkMasterServiceDeployment(sparkHome: String, masterPort: Int)
       metricContext: MetricContext,
       resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
     val masterAddress = concentusHandle.getNetworkAddress.getHostAddress
-    new SparkMasterService(sparkHome, masterAddress, masterPort, serviceContext, concentusHandle)
+    new SparkMasterService(sparkHome, masterAddress, masterPort, serviceId, serviceContext, concentusHandle)
   }
   
 }
