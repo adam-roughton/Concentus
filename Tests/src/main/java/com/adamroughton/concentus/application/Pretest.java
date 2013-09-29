@@ -22,7 +22,7 @@ public class Pretest {
 		DeploymentConfigurator pretestConfigurator = new SingleDisruptorConfigurator();
 
 		List<Pair<Integer, Integer>> workerClientHandlerDeploymentPairs = new ArrayList<>();
-		int availableNodes = 4;
+		int availableNodes = 8;
 		for (int i = 1; i < availableNodes; i++) {
 			workerClientHandlerDeploymentPairs.add(new Pair<>(i, availableNodes - i));
 		}
