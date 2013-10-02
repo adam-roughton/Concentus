@@ -29,8 +29,8 @@ public class Experiment {
 						
 					TestDeploymentSet testDeploymentSet = new TestDeploymentSet(testName, applicationVar.getAgentFactory());
 					deploymentConfigurator.configure(testDeploymentSet, 1)
-						.addDeployment(new ClientHandlerServiceDeployment(-1, 2048, 2048), 7)
-						.setWorkerCount(6);
+						.addDeployment(new ClientHandlerServiceDeployment(-1, 2048, 2048), 9)
+						.setWorkerCount(9);
 					
 					test = new Test(testName, applicationVar.getApplicationFactory(tickDuration), 
 							testDeploymentSet, clientCountIterable, 1, TimeUnit.MINUTES);
