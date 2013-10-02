@@ -1,8 +1,10 @@
 package com.adamroughton.concentus.data.model.kryo;
 
 import java.util.Arrays;
+import java.util.Iterator;
+import java.util.NoSuchElementException;
 
-public final class CollectiveVariable {
+public final class CollectiveVariable implements Iterable<CandidateValue> {
 
 	private int _variableId;
 	private CandidateValue[] _candidateValues;
@@ -111,5 +113,32 @@ public final class CollectiveVariable {
 	
 	public int getVariableId() {
 		return _variableId;
+	}
+
+	@Override
+	public Iterator<CandidateValue> iterator() {
+		return new Iterator<CandidateValue>() {
+
+			int cursor = 0;
+			
+			@Override
+			public boolean hasNext() {
+				return cursor < _valueCount;
+			}
+
+			@Override
+			public CandidateValue next() {
+				if (cursor < _valueCount) {
+					return _candidateValues[cursor++];
+				} else {
+					throw new NoSuchElementException();
+				}
+			}
+
+			@Override
+			public void remove() {
+				throw new UnsupportedOperationException();
+			}
+		};
 	}
 }

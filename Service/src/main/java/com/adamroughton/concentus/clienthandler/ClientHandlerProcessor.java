@@ -300,6 +300,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 										ClientHandlerInputEvent event) throws Exception {
 									event.setClientHandlerId(_clientHandlerId);
 									event.setReliableSeqAck(reliableSeqAck);
+																		
 									inputEvent.getActionSlice().copyTo(event.getContentSlice());
 								}
 					}));

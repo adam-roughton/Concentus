@@ -1,7 +1,8 @@
 package com.adamroughton.concentus.messaging;
 
-import java.util.Arrays;
 import java.util.Objects;
+
+import com.adamroughton.concentus.util.Util;
 
 public final class SocketIdentity {
 	
@@ -56,8 +57,7 @@ public final class SocketIdentity {
 
 	@Override
 	public String toString() {
-		return "SocketIdentity [buffer=" + Arrays.toString(buffer)
-				+ ", offset=" + offset + ", length=" + length + "]";
+		return "SocketIdentity " + Util.arrayRangeToString(buffer, offset, length);
 	}
 	
 	

@@ -53,23 +53,26 @@ public class ResultExtractor {
 			// get the tests
 			Log.info("Looking up tests in the database...");
 			Map<String, TestInfo> testLookup = new HashMap<>();
-			if (!statement.execute("select r.runId as runId, r.name as name, r.clientCount as clientCount, " +
+			if (!statement.execute("select r.runId as runId, r.name as name, r.deploymentName as deployment, r.clientCount as clientCount, " +
 					"d.count as workerCount from RunMetaData as r inner " +
-					"join RunDeploymentData as d on r.runId = d.runId and d.serviceType = \"worker\"")) {
+					"join RunDeploymentData as d on r.runId = d.runId and d.serviceType = \"worker\"" +
+					"order by r.runId")) {
 				System.out.println("No tests found in the data file!");
 				System.exit(0);
 			}
 			try (ResultSet resultSet = statement.getResultSet()) {
 				while (resultSet.next()) {
 					String testName = resultSet.getString("name");
+					String deployment = resultSet.getString("deployment");
+					String runName = testName + deployment;
 					TestInfo test;
-					if (!testLookup.containsKey(testName)) {
+					if (!testLookup.containsKey(runName)) {
 						Log.info("Found test: " + testName);
 						int workerCount = resultSet.getInt("workerCount");
-						test = new TestInfo(testName, null, workerCount);
-						testLookup.put(testName, test);
+						test = new TestInfo(testName, deployment, workerCount);
+						testLookup.put(runName, test);
 					} else {
-						test = testLookup.get(testName);
+						test = testLookup.get(runName);
 					}
 					int runId = resultSet.getInt("runId");
 					int clientCount = resultSet.getInt("clientCount");
@@ -104,6 +107,7 @@ public class ResultExtractor {
 						final TestRunResultSet testRunResultSet = new TestRunResultSet(test, run);
 						
 						// get the connected client counts
+						Log.info("Collecting client count stats...");
 						collectMetric(countMetricStatement, test, run, "connectedClientCount", new AggregateDelegate() {
 								
 								int partialCount = 0;

@@ -15,6 +15,13 @@ public interface Effect {
 	
 	boolean isCancelled();
 	
+	/**
+	 * A flag indicating whether this effect should be sent
+	 * to clients and neighbours.
+	 * @return
+	 */
+	boolean shouldReport();
+	
 	byte[] getData();
 	
 }

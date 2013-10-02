@@ -79,5 +79,14 @@ public final class ActionReceiptEvent extends BufferBackedObject {
 	public ResizingBuffer getEffectDataSlice() {
 		return getBuffer().slice(effectDataField.offset);
 	}
+
+	@Override
+	public String toString() {
+		return "ActionReceiptEvent [clientId=" + getClientIdBits()
+				+ ", actionId=" + getActionId() + ", startTime="
+				+ getStartTime() + ", effectData=" + getEffectDataSlice() + "]";
+	}
+	
+	
 	
 }

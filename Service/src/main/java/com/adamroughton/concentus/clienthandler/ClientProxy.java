@@ -152,6 +152,7 @@ public final class ClientProxy {
 		long tailSeq = headSeq - _reliableDataMap.getLength() + 1;
 		if (ackSeq + 1 < tailSeq) {
 			// signal that the client has been disconnected
+			Log.info("Client.generateUpdate: " + inputEvent);
 			Log.warn(String.format("Disconnecting client %d: requested %d, but %d " +
 					"was the lowest seq available", _clientIdBits, ackSeq + 1, tailSeq));
 			_shouldDropFlag = true;

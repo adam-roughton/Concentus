@@ -360,17 +360,19 @@ public class ClusterTestTask implements TestTask {
 				Log.info("Starting test...");
 				setTestState(TestTask.State.RUNNING_TEST);
 				
-				// get the bucketId 5 seconds into the future
+				// get the bucketId 60 seconds into the future
 				MetricBucketInfo metricBucketInfo = new MetricBucketInfo(_testClock, Constants.METRIC_TICK);
-				long startBucketId = metricBucketInfo.getBucketIdForTime(_testClock.currentMillis() + 5000, TimeUnit.MILLISECONDS);
+				long startBucketId = metricBucketInfo.getBucketIdForTime(_testClock.currentMillis() + TimeUnit.SECONDS.toMillis(60), TimeUnit.MILLISECONDS);
 				int bucketCount = metricBucketInfo.getBucketCount(_test.getTestDurationMillis(), TimeUnit.MILLISECONDS);
 				
 				// start collecting
 				_metricCollector.startCollectingFrom(startBucketId, bucketCount);
 				
-				// wait for test time
+				// wait for test time plus 30 seconds to allow tardy metric buckets to arrive
 				assertRunning();
-				long sleepTime = Math.max(0, metricBucketInfo.getBucketEndTime(startBucketId + bucketCount) - _testClock.currentMillis());
+				long sleepTime = Math.max(0, 
+						metricBucketInfo.getBucketEndTime(startBucketId + bucketCount) + 
+						TimeUnit.SECONDS.toMillis(30) - _testClock.currentMillis());
 				Log.info("Waiting " + TimeUnit.MILLISECONDS.toSeconds(sleepTime) + " seconds until terminating current run");
 				Thread.sleep(sleepTime);
 				

@@ -72,7 +72,9 @@ public final class ActionProcessingLogic {
 				if (_effects.containsKey(key)) {
 					_effectWrapper.attachToBuffer(_effects.get(key));
 					_effectWrapper.setIsCancelled(true);
-					updatedEffectsMap.put(variableId, _effectWrapper.getBuffer());
+					if (_effectWrapper.shouldReport()) {
+						updatedEffectsMap.put(variableId, _effectWrapper.getBuffer());
+					}
 					_effects.remove(key);
 					_effectWrapper.releaseBuffer();
 					return true;
@@ -97,21 +99,39 @@ public final class ActionProcessingLogic {
 			@Override
 			public boolean newEffect(int variableId, int effectTypeId,
 					byte[] effectData) {
+				return newEffect(variableId, effectTypeId, effectData, true);
+			}
+			
+			@Override
+			public boolean newEffect(int variableId, int effectTypeId,
+					byte[] effectData, boolean shouldReport) {
 				return newEffect(variableId, effectTypeId, effectData, 
-						0, effectData.length);
+						0, effectData.length, shouldReport);
 			}
 
 			@Override
 			public boolean newEffect(int variableId, int effectTypeId,
 					byte[] effectData, int offset, int length) {
-				BufferBackedEffect effect = newEffect(variableId, effectTypeId, length);
+				return newEffect(variableId, effectTypeId, effectData, offset, length, true);
+			}
+			
+			@Override
+			public boolean newEffect(int variableId, int effectTypeId,
+					byte[] effectData, int offset, int length, boolean shouldReport) {
+				BufferBackedEffect effect = newEffect(variableId, effectTypeId, length, shouldReport);
 				effect.getDataSlice().copyFrom(effectData, offset, 0, length);
 				return true;
+			}
+			
+			@Override
+			public boolean newEffect(int variableId, int effectTypeId,
+					ResizingBuffer effectData) {
+				return newEffect(variableId, effectTypeId, effectData, true);
 			}
 
 			@Override
 			public boolean newEffect(int variableId, int effectTypeId,
-					ResizingBuffer effectData) {
+					ResizingBuffer effectData, boolean shouldReport) {
 				return newEffect(variableId, effectTypeId, effectData, 
 						0, effectData.getContentSize());
 			}
@@ -119,12 +139,18 @@ public final class ActionProcessingLogic {
 			@Override
 			public boolean newEffect(int variableId, int effectTypeId,
 					ResizingBuffer effectData, int offset, int length) {
-				BufferBackedEffect effect = newEffect(variableId, effectTypeId, length);
+				return newEffect(variableId, effectTypeId, effectData, offset, length, true);
+			}
+			
+			@Override
+			public boolean newEffect(int variableId, int effectTypeId,
+					ResizingBuffer effectData, int offset, int length, boolean shouldReport) {
+				BufferBackedEffect effect = newEffect(variableId, effectTypeId, length, shouldReport);
 				effectData.copyTo(effect.getDataSlice(), offset, 0, length);
 				return true;
 			}
 			
-			private BufferBackedEffect newEffect(int variableId, int effectTypeId, int dataLength) {
+			private BufferBackedEffect newEffect(int variableId, int effectTypeId, int dataLength, boolean shouldReport) {
 				ClientVarKey key = new ClientVarKey(clientId, variableId);
 				ArrayBackedResizingBuffer effectBuffer = new ArrayBackedResizingBuffer(Util.nextPowerOf2(32 + dataLength));
 				_effects.put(key, effectBuffer);
@@ -136,7 +162,12 @@ public final class ActionProcessingLogic {
 				_effectWrapper.setVariableId(variableId);
 				_effectWrapper.setIsCancelled(false);
 				_effectWrapper.setStartTime(nextTickTime());
-				updatedEffectsMap.put(variableId, effectBuffer);
+				_effectWrapper.setShouldReport(shouldReport);
+				if (shouldReport) {
+					updatedEffectsMap.put(variableId, effectBuffer);
+				} else {
+					updatedEffectsMap.remove(variableId);
+				}
 				return _effectWrapper;
 			}
 			
@@ -160,6 +191,7 @@ public final class ActionProcessingLogic {
 	}
 	
 	public Iterator<CandidateValue> tick(final long time) {
+		com.esotericsoftware.minlog.Log.info("ActionProcessingLogic.tick: Effect count = " + _effects.size());
 		_lastTick = time;
 		
 		final ObjectIterator<ArrayBackedResizingBuffer> iterator = _effects.values().iterator();

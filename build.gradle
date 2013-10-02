@@ -145,6 +145,11 @@ subprojects {
 }
 
 project(':Core') {
+	
+	configurations {
+		compile.exclude group:'org.slf4j', module:'slf4j-log4j12' // remove sl4j binding
+	}
+	
 	dependencies {
 		compile 'com.lmax:disruptor:3.0.1'
 		compile 'com.google.guava:guava:14.0'
@@ -159,6 +164,8 @@ project(':Core') {
 		compile 'org.yaml:snakeyaml:1.11'
 		compile 'org.javatuples:javatuples:1.2'
 		compile files(getLocalLib('asg.cliche-020310.jar')) // simple interactive shell
+		
+		runtime 'org.slf4j:slf4j-log4j12:1.7.5'
 	}
 	
 	task runTestZooKeeper(dependsOn: makeWorkingDir, type: JavaExec) {
@@ -214,7 +221,7 @@ project(':SparkStreamingDriver') {
 project(':CrowdHammer') {
 	dependencies {
 		compile project(':Service')
-		compile 'org.xerial:sqlite-jdbc:3.7.2'
+		compile 'org.xerial:sqlite-jdbc:3.7.15-M1' // for native mode on mac osx 10.8
 		testCompile project(path: ':Core', configuration: 'tests')
 	}
 	

@@ -378,4 +378,32 @@ public class Util {
 		return stackTraceWriter.toString();
 	}
 	
+	// inefficient for now (array creation)
+	public static String arrayRangeToString(Object[] a, int offset, int length) {
+		return Arrays.toString(Arrays.copyOfRange(a, offset, offset + length));
+	}
+	
+	public static String arrayRangeToString(long[] a, int offset, int length) {
+		return Arrays.toString(Arrays.copyOfRange(a, offset, offset + length));
+	}
+	
+	public static String arrayRangeToString(int[] a, int offset, int length) {
+		return Arrays.toString(Arrays.copyOfRange(a, offset, offset + length));
+	}
+	
+	public static String arrayRangeToString(byte[] a, int offset, int length) {
+		return Arrays.toString(Arrays.copyOfRange(a, offset, offset + length));
+	}
+	
+	public static String arrayRangeToString(char[] a, int offset, int length) {
+		return Arrays.toString(Arrays.copyOfRange(a, offset, offset + length));
+	}
+	
+	public static String arrayRangeToString(double[] a, int offset, int length) {
+		return Arrays.toString(Arrays.copyOfRange(a, offset, offset + length));
+	}
+	
+	public static String arrayRangeToString(float[] a, int offset, int length) {
+		return Arrays.toString(Arrays.copyOfRange(a, offset, offset + length));
+	}
 }

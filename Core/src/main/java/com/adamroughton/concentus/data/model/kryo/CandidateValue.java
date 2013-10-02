@@ -32,7 +32,7 @@ public final class CandidateValue implements Comparable<CandidateValue> {
 	private CandidateValue() {
 	}
 	
-	public CandidateValue(int varId, int score, long time, ResizingBuffer data) {
+	public CandidateValue(int varId, int score, ResizingBuffer data) {
 		this(varId, score, data, 0, data.getContentSize());
 	}
 	

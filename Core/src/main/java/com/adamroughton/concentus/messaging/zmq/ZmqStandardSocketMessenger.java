@@ -156,8 +156,8 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 	
 	public boolean sendHeader(int msgSize, ArrayBackedResizingBuffer eventBuffer, 
 			OutgoingEventHeader header, boolean isBlocking) {
-		// bit hacky for now, but if the socket is a pub socket put the first Int bytes (event type) first for
-		// subscription filtering
+		// bit hacky for now, but if the socket is a pub socket put the first Int bytes of the 
+		// event content (event type) first for subscription filtering
 		int cursor = 0;
 		if (_socketType == ZMQ.PUB) {
 			int eventTypeSegmentMetaData = header.getSegmentMetaData(eventBuffer, 0);
@@ -176,6 +176,13 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 	public boolean recv(ArrayBackedResizingBuffer eventBuffer, 
 			IncomingEventHeader header,
 			boolean isBlocking) {
+		/*
+		 * Prepare the buffer to receive new event bytes. We do this
+		 * for both performance reasons (want to use primary array
+		 * as much as possible) and for content size reporting.
+		 */
+		eventBuffer.reset();
+		
 		int cursor = header.getEventOffset();
 		int expectedSegmentCount = header.getSegmentCount() + 1;
 		int eventSegmentIndex = 0;
@@ -190,7 +197,7 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 			
 			if (isValid) {
 				if ((_socketType != ZMQ.ROUTER && segmentIndex == 0) || (_socketType == ZMQ.ROUTER && segmentIndex == 1)) {
-					int retVal = processHeaderFrame(eventBuffer, header, cursor, isBlocking);
+					int retVal = processHeaderFrame(eventBuffer, cursor, isBlocking);
 					if (retVal == 0) {
 						return false;
 					} else {
@@ -237,7 +244,7 @@ public final class ZmqStandardSocketMessenger implements ZmqSocketMessenger {
 		return true;
 	}
 	
-	public int processHeaderFrame(ArrayBackedResizingBuffer incomingBuffer, IncomingEventHeader eventHeader, int cursor, boolean isBlocking) {	
+	public int processHeaderFrame(ArrayBackedResizingBuffer incomingBuffer, int cursor, boolean isBlocking) {	
 		int headerSize = ZmqSocketOperations.doRecv(_socket, _headerBytes, 0, _headerBytes.length, isBlocking);
 		if (headerSize == 0) {
 			return 0;

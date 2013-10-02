@@ -215,20 +215,8 @@ public final class Client {
 		_connectReqSendTime = _clock.currentMillis();
 	}
 	
-//	private long _windowCursor = 0;
-//	private ArrayBackedResizingBuffer[] _updateWindow = new ArrayBackedResizingBuffer[5];
-//	{
-//		for (int i = 0; i < _updateWindow.length; i++) {
-//			_updateWindow[i] = new ArrayBackedResizingBuffer(512);
-//		}
-//	}
-	
 	public void onClientUpdate(ClientUpdateEvent updateEvent) {
 		long updateRecvTime = _clock.currentMillis();
-		
-		//ResizingBuffer cachedBuffer = _updateWindow[(int)(_windowCursor++ % _updateWindow.length)];
-		//cachedBuffer.reset();
-		//updateEvent.getBuffer().copyTo(cachedBuffer);
 
 		IntArray intArray = new IntArray();
 		if (updateEvent.getClientId() != _clientId) {
@@ -278,13 +266,6 @@ public final class Client {
 				}
 			}
 		} catch (RuntimeException eRuntime) {
-//			Log.error("Error on update for client: " + _clientId);
-//			Log.error("Last valid chunk lengths: " + intArray.toString());
-//			Log.error("Last updates recved: ");
-//			for (long cursor = _windowCursor - 1; cursor >= Math.max(0, _windowCursor - _updateWindow.length); cursor--) {
-//				ResizingBuffer cachedUpdateBuffer = _updateWindow[(int)(cursor % _updateWindow.length)];
-//				Log.info("Update: (content length = " + cachedUpdateBuffer.getContentSize() + ") " + cachedUpdateBuffer.toString() + '\n');
-//			}
 			throw eRuntime;
 		}
 	}

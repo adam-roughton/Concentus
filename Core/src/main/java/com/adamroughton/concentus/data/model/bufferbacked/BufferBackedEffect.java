@@ -14,7 +14,8 @@ public class BufferBackedEffect extends BufferBackedObject implements Effect {
 	private final Field clientIdField = startTimeField.then(LONG_SIZE);
 	private final Field variableIdField = clientIdField.then(INT_SIZE);
 	private final Field effectTypeIdField = variableIdField.then(INT_SIZE);
-	private final Field isCancelledField = effectTypeIdField.then(BOOL_SIZE);
+	private final Field shouldReportField = effectTypeIdField.then(BOOL_SIZE);
+	private final Field isCancelledField = shouldReportField.then(BOOL_SIZE);
 	private final Field effectDataField = isCancelledField.thenVariableLength()
 			.resolveOffsets();
 	
@@ -67,6 +68,14 @@ public class BufferBackedEffect extends BufferBackedObject implements Effect {
 		getBuffer().writeInt(effectTypeIdField.offset, effectTypeId);
 	}
 
+	public boolean shouldReport() {
+		return getBuffer().readBoolean(shouldReportField.offset);
+	}
+	
+	public void setShouldReport(boolean shouldReport) {
+		getBuffer().writeBoolean(shouldReportField.offset, shouldReport);
+	}
+	
 	public boolean isCancelled() {
 		return getBuffer().readBoolean(isCancelledField.offset);
 	}

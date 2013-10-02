@@ -23,6 +23,7 @@ import com.adamroughton.concentus.data.events.bufferbacked.ClientHandlerUpdateEv
 import com.adamroughton.concentus.data.events.bufferbacked.ReplayRequestEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.TickEvent;
 import com.adamroughton.concentus.data.model.bufferbacked.BufferBackedEffect;
+import com.adamroughton.concentus.data.model.kryo.CandidateValue;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
@@ -129,6 +130,7 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 				ResizingBuffer reliableDataBuffer = reliableEventMap.get(nextReliableSeq);
 				if (handlerEventTypeId == DataType.ACTION_EVENT.getId()) {
 					ActionEvent actionEvent = new ActionEvent();
+					
 					actionEvent.attachToBuffer(clientHandlerInputEvent.getContentSlice());
 					
 					ActionReceiptMetaData actionReceiptMetaData = new ActionReceiptMetaData();
@@ -277,7 +279,12 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 	
 	private void onTick(TickEvent tickEvent) {
 		long time = tickEvent.getTime();
-		_tickDelegate.onTick(time, _actionProcessingLogic.tick(time));
+		long start = System.nanoTime();
+		Iterator<CandidateValue> candidateValuesForTick = _actionProcessingLogic.tick(time);
+		long duration = System.nanoTime() - start;
+		Log.info("ActionCollector.onTick: took " + duration + "ns to create iterator");
+		
+		_tickDelegate.onTick(time, candidateValuesForTick);
 	}
 	
 	private static StructuredSlidingWindowMap<ResizingBuffer> newClientHandlerReliableEventMap() {

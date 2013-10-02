@@ -18,10 +18,18 @@ public interface UserEffectSet {
 	
 	boolean newEffect(int variableId, int effectTypeId, byte[] effectData);
 	
+	boolean newEffect(int variableId, int effectTypeId, byte[] effectData, boolean shouldReport);
+	
 	boolean newEffect(int variableId, int effectTypeId, byte[] effectData, int offset, int length);
+	
+	boolean newEffect(int variableId, int effectTypeId, byte[] effectData, int offset, int length, boolean shouldReport);
 	
 	boolean newEffect(int variableId, int effectTypeId, ResizingBuffer effectData);
 	
+	boolean newEffect(int variableId, int effectTypeId, ResizingBuffer effectData, boolean shouldReport);
+	
 	boolean newEffect(int variableId, int effectTypeId, ResizingBuffer effectData, int offset, int length);
+	
+	boolean newEffect(int variableId, int effectTypeId, ResizingBuffer effectData, int offset, int length, boolean shouldReport);
 	
 }

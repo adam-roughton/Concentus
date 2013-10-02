@@ -22,9 +22,17 @@ public class DirectTickDelegate<TBuffer extends ResizingBuffer> implements TickD
 		try {
 			event.time = time;
 			event.candidateValues.clear();
+			int count = 0;
+			long startTime = System.nanoTime();
 			while (candidateValuesIterator.hasNext()) {
 				event.candidateValues.add(candidateValuesIterator.next());
+				count++;
+				if (count % 1000 == 0) { 
+					com.esotericsoftware.minlog.Log.info("DirectTickDelegate.onTick: Up to " + count);
+				}
 			}
+			long duration = System.nanoTime() - startTime;
+			com.esotericsoftware.minlog.Log.info("DirectTickDelegate.onTick: took " + duration + "ns to push " + count + " elements onto the recvQueue entry");
 		} finally {
 			_recvQueuePubliser.publish();
 		}	
