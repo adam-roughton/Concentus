@@ -15,6 +15,7 @@
  */
 package com.adamroughton.concentus.crowdhammer.worker;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -25,12 +26,14 @@ import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.InitialiseDelegate;
 import com.adamroughton.concentus.crowdhammer.ClientAgent;
 import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
+import com.adamroughton.concentus.data.ChunkWriter;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.events.bufferbacked.ActionEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientConnectEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ConnectResponseEvent;
+import com.adamroughton.concentus.data.model.ClientId;
 import com.adamroughton.concentus.data.model.bufferbacked.ActionReceipt;
 import com.adamroughton.concentus.data.model.bufferbacked.BufferBackedEffect;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
@@ -43,6 +46,7 @@ import com.adamroughton.concentus.metric.StatsMetric;
 import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.util.IntArray;
+import com.esotericsoftware.minlog.Log;
 
 import static com.adamroughton.concentus.Constants.TIME_STEP_IN_MS;
 
@@ -53,7 +57,7 @@ public final class Client {
 	 * if not received within this window.
 	 */
 	public final static int WINDOW_SIZE = Util.nextPowerOf2((int)(10000 / TIME_STEP_IN_MS));	
-	private static final long CONNECT_TIMEOUT = TimeUnit.SECONDS.toMillis(10);	
+	private static final long CONNECT_TIMEOUT = TimeUnit.SECONDS.toMillis(10);
 	
 	private final StructuredSlidingWindowMap<SentActionInfo> _actionIdToSentActionInfoLookup = 
 			new StructuredSlidingWindowMap<>(WINDOW_SIZE, SentActionInfo.class, 
@@ -68,11 +72,16 @@ public final class Client {
 
 			@Override
 			public void initialise(SentActionInfo sentActionInfo) {
+				sentActionInfo.actionId = -1;
 				sentActionInfo.sentTime = -1;
 				sentActionInfo.startTime = -1;
+				sentActionInfo.actionBuffer.reset();
 			}
 			
 		});
+	private final long[] _pendingNackBuffer = new long[WINDOW_SIZE / 2];
+	private long _pendingNackSeq = -1;
+	private long _processedNackSeq = -1;
 	
 	private final ClientAgent _agent;
 	private long _simTime = 0;
@@ -99,7 +108,7 @@ public final class Client {
 	//private final long[] _neighbourJointActionIds = new long[25];
 	
 	private long _lastActionTime = -1;
-	private long _reliableSeq = -1;
+	private long _reliableSeqAck = -1;
 	
 	private long _clientId = -1;
 	private byte[] _handlerId = new byte[0];
@@ -186,15 +195,49 @@ public final class Client {
 			@Override
 			public void write(OutgoingEventHeader header, ClientInputEvent event) throws Exception {
 				long sendTime = _clock.currentMillis();
-				long actionId = nextActionId(sendTime);
 				event.setClientId(_clientId);
-				event.setReliableSeqAck(_reliableSeq);
-				_actionEvent.attachToBuffer(event.getActionSlice());
-				_actionEvent.writeTypeId();
-				_actionEvent.setActionId(actionId);
-				_actionEvent.setClientIdBits(_clientId);
-				event.setHasAction(_agent.onInputGeneration(_actionEvent));
-				_actionEvent.releaseBuffer();
+				event.setReliableSeqAck(_reliableSeqAck);
+				
+				ChunkWriter actionsWriter = event.getActionsWriter();
+				ResizingBuffer chunkBuffer = actionsWriter.getChunkBuffer();
+				
+				boolean hasActions = false;
+				_actionEvent.attachToBuffer(chunkBuffer);
+				try {
+					if (_agent.onInputGeneration(_actionEvent)) {
+						_actionEvent.writeTypeId();
+						_actionEvent.setClientIdBits(_clientId);
+					
+						// allocate this action an action ID
+						SentActionInfo newActionInfo = newAction(sendTime);
+						long actionId = newActionInfo.actionId;
+						_actionEvent.setActionId(actionId);
+						
+						// copy this action to the reliable send buffer
+						chunkBuffer.copyTo(newActionInfo.actionBuffer);
+						
+						hasActions = true;
+						actionsWriter.commitChunk();
+					} else {
+						chunkBuffer.reset();
+					}
+				} finally {
+					_actionEvent.releaseBuffer();
+				}
+				
+				// write NACKed actions to event
+				for (long nackSeq = _processedNackSeq + 1; nackSeq <= _pendingNackSeq; nackSeq++) {
+					long nackActionId = _pendingNackBuffer[(int) nackSeq % _pendingNackBuffer.length];
+					if (_actionIdToSentActionInfoLookup.containsIndex(nackActionId)) {
+						SentActionInfo actionInfo = _actionIdToSentActionInfoLookup.get(nackActionId);
+						actionInfo.actionBuffer.copyTo(chunkBuffer);
+						actionsWriter.commitChunk();
+					}
+					_processedNackSeq = nackSeq;
+					hasActions = true;
+				}
+				actionsWriter.finish();
+				event.setHasActions(hasActions);
 			}
 			
 		}))) {
@@ -224,6 +267,20 @@ public final class Client {
 					"(got update for " + updateEvent.getClientId() + " in " + _clientId);
 		}
 		
+		// process NACKs
+		if (updateEvent.hasNacks()) {
+			long headId = updateEvent.getActionAckFlagsHeadId();
+			int ackFieldLength = updateEvent.getAckFieldLength();
+			for (int flagIndex = 0; flagIndex < ackFieldLength; flagIndex++) {
+				if (updateEvent.getNackFlagAtIndex(flagIndex)) {
+					long nackedId = headId - ackFieldLength + flagIndex;
+					if (nackedId < 0) continue; // edge case on start up
+					long nextPendingNackSeq = ++_pendingNackSeq;
+					_pendingNackBuffer[(int) nextPendingNackSeq % _pendingNackBuffer.length] = nackedId;
+				}
+			}
+		}
+			
 		try {
 			for (byte[] chunk : updateEvent.getChunkedContent()) {
 				intArray.add(chunk.length);
@@ -234,7 +291,7 @@ public final class Client {
 				
 				// only process chunk if unreliable (-1) or if all previous
 				// reliable chunks have been processed
-				if (reliableSeq == -1 || reliableSeq == _reliableSeq + 1) {
+				if (reliableSeq == -1 || reliableSeq == _reliableSeqAck + 1) {
 					int dataType = chunkBuffer.readInt(cursor);
 					
 					if (dataType == _receipt.getTypeId()) {
@@ -261,7 +318,7 @@ public final class Client {
 					}
 					
 					if (reliableSeq >= 0) {
-						_reliableSeq = reliableSeq;
+						_reliableSeqAck = reliableSeq;
 					}
 				}
 			}
@@ -270,7 +327,7 @@ public final class Client {
 		}
 	}
 	
-	private long nextActionId(long sendTime) {
+	private SentActionInfo newAction(long sendTime) {
 		/* 
 		 * if any actions drop out of the sliding window, they are
 		 * considered unacknowledged
@@ -280,9 +337,11 @@ public final class Client {
 			_lateActionToCanonicalStateCountMetric.push(1);
 		}
 		long nextActionId = _actionIdToSentActionInfoLookup.advance();
-		_actionIdToSentActionInfoLookup.get(nextActionId).sentTime = sendTime;
+		SentActionInfo actionInfo = _actionIdToSentActionInfoLookup.get(nextActionId);
+		actionInfo.sentTime = sendTime;
+		actionInfo.actionId = nextActionId;
 		
-		return nextActionId;
+		return actionInfo;
 	}
 	
 	private void onActionReceipt(ActionReceipt receipt, long recvTime) {
@@ -343,8 +402,10 @@ public final class Client {
 	}
 	
 	private static class SentActionInfo {
+		public long actionId;
 		public long sentTime;
 		public long startTime;
+		public final ResizingBuffer actionBuffer = new ArrayBackedResizingBuffer(256);
 	}
 
 }

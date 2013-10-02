@@ -28,6 +28,15 @@ public class CrowdAloud implements ApplicationVariant {
 		SYMBOL
 	}
 	
+	private Mode _mode;
+	
+	@SuppressWarnings("unused")
+	private CrowdAloud() { }
+	
+	public CrowdAloud(Mode mode) {
+		_mode = mode;
+	}
+	
 	@Override
 	public InstanceFactory<? extends CollectiveApplication> getApplicationFactory(long tickDuration) {
 		return new ApplicationFactory(tickDuration);
@@ -35,7 +44,13 @@ public class CrowdAloud implements ApplicationVariant {
 
 	@Override
 	public InstanceFactory<? extends ClientAgent> getAgentFactory() {
-		return new TextAgentFactory();
+		if (_mode == Mode.TEXT) {
+			return new TextAgentFactory();
+		} else if (_mode == Mode.SYMBOL) {
+			return new SymbolAgentFactory();
+		} else {
+			throw new IllegalStateException("Unknown mode " + _mode);
+		}
 	}
 	
 	@Override
@@ -96,6 +111,20 @@ public class CrowdAloud implements ApplicationVariant {
 		@Override
 		public Class<TextAgent> instanceType() {
 			return TextAgent.class;
+		}
+		
+	}
+	
+	public static class SymbolAgentFactory implements InstanceFactory<SymbolAgent> {
+
+		@Override
+		public SymbolAgent newInstance() {
+			return new SymbolAgent();
+		}
+
+		@Override
+		public Class<SymbolAgent> instanceType() {
+			return SymbolAgent.class;
 		}
 		
 	}
@@ -164,7 +193,7 @@ public class CrowdAloud implements ApplicationVariant {
 	
 	public static class TextAgent implements ClientAgent {
 
-		private static String CHARACTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP!?0123456789";
+		private static final String CHARACTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP!?0123456789";
 
 		private long _clientIdBits = -1;
 		private long _inputCountUntilSignal = 0;
@@ -208,28 +237,93 @@ public class CrowdAloud implements ApplicationVariant {
 
 		@Override
 		public void onUpdate(CanonicalStateUpdate update) {
-			if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
-				ChunkReader updateChunkReader = new ChunkReader(update.getData());
-				StringBuilder stateBuilder = new StringBuilder();
-				stateBuilder.append("update [");
-				boolean isFirst = true;
-				int chunkCount = 0;
-				for (ResizingBuffer chunkBuffer : updateChunkReader.asBuffers()) {
-					if (isFirst) {
-						isFirst = false;
-					} else {
-						stateBuilder.append(", ");
-					}
-					chunkCount++;
-					int score = chunkBuffer.readInt(0);
-					String word = chunkBuffer.readString(ResizingBuffer.INT_SIZE, StandardCharsets.UTF_16);
-					
-					stateBuilder.append(String.format("{'%s': %d}", word, score));
+//			if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
+//				ChunkReader updateChunkReader = new ChunkReader(update.getData());
+//				StringBuilder stateBuilder = new StringBuilder();
+//				stateBuilder.append("update [");
+//				boolean isFirst = true;
+//				int chunkCount = 0;
+//				for (ResizingBuffer chunkBuffer : updateChunkReader.asBuffers()) {
+//					if (isFirst) {
+//						isFirst = false;
+//					} else {
+//						stateBuilder.append(", ");
+//					}
+//					chunkCount++;
+//					int score = chunkBuffer.readInt(0);
+//					String word = chunkBuffer.readString(ResizingBuffer.INT_SIZE, StandardCharsets.UTF_16);
+//					
+//					stateBuilder.append(String.format("{'%s': %d}", word, score));
+//				}
+//				stateBuilder.append(", chunkCount=").append(chunkCount);
+//				stateBuilder.append("]");
+//				Log.info(stateBuilder.toString());
+//			}
+			
+		}
+		
+	}
+	
+	public static class SymbolAgent implements ClientAgent {
+
+		private long _clientIdBits = -1;
+		private long _inputCountUntilSignal = 0;
+		private long _inputCountSeq = 0;
+		
+		private int _currentSymbol = -1; 
+		
+		@Override
+		public void setClientId(long clientIdBits) {
+			_clientIdBits = clientIdBits;
+			_inputCountUntilSignal = clientIdBits % 20;
+		}
+		
+		@Override
+		public boolean onInputGeneration(ActionEvent actionEvent) {
+			long inputSeq = _inputCountSeq++;
+			
+			if (_inputCountUntilSignal-- <= 0) {
+				actionEvent.setActionTypeId(ActionType.SIGNAL.getId());
+				if (_currentSymbol == -1 || inputSeq % 7 != 0) {
+					_currentSymbol = generateSymbolId();
 				}
-				stateBuilder.append(chunkCount);
-				stateBuilder.append("]");
-				Log.info(stateBuilder.toString());
+				actionEvent.getActionDataSlice().writeByte(0, (byte)_currentSymbol);
+				
+				_inputCountUntilSignal = (inputSeq + _clientIdBits) % 15;
+				return true;
+			} else {
+				return false;
 			}
+		}
+		
+		private int generateSymbolId() {
+			return Math.max(1, Math.abs((int) (_clientIdBits - _inputCountSeq) % 32));
+		}
+
+		@Override
+		public void onUpdate(CanonicalStateUpdate update) {
+//			if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
+//				ChunkReader updateChunkReader = new ChunkReader(update.getData());
+//				StringBuilder stateBuilder = new StringBuilder();
+//				stateBuilder.append("update [");
+//				boolean isFirst = true;
+//				int chunkCount = 0;
+//				for (ResizingBuffer chunkBuffer : updateChunkReader.asBuffers()) {
+//					if (isFirst) {
+//						isFirst = false;
+//					} else {
+//						stateBuilder.append(", ");
+//					}
+//					chunkCount++;
+//					int score = chunkBuffer.readInt(0);
+//					int symbolId = chunkBuffer.readByte(ResizingBuffer.INT_SIZE);
+//					
+//					stateBuilder.append(String.format("{'%d': %d}", symbolId, score));
+//				}
+//				stateBuilder.append(", chunkCount=").append(chunkCount);
+//				stateBuilder.append("]");
+//				Log.info(stateBuilder.toString());
+//			}
 			
 		}
 		

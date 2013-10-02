@@ -191,7 +191,6 @@ public final class ActionProcessingLogic {
 	}
 	
 	public Iterator<CandidateValue> tick(final long time) {
-		com.esotericsoftware.minlog.Log.info("ActionProcessingLogic.tick: Effect count = " + _effects.size());
 		_lastTick = time;
 		
 		final ObjectIterator<ArrayBackedResizingBuffer> iterator = _effects.values().iterator();

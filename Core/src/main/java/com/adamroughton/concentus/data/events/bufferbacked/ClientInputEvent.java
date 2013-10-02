@@ -16,6 +16,8 @@
 package com.adamroughton.concentus.data.events.bufferbacked;
 
 import com.adamroughton.concentus.data.BufferBackedObject;
+import com.adamroughton.concentus.data.ChunkReader;
+import com.adamroughton.concentus.data.ChunkWriter;
 import com.adamroughton.concentus.data.DataType;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.model.ClientId;
@@ -63,15 +65,23 @@ public final class ClientInputEvent extends BufferBackedObject {
 		getBuffer().writeLong(reliableSeqAckField.offset, reliableSeqAck);
 	}
 	
-	public boolean hasAction() {
+	public boolean hasActions() {
 		return getBuffer().readBoolean(hasActionField.offset);
 	}
 	
-	public void setHasAction(boolean hasAction) {
-		getBuffer().writeBoolean(hasActionField.offset, hasAction);
+	public void setHasActions(boolean hasActions) {
+		getBuffer().writeBoolean(hasActionField.offset, hasActions);
 	}
 	
-	public ResizingBuffer getActionSlice() {
+	public ChunkReader getActions() {
+		return new ChunkReader(getBuffer(), actionField.offset);
+	}
+	
+	public ChunkWriter getActionsWriter() {
+		return new ChunkWriter(getBuffer(), actionField.offset);
+	}
+	
+	public ResizingBuffer getActionsSlice() {
 		return getBuffer().slice(actionField.offset);
 	}
 	
@@ -85,8 +95,8 @@ public final class ClientInputEvent extends BufferBackedObject {
 			strBuilder.append("[");
 			strBuilder.append("clientId=" + getClientIdBits() + ", ");
 			strBuilder.append("reliableSeqAck=" + getReliableSeqAck() + ", ");
-			strBuilder.append("hasAction=" + hasAction() + ", ");
-			strBuilder.append("actionData=" + getActionSlice().toString());
+			strBuilder.append("hasAction=" + hasActions() + ", ");
+			strBuilder.append("actionsData=" + getActionsSlice().toString());
 			strBuilder.append("]");
 		}
 		return strBuilder.toString();

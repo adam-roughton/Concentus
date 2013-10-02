@@ -279,11 +279,7 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 	
 	private void onTick(TickEvent tickEvent) {
 		long time = tickEvent.getTime();
-		long start = System.nanoTime();
 		Iterator<CandidateValue> candidateValuesForTick = _actionProcessingLogic.tick(time);
-		long duration = System.nanoTime() - start;
-		Log.info("ActionCollector.onTick: took " + duration + "ns to create iterator");
-		
 		_tickDelegate.onTick(time, candidateValuesForTick);
 	}
 	

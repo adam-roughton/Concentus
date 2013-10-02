@@ -25,8 +25,19 @@ import com.adamroughton.concentus.data.ResizingBuffer;
 
 public final class ClientUpdateEvent extends BufferBackedObject {
 
+	public static int ACK_FIELD_LENGTH = 4;
+	
 	private final Field clientIdField = super.getBaseField().then(LONG_SIZE);
-	private final Field contentField = clientIdField.thenVariableLength()
+	
+	/*
+	 * Use 4 bytes to ACK or NACK the last 32 received actions. The base Id field
+	 * is the start action ID for the flag field, while each raised bit signals 
+	 * the NACK of the (baseId + bit index) action ID.
+	 */
+	private final Field actionAckFlagsHeadIdField = clientIdField.then(LONG_SIZE);
+	private final Field actionAckFlagsField = actionAckFlagsHeadIdField.then(ACK_FIELD_LENGTH); 
+	
+	private final Field contentField = actionAckFlagsField.thenVariableLength()
 			.resolveOffsets();
 	
 	public ClientUpdateEvent() {
@@ -39,6 +50,37 @@ public final class ClientUpdateEvent extends BufferBackedObject {
 
 	public final void setClientId(long clientId) {
 		getBuffer().writeLong(clientIdField.offset, clientId);
+	}
+	
+	/**
+	 * Gets the ID of the last received action that sits at the head
+	 * of the ACK flags field. This action id is <b>NOT</b> included in the 
+	 * ACK flags field itself, with the final ACK action ID in the field
+	 * equal to this head ID - 1; 
+	 * @return
+	 */
+	public long getActionAckFlagsHeadId() {
+		return getBuffer().readLong(actionAckFlagsHeadIdField.offset);
+	}
+	
+	public void setActionAckFlagsHeadId(long actionAckFlagsHeadId) {
+		getBuffer().writeLong(actionAckFlagsHeadIdField.offset, actionAckFlagsHeadId);
+	}
+	
+	public boolean hasNacks() {
+		return getBuffer().readInt(actionAckFlagsField.offset) != 0;
+	}
+	
+	public int getAckFieldLength() {
+		return actionAckFlagsField.size * 8;
+	}
+	
+	public boolean getNackFlagAtIndex(int index) {
+		return getBuffer().readFlag(actionAckFlagsField.offset, 4, index);
+	}
+	
+	public void setNackFlagAtIndex(int index, boolean isNack) {
+		getBuffer().writeFlag(actionAckFlagsField.offset, 4, index, isNack);
 	}
 	
 	public ChunkReader getChunkedContent() {

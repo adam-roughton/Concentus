@@ -27,6 +27,7 @@ public final class ArrayBackedResizingBuffer implements ResizingBuffer {
 	
 	public ArrayBackedResizingBuffer(byte[] buffer) {
 		_buffer = Objects.requireNonNull(buffer);
+		_contentSize = buffer.length;
 	}
 	
 	public ArrayBackedResizingBuffer(int defaultSize) {

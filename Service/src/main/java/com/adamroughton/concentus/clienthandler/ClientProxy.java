@@ -29,6 +29,7 @@ import com.adamroughton.concentus.data.model.ClientId;
 import com.adamroughton.concentus.data.model.bufferbacked.ActionReceipt;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 import com.adamroughton.concentus.messaging.SocketIdentity;
+import com.adamroughton.concentus.util.SlidingWindowLongMap;
 import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
 import com.adamroughton.concentus.InitialiseDelegate;
 import com.esotericsoftware.minlog.Log;
@@ -45,6 +46,9 @@ public final class ClientProxy {
 	
 	private boolean _isActive = false;
 	private boolean _shouldDropFlag = false;
+	
+	private final SlidingWindowLongMap _recvActionMap = 
+			new SlidingWindowLongMap(ClientUpdateEvent.ACK_FIELD_LENGTH * 8 * 2);
 	
 	private final StructuredSlidingWindowMap<ResizingBuffer> _reliableDataMap = 
 			new StructuredSlidingWindowMap<ResizingBuffer>(
@@ -143,6 +147,32 @@ public final class ClientProxy {
 		_lastCanonicalStateUpdateId = canonicalStateUpdateId;
 	}
 	
+	/**
+	 * Notes that this action has been received, returning {@code true}
+	 * if this action ID has not been seen before, {@code false} otherwise.
+	 * @param actionId
+	 * @return {@code true} if this action ID has not been seen before, {@code false} otherwise
+	 */
+	public boolean isNewAction(long actionId) {
+		long headId = _recvActionMap.getHeadIndex();
+		if (actionId > headId) {
+			_recvActionMap.put(actionId, 1);
+			return true;
+		} else if (actionId > headId - _recvActionMap.getLength()) {
+			boolean isNewAction;
+			if (_recvActionMap.containsIndex(actionId)) {
+				long flag = _recvActionMap.getDirect(actionId);
+				isNewAction = flag == 0;
+			} else {
+				isNewAction = true;
+			}
+			_recvActionMap.put(actionId, 1);
+			return isNewAction;
+		} else {
+			return false;
+		}
+	}
+	
 	public void generateUpdate(ClientInputEvent inputEvent,
 			CanonicalStateUpdate latestCanonicalState,
 			ClientUpdateEvent updateEvent) { 
@@ -157,6 +187,18 @@ public final class ClientProxy {
 					"was the lowest seq available", _clientIdBits, ackSeq + 1, tailSeq));
 			_shouldDropFlag = true;
 			return;
+		}
+		
+		// set action ACK flags
+		long headActionId = _recvActionMap.getHeadIndex();
+		long ackFieldLength = updateEvent.getAckFieldLength();
+		updateEvent.setActionAckFlagsHeadId(headActionId);
+		for (int i = 0; i < ackFieldLength; i++) {
+			long actionId = headActionId - ackFieldLength + i;
+			if (actionId >= 0) {
+				boolean nackFlag = !_recvActionMap.containsIndex(actionId) || _recvActionMap.get(actionId) == 0;
+				updateEvent.setNackFlagAtIndex(i, nackFlag);
+			}
 		}
 
 		ChunkWriter updateChunkWriter = updateEvent.newChunkedContentWriter();

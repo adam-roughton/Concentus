@@ -31,6 +31,7 @@ import com.adamroughton.concentus.data.ArrayBackedResizingBuffer;
 import com.adamroughton.concentus.data.ChunkReader;
 import com.adamroughton.concentus.data.DataType;
 import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.data.events.bufferbacked.ActionEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ActionReceiptEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientConnectEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientDisconnectedEvent;
@@ -81,6 +82,7 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 	
 	private final ClientHandlerInputEvent _clientHandlerInputEvent = new ClientHandlerInputEvent();
 	private final ActionReceiptEvent _actionReceiptEvent = new ActionReceiptEvent();
+	private final ActionEvent _actionEvent = new ActionEvent();
 	private final ConnectResponseEvent _connectResEvent = new ConnectResponseEvent();
 	private final ClientConnectEvent _clientConnectEvent = new ClientConnectEvent();
 	private final ClientInputEvent _clientInputEvent = new ClientInputEvent();
@@ -288,22 +290,33 @@ public class ClientHandlerProcessor<TBuffer extends ResizingBuffer> implements D
 				/*
 				 * Send any action
 				 */
-				if (inputEvent.hasAction()) {
+				if (inputEvent.hasActions()) {
 					int actionCollectorId = client.getActionCollectorId();
 					final long reliableSeqAck = _actionCollectorToReliableSeqLookup.get(actionCollectorId);
 
-					_routerSendQueue.send(RouterPattern.asReliableTask(client.getActionCollectorRef(), _clientHandlerInputEvent, 
-							new EventWriter<OutgoingEventHeader, ClientHandlerInputEvent>() {
-	
-								@Override
-								public void write(OutgoingEventHeader header,
-										ClientHandlerInputEvent event) throws Exception {
-									event.setClientHandlerId(_clientHandlerId);
-									event.setReliableSeqAck(reliableSeqAck);
-																		
-									inputEvent.getActionSlice().copyTo(event.getContentSlice());
-								}
-					}));
+					ChunkReader actionReader = inputEvent.getActions();
+					for (final ResizingBuffer actionBuffer : actionReader.asBuffers()) {
+						_actionEvent.attachToBuffer(actionBuffer);
+						try {
+							long actionId = _actionEvent.getActionId();
+							if (client.isNewAction(actionId)) {
+								_routerSendQueue.send(RouterPattern.asReliableTask(client.getActionCollectorRef(), _clientHandlerInputEvent, 
+										new EventWriter<OutgoingEventHeader, ClientHandlerInputEvent>() {
+				
+											@Override
+											public void write(OutgoingEventHeader header,
+													ClientHandlerInputEvent event) throws Exception {
+												event.setClientHandlerId(_clientHandlerId);
+												event.setReliableSeqAck(reliableSeqAck);
+																					
+												actionBuffer.copyTo(event.getContentSlice());
+											}
+								}));
+							}
+						} finally {
+							_actionEvent.releaseBuffer();
+						}
+					}
 				}
 				
 				/*

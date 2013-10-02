@@ -3,6 +3,7 @@ package com.adamroughton.concentus.data;
 public final class ChunkWriter {
 
 	public static final int EMPTY_MARKER = -1;
+	public static final int END_MARKER = 0;
 	
 	private final MutableResizingBufferSlice _chunkBuffer = new MutableResizingBufferSlice();
 	private int _currentOffset;
@@ -46,13 +47,13 @@ public final class ChunkWriter {
 	}
 	
 	/**
-	 * Prepares the next chunk. Also writes {@code 0} into the current chunk
+	 * Prepares the next chunk. Also writes {@linkplain #END_MARKER} into the current chunk
 	 * length field until the chunk is committed to ensure that the chunked 
-	 * section is always ended correctly (0 signals the end of the chunked section).
+	 * section is always ended correctly ({@linkplain #END_MARKER} signals the end of the chunked section).
 	 * @param backingBuffer
 	 */
 	private void nextChunk(ResizingBuffer backingBuffer) {
-		backingBuffer.writeInt(_currentOffset, 0);
+		backingBuffer.writeInt(_currentOffset, END_MARKER);
 		_chunkBuffer.setBackingBuffer(backingBuffer, _currentOffset + ResizingBuffer.INT_SIZE);
 	}
 	

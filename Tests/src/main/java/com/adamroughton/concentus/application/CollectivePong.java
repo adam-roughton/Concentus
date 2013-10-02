@@ -217,14 +217,14 @@ public class CollectivePong implements ApplicationVariant {
 
 		@Override
 		public void onUpdate(CanonicalStateUpdate update) {
-			if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
-				ResizingBuffer updateBuffer = update.getData();
-				int[] paddleBar = new int[PADDLE_CHUNK_COUNT];
-				for (int i = 0; i < PADDLE_CHUNK_COUNT; i++) {
-					paddleBar[i] = updateBuffer.readInt(i * INT_SIZE);
-				}
-				Log.info(Arrays.toString(paddleBar));
-			}
+//			if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
+//				ResizingBuffer updateBuffer = update.getData();
+//				int[] paddleBar = new int[PADDLE_CHUNK_COUNT];
+//				for (int i = 0; i < PADDLE_CHUNK_COUNT; i++) {
+//					paddleBar[i] = updateBuffer.readInt(i * INT_SIZE);
+//				}
+//				Log.info(Arrays.toString(paddleBar));
+//			}
 			
 		}
 		
