@@ -72,7 +72,7 @@ public class DirectStateProcessor<TBuffer extends ResizingBuffer> implements Dea
 				currentValue = value;
 				currentVariable = _variablesMap.get(value.getVariableId());
 			} else if (currentValue.getVariableId() == value.getVariableId()) {
-				if (currentValue.matchesValue(value)) {
+				if (currentValue.canUnion(value)) {
 					currentValue = currentValue.union(value);
 				} else {
 					currentVariable.push(currentValue);

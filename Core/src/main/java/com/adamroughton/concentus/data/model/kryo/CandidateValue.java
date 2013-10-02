@@ -1,6 +1,7 @@
 package com.adamroughton.concentus.data.model.kryo;
 
 import java.util.Arrays;
+import java.util.Objects;
 
 import com.adamroughton.concentus.data.BytesUtil;
 import com.adamroughton.concentus.data.ResizingBuffer;
@@ -17,7 +18,8 @@ import static com.adamroughton.concentus.data.ResizingBuffer.*;
  */
 public final class CandidateValue implements Comparable<CandidateValue> {
 
-	private CandidateValueKey _groupKey = new CandidateValueKey();
+	private CandidateValueGroupKey _groupKey;
+	private CandidateValueStrategy _strategy;
 	private int _variableId;
 	private int _score;
 	private int _valueDataHash;
@@ -32,15 +34,17 @@ public final class CandidateValue implements Comparable<CandidateValue> {
 	private CandidateValue() {
 	}
 	
-	public CandidateValue(int varId, int score, ResizingBuffer data) {
-		this(varId, score, data, 0, data.getContentSize());
+	public CandidateValue(CandidateValueStrategy strategy, int varId, int score, ResizingBuffer data) {
+		this(strategy, varId, score, data, 0, data.getContentSize());
 	}
 	
-	public CandidateValue(int varId, int score, ResizingBuffer data, int offset, int length) {
-		this(varId, score, data.readBytes(offset, length));
+	public CandidateValue(CandidateValueStrategy strategy, int varId, int score, ResizingBuffer data, int offset, int length) {
+		this(strategy, varId, score, data.readBytes(offset, length));
 	}
 	
-	public CandidateValue(int varId, int score, byte[] data) {
+	public CandidateValue(CandidateValueStrategy strategy, int varId, int score, byte[] data) {
+		_strategy = Objects.requireNonNull(strategy);
+		_groupKey = _strategy.createGroupKey(this);
 		_variableId = varId;
 		_score = score;
 		if (data == null) data = new byte[0];
@@ -60,26 +64,20 @@ public final class CandidateValue implements Comparable<CandidateValue> {
 		return _valueData;
 	}
 	
-	public static CandidateValue union(CandidateValue v1, CandidateValue v2) {
-		if (v1.getVariableId() != v2.getVariableId()) {
-			throw new IllegalArgumentException(String.format("The variable IDs must " +
-					"match to perform a union: v1.id was %d, v2,id was %d",
-					v1.getVariableId(),
-					v2.getVariableId()));
-		}
-		return new CandidateValue(v1.getVariableId(), v1.getScore() + v2.getScore(), v1.getValueData());
+	public int getValueDataHash() {
+		return _valueDataHash;
+	}
+	
+	public CandidateValueStrategy getStrategy() {
+		return _strategy;
+	}
+	
+	public boolean canUnion(CandidateValue other) {
+		return this.getVariableId() == other.getVariableId() && _strategy.canUnion(this, other);
 	}
 	
 	public CandidateValue union(CandidateValue other) {
-		return union(this, other);
-	}
-	
-	public boolean matchesValue(CandidateValue other) {
-		if (other._valueDataHash == _valueDataHash) {
-			return Arrays.equals(other._valueData, _valueData);
-		} else {
-			return false;
-		}
+		return _strategy.union(this, other);
 	}
 	
 	@Override
@@ -126,7 +124,7 @@ public final class CandidateValue implements Comparable<CandidateValue> {
 		}
 	}
 	
-	public CandidateValueKey groupKey() {
+	public CandidateValueGroupKey groupKey() {
 		return _groupKey;
 	}
 
@@ -160,51 +158,7 @@ public final class CandidateValue implements Comparable<CandidateValue> {
 				+ _score + ", valueData=" + Arrays.toString(_valueData) + "]";
 	}
 	
-	public final class CandidateValueKey {
 
-		/*
-		 * For Kryo
-		 */
-		private CandidateValueKey() {
-		}
-				
-		public CandidateValue getValue() {
-			return CandidateValue.this;
-		}
-
-		@Override
-		public int hashCode() {
-			final int prime = 31;
-			int result = 1;
-			result = prime * result + _valueDataHash;
-			result = prime * result + _variableId;
-			return result;
-		}
-		
-		public int variableId() {
-			return _variableId;
-		}
-		
-		public int valueDataHash() {
-			return _valueDataHash;
-		}
-		
-		public byte[] valueData() {
-			return _valueData;
-		}
-
-		@Override
-		public boolean equals(Object obj) {
-			if (!(obj instanceof CandidateValueKey))
-				return false;
-			CandidateValueKey other = (CandidateValueKey) obj;
-			if (this.variableId() != other.variableId())
-				return false;
-			if (this.valueDataHash() != other.valueDataHash())
-				return false;
-			return Arrays.equals(this.valueData(), other.valueData());
-		}
-	}
 	
 	
 }

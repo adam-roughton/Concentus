@@ -15,6 +15,7 @@ import com.adamroughton.concentus.data.model.Effect;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 import com.adamroughton.concentus.data.model.kryo.CandidateValue;
 import com.adamroughton.concentus.data.model.kryo.CollectiveVariable;
+import com.adamroughton.concentus.data.model.kryo.MatchingDataStrategy;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.model.CollectiveVariableDefinition;
 import com.adamroughton.concentus.model.UserEffectSet;
@@ -150,7 +151,7 @@ public class ExperimentUtil {
 			}
 			int score = (int) ((double) Math.max(0, time - effect.getStartTime()) / (double) var.effectDuration() * 100);
 			
-			return new CandidateValue(varId, score, candidateValData);
+			return new CandidateValue(new MatchingDataStrategy(), varId, score, candidateValData);
 		}
 
 		@Override

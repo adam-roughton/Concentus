@@ -18,8 +18,7 @@ public class Experiment {
 //				22000, 23000, 24000, 25000, 26000, 27000, 28000, 29000, 30000, 50000, 100000);
 		ListClientCount clientCountIterable = new ListClientCount(1000);
 		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SingleDisruptorConfigurator() };
-		//ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CrowdAloud(), new CollectivePong(), new Pixels() };
-		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CollectivePong() };
+		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CrowdAloud(), new CollectivePong(), new Pixels() };
 		Test test;
 		for (DeploymentConfigurator deploymentConfigurator : depConfigs) {
 			for (ApplicationVariant applicationVar : applicationVariants) {

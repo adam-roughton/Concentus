@@ -5,6 +5,7 @@ import java.util.Arrays;
 import org.junit.Test;
 
 import com.adamroughton.concentus.data.model.kryo.CandidateValue;
+import com.adamroughton.concentus.data.model.kryo.MatchingDataStrategy;
 
 import static org.junit.Assert.*;
 
@@ -78,7 +79,7 @@ public class TestCandidateValueCompareTo {
 		for (int i = 0; i < bytes.length; i++) {
 			data[i] = (byte) bytes[i];
 		}
-		return new CandidateValue(varId, score, data);
+		return new CandidateValue(new MatchingDataStrategy(), varId, score, data);
 	}
 	
 }

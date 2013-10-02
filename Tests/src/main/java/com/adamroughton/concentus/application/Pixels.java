@@ -11,6 +11,7 @@ import com.adamroughton.concentus.data.model.Effect;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 import com.adamroughton.concentus.data.model.kryo.CandidateValue;
 import com.adamroughton.concentus.data.model.kryo.CollectiveVariable;
+import com.adamroughton.concentus.data.model.kryo.MatchingDataStrategy;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.model.CollectiveVariableDefinition;
 import com.adamroughton.concentus.model.UserEffectSet;
@@ -134,7 +135,7 @@ public class Pixels implements ApplicationVariant {
 				} else {
 					score = 0;
 				}
-				return new CandidateValue(effect.getVariableId(), score, effect.getData());
+				return new CandidateValue(new MatchingDataStrategy(), effect.getVariableId(), score, effect.getData());
 			} else {
 				throw new RuntimeException("Unknown effect type ID " + effectTypeId);
 			}
