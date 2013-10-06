@@ -88,10 +88,10 @@ class SparkDriverConfigurator implements DeploymentConfigurator {
 	@Override
 	public TestDeploymentSet configure(TestDeploymentSet deploymentSet, int receiverCount) {
 		return deploymentSet
-			.addDeployment(new SparkMasterServiceDeployment(DataCache.SPARK_HOME, 0), 1)
+			.addDeployment(new SparkMasterServiceDeployment(DataCache.SPARK_HOME, 7077), 1)
 			.addDeployment(new SparkWorkerServiceDeployment(DataCache.SPARK_HOME), receiverCount)
 			.addDeployment(new SparkStreamingDriverDeployment(DataCache.SPARK_HOME, DataCache.DRIVER_DEPENDENCIES, receiverCount, -1, 
-					Constants.MSG_BUFFER_ENTRY_LENGTH, Constants.MSG_BUFFER_ENTRY_LENGTH, 1, 
+					Constants.MSG_BUFFER_ENTRY_LENGTH, Constants.MSG_BUFFER_ENTRY_LENGTH, -1, 
 					Constants.MSG_BUFFER_ENTRY_LENGTH), 1);
 	}
 

@@ -34,7 +34,7 @@ import com.adamroughton.concentus.cluster.ClusterHandleSettings;
 import com.adamroughton.concentus.cluster.worker.ClusterHandle;
 import com.adamroughton.concentus.cluster.worker.ClusterService;
 import com.adamroughton.concentus.cluster.worker.ConcentusServiceBase;
-import com.adamroughton.concentus.cluster.worker.ServiceContainer;
+import com.adamroughton.concentus.cluster.worker.ServiceContainerImpl;
 import com.adamroughton.concentus.cluster.worker.ServiceContext;
 import com.adamroughton.concentus.cluster.worker.ServiceDeploymentBase;
 import com.adamroughton.concentus.cluster.worker.StateData;
@@ -128,9 +128,9 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 	private DirectStateProcessor<TBuffer> _stateProcessor;
 	private EventProcessor _publisher;
 	
-	private ServiceContainer<ServiceState> _actionProcessorContainer;
+	private ServiceContainerImpl<ServiceState> _actionProcessorContainer;
 	
-	private ServiceContainer<ServiceState> _tickTimerContainer;
+	private ServiceContainerImpl<ServiceState> _tickTimerContainer;
 	
 	private final int _serviceId;
 	private final int _actionCollectorPort;
@@ -208,12 +208,12 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 		ActionCollectorServiceDeployment actionCollector = new ActionCollectorServiceDeployment(_actionCollectorPort, 
 				_actionCollectorTickSubPort, _actionCollectorRecvQueueLength, _actionCollectorSendQueueLength, 
 				new DirectTickDelegate<>(_recvQueue), 0, _application.getTickDuration());
-		_actionProcessorContainer = new ServiceContainer<>(actionProcHandleSettings, _concentusHandle, actionCollector, _componentResolver);
+		_actionProcessorContainer = new ServiceContainerImpl<>(actionProcHandleSettings, _concentusHandle, actionCollector, _componentResolver);
 		_actionProcessorContainer.start();
 		
 		TickTimerServiceDeployment tickTimerServiceDeployment = new TickTimerServiceDeployment(_application.getTickDuration(), 0);
 		ClusterHandleSettings tickTimerHandleSettings = new ClusterHandleSettings(zooKeeperAddress, zooKeeperAppRoot, exCallback);
-		_tickTimerContainer = new ServiceContainer<>(tickTimerHandleSettings, _concentusHandle, tickTimerServiceDeployment, _componentResolver);
+		_tickTimerContainer = new ServiceContainerImpl<>(tickTimerHandleSettings, _concentusHandle, tickTimerServiceDeployment, _componentResolver);
 		_tickTimerContainer.start();
 	}
 	

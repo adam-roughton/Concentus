@@ -33,7 +33,7 @@ import org.apache.commons.cli.ParseException;
 import org.javatuples.Pair;
 
 import com.adamroughton.concentus.cluster.ClusterHandleSettings;
-import com.adamroughton.concentus.cluster.worker.ServiceContainer;
+import com.adamroughton.concentus.cluster.worker.ServiceContainerImpl;
 import com.adamroughton.concentus.cluster.worker.ServiceDeployment;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
@@ -48,7 +48,7 @@ public class ConcentusExecutableOperations {
 		ClusterHandleSettings clusterHandleSettings = coreComponents.getValue0();
 		ConcentusHandle concentusHandle = coreComponents.getValue1();
 		
-		try (ServiceContainer<TState> container = new ServiceContainer<>(clusterHandleSettings, 
+		try (ServiceContainerImpl<TState> container = new ServiceContainerImpl<>(clusterHandleSettings, 
 				concentusHandle, serviceDeployment, componentResolver)) {
 			container.start();
 			

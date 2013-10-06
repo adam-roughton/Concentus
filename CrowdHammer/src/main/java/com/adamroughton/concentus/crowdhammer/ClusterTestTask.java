@@ -80,6 +80,7 @@ public class ClusterTestTask implements TestTask {
 	private final Condition _testStateCondition = _testStateLock.newCondition();
 	
 	private final AtomicReference<Exception> _exceptionRef = new AtomicReference<>();
+	private volatile TestRunInfo _currentRunInfo;
 	
 	private final Executor _defaultListenerExecutor = Executors.newSingleThreadExecutor();
 	private final ConcurrentMap<IdentityWrapper<TestTaskListener>, Executor> _listeners = new ConcurrentHashMap<>();
@@ -130,7 +131,7 @@ public class ClusterTestTask implements TestTask {
 				ProcessReturnInfo retInfo) {
 			if (newState != GuardianDeploymentState.RUNNING) {
 				ServiceInfo<ServiceState> serviceInfo = guardianDeployment.getDeployment().serviceInfo();
-				_exceptionRef.compareAndSet(null, new RuntimeException("The deployment " + serviceInfo.serviceType() + 
+				stopWithException(new RuntimeException("The deployment " + serviceInfo.serviceType() + 
 						" on guardian " + guardianDeployment.getGuardianPath() + 
 							" entered deployment state " + newState + " with ret info: " + 
 							((retInfo == null)? "null" : retInfo.toString())));
@@ -147,22 +148,17 @@ public class ClusterTestTask implements TestTask {
 			if (event.getType() == EventType.STATE_READY) {
 				Log.info("ClusterTestTask.onServiceGroupEvent: " + event.toString());
 				_groupStateLookup.put(new IdentityWrapper<>(serviceGroup), event.getState());
-				_backgroundUpdateLock.lock();
-				try {
-					_backgroundUpdateCondition.signalAll();
-				} finally {
-					_backgroundUpdateLock.unlock();
-				}
+				signalBackgroundUpdate();
 			} else if (event.getType() == EventType.TIMED_OUT) {
-				_exceptionRef.compareAndSet(null, new RuntimeException("The service group " + serviceGroup.toString() + 
+				stopWithException(new RuntimeException("The service group " + serviceGroup.toString() + 
 						" timed out while setting the " +
 						"state to " + event.getState()));
 			} else if (event.getType() == EventType.UPDATE_FAILURE) {
-				_exceptionRef.compareAndSet(null, new RuntimeException("The service group " + serviceGroup.toString() + 
+				stopWithException(new RuntimeException("The service group " + serviceGroup.toString() + 
 						" failed while setting the " +
 						"state to " + event.getState()));
 			} else if (event.getType() == EventType.SERVICE_DEATH) {
-				_exceptionRef.compareAndSet(null, new RuntimeException("The service group " + serviceGroup.toString() + 
+				stopWithException(new RuntimeException("The service group " + serviceGroup.toString() + 
 						" had a service die: " + event.getService().getServicePath()));
 			}
 		}
@@ -178,6 +174,9 @@ public class ClusterTestTask implements TestTask {
 		_metricCollector = Objects.requireNonNull(metricCollector);
 		_guardianManager = Objects.requireNonNull(guardianManager);
 		_clusterHandle = Objects.requireNonNull(clusterHandle);
+		
+		_currentRunInfo = new TestRunInfo(_test.getName(), 
+				_test.getDeploymentSet().getDeploymentName());
 	}
 	
 	@Override
@@ -237,8 +236,8 @@ public class ClusterTestTask implements TestTask {
 			if (!compareAndSetTestState(TestTask.State.CREATED, TestTask.State.SETTING_UP)) {
 				throw new IllegalStateException("The test task can only be run once");
 			}
-	
-			Log.info("Setting up for test runs...");
+
+			reportProgress("Setting up for test runs...");
 			assertRunning();
 			cleanUp();
 			CollectiveApplication application = _test.getApplicationFactory().newInstance();
@@ -255,7 +254,7 @@ public class ClusterTestTask implements TestTask {
 			ServiceDependencySet dependencySet = new ServiceDependencySet();
 			Map<String, Integer> serviceCountLookup = new HashMap<>();
 
-			Log.info("Deployment Plan:");
+			reportProgress("Deployment Plan:");
 			for (ServiceDeploymentPackage<ServiceState> deploymentPackage : deploymentSet) {
 				ServiceDeployment<ServiceState> deployment = deploymentPackage.deployment();
 				int count = deploymentPackage.count();
@@ -271,18 +270,20 @@ public class ClusterTestTask implements TestTask {
 					
 					// there is a one-to-one mapping between hosts and hosted
 					// services
-					Log.info("ServiceType: " + hostedService.serviceType() + ", count: " + count);
+					reportProgress("ServiceType: " + hostedService.serviceType() + ", count: " + count);
 					serviceCountLookup.put(hostedService.serviceType(), count);
 				}
 				
-				Log.info("ServiceType: " + serviceInfo.serviceType() + ", count: " + count);
+				reportProgress("ServiceType: " + serviceInfo.serviceType() + ", count: " + count);
 				serviceCountLookup.put(serviceInfo.serviceType(), count);
 			}
 			
-			Log.info("Starting test runs...");
+			reportProgress("Starting test runs...");
 			for (int clientCount : _test.getClientCountIterable()) {
+				_currentRunInfo = _currentRunInfo.withClientCount(clientCount);
 				assertRunning();
-				Log.info("Doing run with client count: " + clientCount);
+				reportProgress("Doing run for test '" + _test.getName() + ":" + 
+						_test.getDeploymentSet().getDeploymentName() + "' with client count: " + clientCount);
 				TimeoutTracker timeoutTracker = new TimeoutTracker(10, TimeUnit.MINUTES);
 				
 				_metricCollector.newTestRun(_test.getName(), 
@@ -293,11 +294,11 @@ public class ClusterTestTask implements TestTask {
 						agent.getClass(), 
 						mapToPairSet(serviceCountLookup.entrySet()));
 				
-				Log.info("Deploying services...");
+				reportProgress("Deploying services...");
 				for (ServiceDeploymentPackage<ServiceState> deploymentPackage : deploymentSet) {
 					ServiceDeployment<ServiceState> deployment = deploymentPackage.deployment();
 					int count = deploymentPackage.count();
-					Log.info("Deploying: " + count + " instance" + (count == 1? "": "s") +" of " + deployment.serviceInfo().serviceType());
+					reportProgress("Deploying: " + count + " instance" + (count == 1? "": "s") +" of " + deployment.serviceInfo().serviceType());
 					for (int i = 0; i < deploymentPackage.count(); i++) {
 						assertRunning();
 						GuardianDeployment<ServiceState> guardianDeployment = _guardianManager.deploy(deployment,
@@ -312,7 +313,7 @@ public class ClusterTestTask implements TestTask {
 				}
 				
 				// start the services
-				Log.info("Starting services...");
+				reportProgress("Starting services...");
 				for (String serviceType : dependencySet) {
 					for (ServiceState state : new ServiceState[] { CREATED, INIT, BIND, CONNECT, START }) {
 						ServiceGroup<ServiceState> group;
@@ -347,7 +348,7 @@ public class ClusterTestTask implements TestTask {
 								}
 							}
 							
-							Log.info("Setting state to " + state + " for services of type " + serviceType + "...");
+							reportProgress("Setting state to " + state + " for services of type " + serviceType + "...");
 							group.enterStateInBackground(state, timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 						}
 						
@@ -357,7 +358,7 @@ public class ClusterTestTask implements TestTask {
 				}
 				
 				assertRunning();
-				Log.info("Starting test...");
+				reportProgress("Starting test...");
 				setTestState(TestTask.State.RUNNING_TEST);
 				
 				// get the bucketId 60 seconds into the future
@@ -373,16 +374,16 @@ public class ClusterTestTask implements TestTask {
 				long sleepTime = Math.max(0, 
 						metricBucketInfo.getBucketEndTime(startBucketId + bucketCount) + 
 						TimeUnit.SECONDS.toMillis(30) - _testClock.currentMillis());
-				Log.info("Waiting " + TimeUnit.MILLISECONDS.toSeconds(sleepTime) + " seconds until terminating current run");
+				reportProgress("Waiting " + TimeUnit.MILLISECONDS.toSeconds(sleepTime) + " seconds until terminating current run");
 				Thread.sleep(sleepTime);
 				
-				Log.info("Stopping test...");
+				reportProgress("Stopping test...");
 				timeoutTracker = new TimeoutTracker(5, TimeUnit.MINUTES);
 				setTestState(TestTask.State.TEARING_DOWN);
 				
 				// tear down services (shutdown)
 				for (String serviceType : dependencySet.inReverse()) {
-					Log.info("Tearing down services of type " + serviceType);
+					reportProgress("Tearing down services of type " + serviceType);
 					ServiceGroup<ServiceState> group = _groupsByType.get(serviceType);
 					group.enterStateInBackground(SHUTDOWN, timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 					
@@ -404,6 +405,7 @@ public class ClusterTestTask implements TestTask {
 				cleanUp();
 				_exceptionRef.set(null);
 			}
+			_currentRunInfo = _currentRunInfo.withNoClients();
 		} catch (InterruptedException eInterrupted) {
 			
 		} catch (Exception eTest) {
@@ -411,7 +413,7 @@ public class ClusterTestTask implements TestTask {
 		} finally {
 			try {
 				// stop guardian deployments (ready)
-				Log.info("Stopping guardian deployments...");
+				reportProgress("Stopping guardian deployments...");
 				try {
 					cleanUp();
 				} catch (Exception e) {
@@ -423,14 +425,14 @@ public class ClusterTestTask implements TestTask {
 				_clusterHandle.delete(applicationPath);
 			} finally {
 				setTestState(TestTask.State.STOPPED);
-				Log.info("Finished test");
+				reportProgress("Finished test");
 			}
 		}
 	}
 	
 	private ServiceGroup<ServiceState> createGroup(String serviceType, int count, long timeout, TimeUnit unit) throws Exception {
 		String serviceTypePath = ZKPaths.makePath(_clusterHandle.resolvePathFromRoot(SERVICES), serviceType);
-		Log.info("Waiting for " + count + " instance" + (count == 1? "": "s") +" of " + serviceType + " to register...");
+		reportProgress("Waiting for " + count + " instance" + (count == 1? "": "s") +" of " + serviceType + " to register...");
 		List<String> serviceIds = ClusterUtil.waitForChildren(_clusterHandle.getClient(), serviceTypePath, count, 
 				timeout, unit);
 		List<String> servicePaths = ClusterUtil.toPaths(serviceTypePath, serviceIds);
@@ -448,6 +450,20 @@ public class ClusterTestTask implements TestTask {
 		return serviceGroup;
 	}
 	
+	private void stopWithException(Exception exception) {
+		_exceptionRef.compareAndSet(null, exception);
+		signalBackgroundUpdate();
+	}
+	
+	private void signalBackgroundUpdate() {
+		_backgroundUpdateLock.lock();
+		try {
+			_backgroundUpdateCondition.signalAll();
+		} finally {
+			_backgroundUpdateLock.unlock();
+		}
+	}
+	
 	private void waitForBackgroundSignal(long time, TimeUnit unit) throws Exception {
 		assertRunning();
 		_backgroundUpdateLock.lock();
@@ -458,11 +474,13 @@ public class ClusterTestTask implements TestTask {
 		} finally {
 			_backgroundUpdateLock.unlock();
 		}
+		// ensure we are still running after the background signal
+		assertRunning();
 	}
 	
 	private void waitForGroupToEnterState(String serviceType, ServiceGroup<ServiceState> group, 
 			ServiceState state, long timeout, TimeUnit unit) throws Exception {
-		Log.info("Waiting for services of type " + serviceType + " to enter state " + state + "...");
+		reportProgress("Waiting for services of type " + serviceType + " to enter state " + state + "...");
 		// wait for the group to enter the state
 		ServiceState groupState = _groupStateLookup.get(new IdentityWrapper<>(group));
 		while (groupState != state) {
@@ -520,6 +538,15 @@ public class ClusterTestTask implements TestTask {
 			_state.set(newState);			
 			result = true;
 		}
+		sendToListeners(new TestTaskEvent(_currentRunInfo, newState, _exceptionRef.get()));
+		return result;
+	}
+	
+	private void reportProgress(String message) {
+		sendToListeners(new TestTaskEvent(_currentRunInfo, message));
+	}
+	
+	private void sendToListeners(final TestTaskEvent testTaskEvent) {
 		for (Entry<IdentityWrapper<TestTaskListener>, Executor> entry : _listeners.entrySet()) {
 			final TestTaskListener listener = entry.getKey().get();
 			Executor executor = entry.getValue();
@@ -527,12 +554,11 @@ public class ClusterTestTask implements TestTask {
 
 				@Override
 				public void run() {
-					listener.onTestTaskEvent(ClusterTestTask.this, new TestTaskEvent(newState, _exceptionRef.get()));
+					listener.onTestTaskEvent(ClusterTestTask.this, testTaskEvent);
 				}
 				
 			});
 		}
-		return result;
 	}
 	
 	private static Map<String, Integer> createWorkerAllocations(int testClientCount, List<Pair<String, Integer>> workerMaxClientCounts) {

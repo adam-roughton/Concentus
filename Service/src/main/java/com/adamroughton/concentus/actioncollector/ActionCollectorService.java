@@ -49,7 +49,7 @@ import com.adamroughton.concentus.util.Mutex.OwnerDelegate;
 import com.lmax.disruptor.EventProcessor;
 import com.lmax.disruptor.YieldingWaitStrategy;
 
-public class ActionCollectorService<TBuffer extends ResizingBuffer> extends ConcentusServiceBase {
+public class ActionCollectorService<TBuffer extends ResizingBuffer> extends ConcentusServiceBase implements TickDriven {
 	
 	public static final ServiceInfo<ServiceState> SERVICE_INFO = new ServiceInfo<>(
 					CoreServices.ACTION_PROCESSOR.getId(), 

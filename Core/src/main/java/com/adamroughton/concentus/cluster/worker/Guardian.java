@@ -7,7 +7,6 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -23,6 +22,8 @@ import com.adamroughton.concentus.data.cluster.kryo.ProcessReturnInfo.ReturnType
 import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo;
 import com.adamroughton.concentus.data.cluster.kryo.ServiceState;
 import com.adamroughton.concentus.metric.MetricContext;
+import com.adamroughton.concentus.util.ProcessTask;
+import com.adamroughton.concentus.util.ProcessTask.ProcessDelegate;
 import com.adamroughton.concentus.util.TimeoutTracker;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.Kryo;
@@ -110,7 +111,7 @@ public final class Guardian implements ClusterService<GuardianState> {
 	private final String _classpath;
 	private final Kryo _kryo;
 	
-	private Future<?> _currentProcessTask = null;
+	private ProcessTask _currentProcessTask = null;
 	
 	public Guardian(String[] args, String[] serviceVmArgs, ServiceContext<GuardianState> serviceContext, ConcentusHandle handle) {
 		_serviceContext = Objects.requireNonNull(serviceContext);
@@ -191,66 +192,56 @@ public final class Guardian implements ClusterService<GuardianState> {
 		
 		final ProcessBuilder processBuilder = new ProcessBuilder(arguments);
 		processBuilder.redirectOutput(Redirect.INHERIT);
-		Runnable processTask = new Runnable() {
+		ProcessDelegate processTaskDelegate = new ProcessDelegate() {
 			
 			@Override
-			public void run() {
-				final Process process;
-				try {
-					process = processBuilder.start();
-				} catch (IOException eIO) {
-					_serviceContext.enterState(GuardianState.READY, 
-							new ProcessReturnInfo(ReturnType.ERROR, "Could not start the guardian service host process: " 
-									+ Util.stackTraceToString(eIO)), 
-							stateChangeIndex);
-					return;
-				}
-				try {
-					final StringBuilder stdErrBuilder = new StringBuilder();
-					Thread stdErrCollector = new Thread() {
-					
-						public void run() {
-							try (BufferedReader stderrReader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
-								String readLine;
-								do {
-									readLine = stderrReader.readLine();
-									if (readLine != null) stdErrBuilder.append(readLine + '\n');
-								} while (readLine != null);
-							} catch (IOException eIO) {
-							}
-						}
-					};
-					stdErrCollector.start();				
+			public void runProcess(final Process process) throws InterruptedException {
+				final StringBuilder stdErrBuilder = new StringBuilder();
+				Thread stdErrCollector = new Thread() {
 				
-					BufferedOutputStream hostStdIn = new BufferedOutputStream(process.getOutputStream());
-					Output output = new Output(hostStdIn);
-					_kryo.writeClassAndObject(output, initMsg);
-					output.flush();
-					output.close();
-					
-					int retCode = process.waitFor();
-					stdErrCollector.join();
-					
-					ProcessReturnInfo retInfo;
-					if (retCode == 0) {
-						retInfo = new ProcessReturnInfo(ReturnType.OK, null);
-					} else {
-						retInfo = new ProcessReturnInfo(ReturnType.ERROR, stdErrBuilder.toString());
+					public void run() {
+						try (BufferedReader stderrReader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
+							String readLine;
+							do {
+								readLine = stderrReader.readLine();
+								Log.info("GuardianServiceHost (stderr): " + readLine);
+								if (readLine != null) stdErrBuilder.append(readLine + '\n');
+							} while (readLine != null);
+						} catch (IOException eIO) {
+						}
 					}
-					Log.info("Guardian.onRun: Signalling process death - retInfo=" + retInfo + ", stateChangeIndex=" + stateChangeIndex);
-					_serviceContext.enterState(GuardianState.READY, retInfo, stateChangeIndex);
-				} catch (InterruptedException eInterrupt) {
-					process.destroy();
-				} finally {
-					try {
-						process.waitFor();
-					} catch (InterruptedException e) {
-					}
+				};
+				stdErrCollector.start();				
+			
+				BufferedOutputStream hostStdIn = new BufferedOutputStream(process.getOutputStream());
+				Output output = new Output(hostStdIn);
+				_kryo.writeClassAndObject(output, initMsg);
+				output.flush();
+				output.close();
+				
+				int retCode = process.waitFor();
+				stdErrCollector.join();
+				
+				ProcessReturnInfo retInfo;
+				if (retCode == 0) {
+					retInfo = new ProcessReturnInfo(ReturnType.OK, null);
+				} else {
+					retInfo = new ProcessReturnInfo(ReturnType.ERROR, stdErrBuilder.toString());
 				}
+				Log.info("Guardian.onRun: Signalling process death - retInfo=" + retInfo + ", stateChangeIndex=" + stateChangeIndex);
+				_serviceContext.enterState(GuardianState.READY, retInfo, stateChangeIndex);
+			}
+
+			@Override
+			public void handleError(Exception e) {
+				_serviceContext.enterState(GuardianState.READY, 
+						new ProcessReturnInfo(ReturnType.ERROR, "Error running process: " 
+								+ Util.stackTraceToString(e)), 
+						stateChangeIndex);
 			}
 		};
-		_currentProcessTask = _taskExecutor.submit(processTask);
-		
+		_currentProcessTask = new ProcessTask(processBuilder, processTaskDelegate);
+		_taskExecutor.execute(_currentProcessTask);
 	}
 	
 	private void onShutdown(StateData stateData, ClusterHandle cluster) throws Exception {
@@ -262,9 +253,10 @@ public final class Guardian implements ClusterService<GuardianState> {
 			// wait for the host process to stop
 			TimeoutTracker timeoutTracker = new TimeoutTracker(5000, TimeUnit.MILLISECONDS);
 			try {
-				_currentProcessTask.get(timeoutTracker.getTimeout(), timeoutTracker.getUnit());
+				_currentProcessTask.waitForStop(timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 			} catch (TimeoutException eTimeOut) {
-				_currentProcessTask.cancel(true);
+				_currentProcessTask.stop();
+				_currentProcessTask.waitForStop();
 			}
 			_currentProcessTask = null;
 		}

@@ -88,20 +88,8 @@ public final class CrowdHammer implements Closeable {
 			}
 		}
 		
-		public TestTask.State getTestState() {
-			if (_testTaskEvent == null) {
-				return null;
-			} else {
-				return _testTaskEvent.getState();
-			}
-		}
-		
-		public Exception getException() {
-			return _testTaskEvent == null? null : _testTaskEvent.getException();
-		}
-		
-		public boolean hadException() {
-			return _testTaskEvent == null? false : _testTaskEvent.hadException();
+		public TestTaskEvent getTestTaskEvent() {
+			return _testTaskEvent;
 		}
 		
 	}

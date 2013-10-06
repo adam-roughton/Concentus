@@ -8,6 +8,9 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.ConcurrentMap;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.locks.Condition;
+import java.util.concurrent.locks.Lock;
+import java.util.concurrent.locks.ReentrantLock;
 
 import org.apache.zookeeper.WatchedEvent;
 import org.apache.zookeeper.Watcher.Event.EventType;
@@ -62,6 +65,9 @@ public final class GuardianManager implements Closeable {
 	private final String _guardiansRootPath;
 	private int _readyCount; // used for logging
 	
+	private final Lock _readyWaitLock = new ReentrantLock();
+	private final Condition _readyWaitCondition = _readyWaitLock.newCondition();
+	
 	private final Kryo _kryo = Util.newKryoInstance();
 	
 	/*
@@ -107,6 +113,7 @@ public final class GuardianManager implements Closeable {
 							_guardians.put(guardianPath, GuardianTrackerState.READY);
 							_readyHintQueue.add(guardianPath);
 							_readyCount++;
+							signalReadyQueueChange();
 							break;
 						case RUN:
 							Log.info("Guardian " + guardianPath + " in RUN state");
@@ -205,10 +212,28 @@ public final class GuardianManager implements Closeable {
 					}
 				}
 			} else {
-				Thread.sleep(Math.min(50, timeoutTracker.remainingMillis()));
+				waitForReadyQueueChange(timeoutTracker.getTimeout(), timeoutTracker.getUnit());
 			}
 		} while (!deployed && !timeoutTracker.hasTimedOut());
 		throw new TimeoutException();
+	}
+	
+	private void signalReadyQueueChange() {
+		_readyWaitLock.lock();
+		try {
+			_readyWaitCondition.signalAll();
+		} finally {
+			_readyWaitLock.unlock();
+		}
+	}
+	
+	private void waitForReadyQueueChange(long timeout, TimeUnit unit) throws InterruptedException {
+		_readyWaitLock.lock();
+		try {
+			_readyWaitCondition.await(timeout, unit);
+		} finally {
+			_readyWaitLock.unlock();
+		}
 	}
 	
 	public enum GuardianDeploymentState {

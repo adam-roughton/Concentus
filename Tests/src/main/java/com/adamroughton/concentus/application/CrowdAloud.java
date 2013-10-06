@@ -179,14 +179,16 @@ public class CrowdAloud implements ApplicationVariant {
 		@Override
 		public void createUpdate(ResizingBuffer updateData, long time,
 				Int2ObjectMap<CollectiveVariable> variables) {
-			CollectiveVariable topSignalVar = variables.get(TOP_SIGNAL_VAR.getVariableId());
-			ChunkWriter topWordWriter = new ChunkWriter(updateData);
-			for (CandidateValue signalValue : topSignalVar) {
-				topWordWriter.getChunkBuffer().writeInt(0, signalValue.getScore());
-				topWordWriter.getChunkBuffer().writeBytes(ResizingBuffer.INT_SIZE, signalValue.getValueData());
-				topWordWriter.commitChunk();
+			if (variables.containsKey(TOP_SIGNAL_VAR.getVariableId())) {
+				CollectiveVariable topSignalVar = variables.get(TOP_SIGNAL_VAR.getVariableId());
+				ChunkWriter topWordWriter = new ChunkWriter(updateData);
+				for (CandidateValue signalValue : topSignalVar) {
+					topWordWriter.getChunkBuffer().writeInt(0, signalValue.getScore());
+					topWordWriter.getChunkBuffer().writeBytes(ResizingBuffer.INT_SIZE, signalValue.getValueData());
+					topWordWriter.commitChunk();
+				}
+				topWordWriter.finish();
 			}
-			topWordWriter.finish();
 		}
 		
 	}

@@ -24,6 +24,7 @@ import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -405,5 +406,41 @@ public class Util {
 	
 	public static String arrayRangeToString(float[] a, int offset, int length) {
 		return Arrays.toString(Arrays.copyOfRange(a, offset, offset + length));
+	}
+	
+	public static Path createUniqueFile(Path requestedPath) throws IOException {
+		if (!requestedPath.isAbsolute() || Files.isDirectory(requestedPath)) 
+			throw new IllegalArgumentException("The path must resolve to a file");
+		
+		String fileName = requestedPath.getFileName().toString();
+		String fileNameBase;
+		String suffix;
+		int extDelimIndex = fileName.lastIndexOf('.');
+		if (extDelimIndex != -1) {
+			suffix = fileName.substring(extDelimIndex + 1);
+			fileNameBase = fileName.substring(0, extDelimIndex);
+		} else {
+			fileNameBase = fileName;
+			suffix = "";
+		}
+		Path basePath = requestedPath.getParent();
+		
+		Path finalPath = null;
+		int appendixNum = 0;
+		do {
+			try {
+				Path attemptPath;
+				if (appendixNum > 0) {
+					attemptPath = basePath.resolve(fileNameBase + Integer.toString(appendixNum) + "." + suffix);
+				} else {
+					attemptPath = basePath.resolve(fileNameBase + "." + suffix);	
+				}
+				finalPath = Files.createFile(attemptPath);
+			} catch (FileAlreadyExistsException eAlreadyExists) {
+				appendixNum++;
+			}
+		} while (finalPath == null);
+		
+		return finalPath;
 	}
 }

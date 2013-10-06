@@ -53,6 +53,7 @@ public class GuardianServiceHost {
 		
 		private void captureError(String message, Throwable ex) {
 			System.err.println(message + ex != null? ": " + Util.stackTraceToString(ex) : "");
+			System.err.flush();
 		}
 		
 	}

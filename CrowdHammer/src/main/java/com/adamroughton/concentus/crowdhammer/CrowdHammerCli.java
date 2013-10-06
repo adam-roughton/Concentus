@@ -25,7 +25,9 @@ import com.adamroughton.concentus.cluster.coordinator.CoordinatorClusterHandle;
 import com.adamroughton.concentus.crowdhammer.CrowdHammer.CrowdHammerEvent;
 import com.adamroughton.concentus.crowdhammer.CrowdHammer.CrowdHammerEvent.EventType;
 import com.adamroughton.concentus.crowdhammer.CrowdHammer.CrowdHammerListener;
+import com.adamroughton.concentus.crowdhammer.TestTask.TestTaskEvent;
 import com.adamroughton.concentus.data.ResizingBuffer;
+import com.adamroughton.concentus.util.FileLogger;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.minlog.Log;
 
@@ -57,6 +59,12 @@ public class CrowdHammerCli<TBuffer extends ResizingBuffer> {
 			resDirPath = Paths.get(System.getProperty("user.dir"));
 		}
 		
+		try {			
+			Log.setLogger(new FileLogger(resDirPath.resolve("CrowdHammer.log")));
+		} catch (IOException eIO) {
+			Log.info("Unable to log to file! Using default stdout logger.", eIO);
+		}
+		
 		Pair<ClusterHandleSettings, ConcentusHandle> coreComponents = 
 				ConcentusExecutableOperations.createCoreComponents("CrowdHammer", args);
 		
@@ -85,7 +93,18 @@ public class CrowdHammerCli<TBuffer extends ResizingBuffer> {
 		public void onCrowdHammerEvent(CrowdHammer crowdHammer,
 				CrowdHammerEvent event) {
 			if (event.getEventType() == EventType.TEST_EVENT) {
-				System.out.println(event.getTestState() + (event.hadException()? " " + Util.stackTraceToString(event.getException()) : ""));
+				TestTaskEvent testTaskEvent = event.getTestTaskEvent();
+				String outputString;
+				if (testTaskEvent.getEventType() == TestTaskEvent.EventType.STATE_CHANGE) {
+					outputString = "Test '" + testTaskEvent.getTestRunInfo() + "' changed to state " + testTaskEvent.getState() + 
+							(testTaskEvent.hadException()? " with exception: " + Util.stackTraceToString(testTaskEvent.getException()) : "");
+				} else if (testTaskEvent.getEventType() == TestTaskEvent.EventType.PROGRESS_MESSAGE) {
+					outputString = testTaskEvent.getTestRunInfo() + ": " + testTaskEvent.getProgressMessage();
+				} else {
+					outputString = "Unknown test task event: " + testTaskEvent.toString();
+				}
+				Log.info(outputString);
+				System.out.println(outputString);
 			}
 		}
 	};
@@ -143,6 +162,10 @@ public class CrowdHammerCli<TBuffer extends ResizingBuffer> {
 		if (currentTask != null) {
 			System.out.println("Stopping existing run");
 			currentTask.cancel(true);
+		}
+		try {
+			_crowdHammer.stopRun();
+		} catch (InterruptedException e) {
 		}
 	}
 	

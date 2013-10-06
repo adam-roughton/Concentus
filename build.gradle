@@ -148,6 +148,7 @@ project(':Core') {
 	
 	configurations {
 		compile.exclude group:'org.slf4j', module:'slf4j-log4j12' // remove sl4j binding
+		compile.exclude group:'log4j', module:'log4j', version:'1.2.15'
 	}
 	
 	dependencies {
@@ -156,16 +157,24 @@ project(':Core') {
 		compile 'org.zeromq:jzmq:2.2.2'
 		compile 'com.esotericsoftware.kryo:kryo:2.20'
 		compile 'com.esotericsoftware.minlog:minlog:1.2'
-		compile 'com.netflix.curator:curator-recipes:1.3.2' // pulls in zookeeper as well
-		compile 'com.netflix.curator:curator-test:1.3.2'
+		
+		// pulls in zookeeper as well
+		compile ('com.netflix.curator:curator-recipes:1.3.2') {
+			exclude group:'org.jboss.netty', module:'netty'	
+		} 
+		compile ('com.netflix.curator:curator-test:1.3.2') {
+			exclude group:'org.jboss.netty', module:'netty'	
+		} 
+		
+		compile files(getLocalLib('asg.cliche-020310.jar')) // simple interactive shell
+		
 		compile 'commons-cli:commons-cli:1.2'
 		compile 'commons-io:commons-io:2.4'
 		compile 'it.unimi.dsi:fastutil:6.5.1'
 		compile 'org.yaml:snakeyaml:1.11'
 		compile 'org.javatuples:javatuples:1.2'
-		compile files(getLocalLib('asg.cliche-020310.jar')) // simple interactive shell
 		
-		runtime 'org.slf4j:slf4j-log4j12:1.7.5'
+		//runtime 'org.slf4j:slf4j-log4j12:1.7.5'
 	}
 	
 	task runTestZooKeeper(dependsOn: makeWorkingDir, type: JavaExec) {
@@ -213,6 +222,17 @@ project(':SparkStreamingDriver') {
 		compile project(':Service')
 		compile ('org.spark-project:spark-streaming_2.9.3:0.7.3') {
 			exclude module:'zeromq-scala-binding_2.9.1' // clashes with jzmq
+			
+			/*
+			 * clashes when spark deploys to workers 
+			 * (this is already on the spark classpath anyway)
+			 */
+			exclude group:'org.jboss.netty', module:'netty'
+			
+			/*
+			 * causes issues with ZooKeeper and curator 
+			 */
+			exclude group:'com.github.sgroschupf', module:'zkclient'
 		}
 		testCompile project(path: ':Core', configuration: 'tests')
 	}

@@ -2,8 +2,6 @@ package com.adamroughton.concentus.application;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
-import cern.colt.Arrays;
-
 import com.adamroughton.concentus.InstanceFactory;
 import com.adamroughton.concentus.crowdhammer.ClientAgent;
 import com.adamroughton.concentus.data.BytesUtil;

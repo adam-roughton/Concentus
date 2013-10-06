@@ -1,42 +1,48 @@
 package com.adamroughton.concentus.service.spark
 
-import spark.streaming.StreamingContext
-import spark.streaming.Milliseconds
-import spark.RDD
-import spark.{KryoRegistrator => SparkKyroRegistrator}
-import spark.streaming.StreamingContext._
-import com.adamroughton.concentus.data.ResizingBuffer
-import com.adamroughton.concentus.util.Util
-import com.adamroughton.concentus.model.CollectiveApplication
-import com.adamroughton.concentus.data.model.kryo.CollectiveVariable
-import com.esotericsoftware.minlog.Log
-import com.esotericsoftware.kryo.Kryo
-import com.adamroughton.concentus.canonicalstate.CanonicalStateProcessor
-import com.adamroughton.concentus.config.ConfigurationUtil
-import com.adamroughton.concentus.canonicalstate.TickTimer.TickStrategy
-import com.lmax.disruptor.YieldingWaitStrategy
-import com.adamroughton.concentus.messaging.OutgoingEventHeader
-import com.adamroughton.concentus.messaging.patterns.SendQueue
-import com.adamroughton.concentus.metric.{MetricContext, MetricGroup}
-import com.adamroughton.concentus.{ConcentusHandle, Constants, ComponentResolver}
-import com.adamroughton.concentus.cluster.ClusterHandleSettings
-import com.adamroughton.concentus.data.cluster.kryo.{ServiceState, ServiceInfo}
-import com.adamroughton.concentus.cluster.worker.{ConcentusServiceBase, StateData, ClusterHandle, 
-  ServiceContext, ClusterService, ServiceDeploymentBase}
-import it.unimi.dsi.fastutil.ints.{Int2ObjectArrayMap, Int2ObjectOpenHashMap}
 import java.util.concurrent.Executors
-import com.adamroughton.concentus.pipeline.ProcessingPipeline
-import com.adamroughton.concentus.pipeline.PipelineProcess
-import com.adamroughton.concentus.messaging.zmq.SocketSettings
-import org.zeromq.ZMQ
-import com.adamroughton.concentus.messaging.MessagingUtil
-import com.adamroughton.concentus.messaging.Publisher
 import java.util.concurrent.TimeUnit
+
+import scala.Array.canBuildFrom
+
+import org.zeromq.ZMQ
+
+import com.adamroughton.concentus.ComponentResolver
+import com.adamroughton.concentus.ConcentusHandle
+import com.adamroughton.concentus.Constants
 import com.adamroughton.concentus.CoreServices
-import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint
 import com.adamroughton.concentus.actioncollector.ActionCollectorService
-import java.net.URLDecoder
-import scala.collection.JavaConversions
+import com.adamroughton.concentus.canonicalstate.CanonicalStateProcessor
+import com.adamroughton.concentus.cluster.worker.ClusterHandle
+import com.adamroughton.concentus.cluster.worker.ClusterService
+import com.adamroughton.concentus.cluster.worker.ConcentusServiceBase
+import com.adamroughton.concentus.cluster.worker.ServiceContext
+import com.adamroughton.concentus.cluster.worker.ServiceDeploymentBase
+import com.adamroughton.concentus.cluster.worker.StateData
+import com.adamroughton.concentus.data.ResizingBuffer
+import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint
+import com.adamroughton.concentus.data.cluster.kryo.ServiceInfo
+import com.adamroughton.concentus.data.cluster.kryo.ServiceState
+import com.adamroughton.concentus.data.model.kryo.CollectiveVariable
+import com.adamroughton.concentus.messaging.MessagingUtil
+import com.adamroughton.concentus.messaging.OutgoingEventHeader
+import com.adamroughton.concentus.messaging.Publisher
+import com.adamroughton.concentus.messaging.patterns.SendQueue
+import com.adamroughton.concentus.messaging.zmq.SocketSettings
+import com.adamroughton.concentus.metric.MetricContext
+import com.adamroughton.concentus.metric.MetricGroup
+import com.adamroughton.concentus.model.CollectiveApplication
+import com.adamroughton.concentus.pipeline.ProcessingPipeline
+import com.adamroughton.concentus.util.Util
+import com.esotericsoftware.kryo.Kryo
+import com.esotericsoftware.minlog.Log
+import com.lmax.disruptor.YieldingWaitStrategy
+
+import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
+import spark.{KryoRegistrator => SparkKyroRegistrator}
+import spark.streaming.Milliseconds
+import spark.streaming.StreamingContext
+import spark.streaming.StreamingContext.toPairDStreamFunctions
 
 class SparkStreamingDriver[TBuffer <: ResizingBuffer](
         sparkHome: String,
@@ -55,6 +61,7 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
   
   	System.setProperty("spark.serializer", "spark.KryoSerializer")
     System.setProperty("spark.kryo.registrator", "com.adamroughton.concentus.service.spark.KryoRegistrator")
+    System.setProperty("spark.akka.logLifecycleEvents", "true")
   
     val executor = Executors.newCachedThreadPool()
     val socketManager = resolver.newSocketManager(concentusHandle.getClock())
@@ -103,9 +110,10 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
     	val topNMap = ssc.sparkContext.broadcast(
     	    application.variableDefinitions map { v => (v.getVariableId, v.getTopNCount) } toMap)
     	
-		val streams = for (id <- 1 to receiverCount) yield {
+    	Log.info("Starting streams with receiver count " + receiverCount)
+		val streams = for (i <- 1 to receiverCount) yield {
 			val stream = new CandidateValueDStream(ssc, actionCollectorPort, actionCollectorRecvBufferLength, 
-			    actionCollectorSendBufferLength, id, zooKeeperAddress, zooKeeperAppRoot, resolver)
+			    actionCollectorSendBufferLength, zooKeeperAddress, zooKeeperAppRoot, resolver)
 			ssc.registerInputStream(stream)
 
 			stream.map(v => (v.groupKey, v))

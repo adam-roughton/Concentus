@@ -16,6 +16,8 @@ import com.adamroughton.concentus.data.cluster.kryo.ServiceEndpoint
 import java.nio.file.Path
 import com.esotericsoftware.minlog.Log
 import java.nio.file.Paths
+import scala.collection.mutable.ListBuffer
+import scala.collection.JavaConversions._
 
 class SparkWorkerService(sparkHome: String, workerPort: Int, workerWebUIPort: Int, serviceContext: ServiceContext[ServiceState], concentusHandle: ConcentusHandle) 
 		extends ExternalProcessServiceBase(serviceContext, concentusHandle) {
@@ -27,12 +29,19 @@ class SparkWorkerService(sparkHome: String, workerPort: Int, workerWebUIPort: In
      } else {
        masterEndpoints.get(0)
      }     
-     val sparkWorkerCommand = Paths.get(sparkHome).resolve("run").toString
+     val sparkRunCmd = Paths.get(sparkHome).resolve("run").toString
      Log.info("Starting spark worker")
-     startProcess(sparkWorkerCommand, "spark.deploy.worker.Worker", "-p", workerPort.toString, 
-         "--webui-port", workerWebUIPort.toString, "spark://" + masterEndpoint.ipAddress + ":" + masterEndpoint.port)
+     
+     val workerArgs = "spark.deploy.worker.Worker" :: 
+    	 (workerPort != 0, "-p" :: workerPort.toString :: Nil) ::: 
+       	 (workerWebUIPort != 0, "--webui-port" :: workerWebUIPort.toString :: Nil) ::: 
+    	 ("spark://" + masterEndpoint.ipAddress + ":" + masterEndpoint.port) :: 
+    	 ArgList(Nil)
+       
+     startProcess(sparkRunCmd, workerArgs.toList)
+     
      Log.info("Started spark worker");
-  }
+  } 
   
 }
 

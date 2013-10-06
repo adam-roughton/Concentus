@@ -88,7 +88,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 	
 	@Test
 	public void registration() throws Throwable {
-		Triplet<String, ServiceContainer<ServiceState>, ClusterServiceCollector<ServiceState>> 
+		Triplet<String, ServiceContainerImpl<ServiceState>, ClusterServiceCollector<ServiceState>> 
 				containerTuple = newContainerWithCollector(CLUSTER_ID, "Test", null);
 		String serviceRootPath = containerTuple.getValue0();
 		
@@ -109,7 +109,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 	
 	@Test
 	public void changeStateNoData() throws Throwable {
-		Triplet<String, ServiceContainer<ServiceState>, ClusterServiceCollector<ServiceState>> 
+		Triplet<String, ServiceContainerImpl<ServiceState>, ClusterServiceCollector<ServiceState>> 
 			containerTuple = newContainerWithCollector(CLUSTER_ID, "Test", null);
 		String serviceRootPath = containerTuple.getValue0();
 		ClusterServiceCollector<ServiceState> collector = containerTuple.getValue2();
@@ -125,7 +125,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 	
 	@Test
 	public void changeStateSignalData() throws Throwable {
-		Triplet<String, ServiceContainer<ServiceState>, ClusterServiceCollector<ServiceState>> 
+		Triplet<String, ServiceContainerImpl<ServiceState>, ClusterServiceCollector<ServiceState>> 
 			containerTuple = newContainerWithCollector(CLUSTER_ID, "Test", null);
 		String serviceRootPath = containerTuple.getValue0();
 		ClusterServiceCollector<ServiceState> collector = containerTuple.getValue2();
@@ -145,7 +145,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 	public void changeStateFromInternalEvent() throws Throwable {
 		ClusterServiceCollector<ServiceState> clusterService = new ClusterServiceCollector<>();
 		
-		Quartet<String, ServiceContainer<ServiceState>, ClusterServiceCollector<ServiceState>, AtomicReference<ServiceContext<ServiceState>>> 
+		Quartet<String, ServiceContainerImpl<ServiceState>, ClusterServiceCollector<ServiceState>, AtomicReference<ServiceContext<ServiceState>>> 
 			containerTuple = newContainer(CLUSTER_ID, clusterService, ServiceState.class, "test", null);
 		String serviceRootPath = containerTuple.getValue0();
 		ClusterServiceCollector<ServiceState> collector = containerTuple.getValue2();
@@ -184,7 +184,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 			
 		};
 		
-		Quartet<String, ServiceContainer<ServiceState>, ClusterServiceCollector<ServiceState>, AtomicReference<ServiceContext<ServiceState>>> 
+		Quartet<String, ServiceContainerImpl<ServiceState>, ClusterServiceCollector<ServiceState>, AtomicReference<ServiceContext<ServiceState>>> 
 			containerTuple = newContainer(CLUSTER_ID, clusterService, ServiceState.class, "test", null);
 		String serviceRootPath = containerTuple.getValue0();
 		ClusterServiceCollector<ServiceState> collector = containerTuple.getValue2();
@@ -233,7 +233,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 			
 		};
 		
-		Quartet<String, ServiceContainer<ServiceState>, ClusterService<ServiceState>, AtomicReference<ServiceContext<ServiceState>>> 
+		Quartet<String, ServiceContainerImpl<ServiceState>, ClusterService<ServiceState>, AtomicReference<ServiceContext<ServiceState>>> 
 			containerTuple = newContainer(CLUSTER_ID, service, ServiceState.class, "Test", null);
 		String serviceRootPath = containerTuple.getValue0();
 		
@@ -253,7 +253,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 	 * 
 	 */
 	
-	private Triplet<String, ServiceContainer<ServiceState>, ClusterServiceCollector<ServiceState>> 
+	private Triplet<String, ServiceContainerImpl<ServiceState>, ClusterServiceCollector<ServiceState>> 
 				newContainerWithCollector(UUID clusterId, String type, Object preStartData) 
 			throws Throwable {
 		ClusterServiceCollector<ServiceState> collector = new ClusterServiceCollector<>();
@@ -261,7 +261,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 	}
 	
 	private <TState extends Enum<TState> & ClusterState, TService extends ClusterService<TState>> 
-		Quartet<String, ServiceContainer<TState>, TService, AtomicReference<ServiceContext<TState>>> 
+		Quartet<String, ServiceContainerImpl<TState>, TService, AtomicReference<ServiceContext<TState>>> 
 			newContainer(UUID clusterId, final TService service, final Class<TState> stateType, final String serviceType, 
 					final Object preStartData) throws Throwable {
 		ConcentusHandle concentusHandle = new ConcentusHandle(new DrivableClock(), InetAddress.getLocalHost(), 
@@ -299,7 +299,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 			
 		};
 		
-		ServiceContainer<TState> container = new ServiceContainer<>(clusterHandleSettings, concentusHandle, deployment, new TestComponentResolver());
+		ServiceContainerImpl<TState> container = new ServiceContainerImpl<>(clusterHandleSettings, concentusHandle, deployment, new TestComponentResolver());
 		container.start();
 		_exCallback.throwAnyExceptions();
 		

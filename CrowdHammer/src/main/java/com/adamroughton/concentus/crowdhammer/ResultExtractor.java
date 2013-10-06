@@ -1,9 +1,7 @@
 package com.adamroughton.concentus.crowdhammer;
 
 import java.io.BufferedWriter;
-import java.io.IOException;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.FileAlreadyExistsException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
@@ -24,6 +22,8 @@ import java.util.concurrent.TimeUnit;
 
 import com.adamroughton.concentus.util.RunningStats;
 import com.esotericsoftware.minlog.Log;
+
+import static com.adamroughton.concentus.util.Util.createUniqueFile;
 
 public class ResultExtractor {
 	
@@ -111,15 +111,24 @@ public class ResultExtractor {
 						collectMetric(countMetricStatement, test, run, "connectedClientCount", new AggregateDelegate() {
 								
 								int partialCount = 0;
+								boolean hasPartial = false;
 								
 								@Override
 								public void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException {
-									if (isNewBucketId) {
+									if (isNewBucketId && hasPartial) {
 										testRunResultSet.connectedClientCount.push(partialCount);
 										partialCount = 0;
+										hasPartial = false;
 									}
 									int connectedClientCount = resultSet.getInt("count");
 									partialCount += connectedClientCount;
+									hasPartial = true;
+								}
+
+								@Override
+								public void dropCurrentBucket() {
+									partialCount = 0;
+									hasPartial = false;
 								}
 							});
 						
@@ -131,7 +140,7 @@ public class ResultExtractor {
 							
 							@Override
 							public void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException {
-								if (isNewBucketId) {
+								if (isNewBucketId && bucketDuration != -1) {
 									// work out throughput
 									double throughput = (double) partialCount / bucketDuration * TimeUnit.SECONDS.toMillis(1);
 									testRunResultSet.sentActionThroughput.push(throughput);
@@ -145,29 +154,61 @@ public class ResultExtractor {
 								int sentActionCount = resultSet.getInt("count");
 								partialCount += sentActionCount;
 							}
+
+							@Override
+							public void dropCurrentBucket() {
+								partialCount = 0;
+								bucketDuration = -1;
+							}
 						});
 						
 						// get the action to canonical state latency
 						collectMetric(statsMetricStatement, test, run, "actionToCanonicalStateLatency", new AggregateDelegate() {
 								
-								@Override
-								public void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException {
-									int count = resultSet.getInt("count");
-									double mean = resultSet.getDouble("mean");
-									double sumSqrs = resultSet.getDouble("sumSqrs");
-									double min = resultSet.getDouble("min");
-									double max = resultSet.getDouble("max");
-									testRunResultSet.actionToCanonicalStateLatency.merge(count, mean, sumSqrs, min, max);
+							private RunningStats partial = new RunningStats();
+							
+							@Override
+							public void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException {
+								if (isNewBucketId && partial.getCount() > 0) {
+									testRunResultSet.actionToCanonicalStateLatency.merge(partial);
+									partial.reset();
 								}
-							});
+								int count = resultSet.getInt("count");
+								double mean = resultSet.getDouble("mean");
+								double sumSqrs = resultSet.getDouble("sumSqrs");
+								double min = resultSet.getDouble("min");
+								double max = resultSet.getDouble("max");
+								partial.merge(count, mean, sumSqrs, min, max);
+							}
+
+							@Override
+							public void dropCurrentBucket() {
+								partial.reset();
+							}
+								
+						});
 						
 						// get the lateActionToCanonicalStateLatency
 						collectMetric(countMetricStatement, test, run, "lateActionToCanonicalStateCount", new AggregateDelegate() {
 							
+							private int partialCount = -1;
+							
 							@Override
 							public void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException {
+								if (isNewBucketId && partialCount > -1) {
+									testRunResultSet.lateActionToCanonicalStateLatency += partialCount;
+									partialCount = -1;
+								}
 								int lateCount = resultSet.getInt("count");
-								testRunResultSet.lateActionToCanonicalStateLatency += lateCount;
+								if (partialCount == -1) {
+									partialCount = 0;
+								}
+								partialCount += lateCount;
+							}
+
+							@Override
+							public void dropCurrentBucket() {
+								partialCount = -1;
 							}
 						});
 						
@@ -185,6 +226,7 @@ public class ResultExtractor {
 	
 	private static interface AggregateDelegate {
 		void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException;
+		void dropCurrentBucket();
 	}
 	
 	private static void collectMetric(PreparedStatement statement, TestInfo test, 
@@ -217,6 +259,7 @@ public class ResultExtractor {
 				if (recordCountForBucket != test.workerCount) {
 					Log.warn("Expected " + test.workerCount + " buckets, but only got " 
 							+ recordCountForBucket + " for bucketId " + currentBucketId);
+					aggregateDelegate.dropCurrentBucket();
 				}
 				if (bucketId != currentBucketId + 1) {
 					Log.warn("Missing bucket! Expected " + (currentBucketId + 1) + ", but got " + bucketId);
@@ -238,42 +281,6 @@ public class ResultExtractor {
 	private static void printUsage(String message) {
 		System.out.println((message != null && message.length() != 0? message + "\n":"") + "Usage:\nResultExtractor <sqlite file path> <output csv file>");
 		System.exit(1);
-	}
-	
-	private static Path createUniqueFile(Path requestedPath) throws IOException {
-		if (!requestedPath.isAbsolute() || Files.isDirectory(requestedPath)) 
-			throw new IllegalArgumentException("The path must resolve to a file");
-		
-		String fileName = requestedPath.getFileName().toString();
-		String fileNameBase;
-		String suffix;
-		int extDelimIndex = fileName.lastIndexOf('.');
-		if (extDelimIndex != -1) {
-			suffix = fileName.substring(extDelimIndex + 1);
-			fileNameBase = fileName.substring(0, extDelimIndex);
-		} else {
-			fileNameBase = fileName;
-			suffix = "";
-		}
-		Path basePath = requestedPath.getParent();
-		
-		Path finalPath = null;
-		int appendixNum = 0;
-		do {
-			try {
-				Path attemptPath;
-				if (appendixNum > 0) {
-					attemptPath = basePath.resolve(fileNameBase + Integer.toString(appendixNum) + "." + suffix);
-				} else {
-					attemptPath = basePath.resolve(fileNameBase + "." + suffix);	
-				}
-				finalPath = Files.createFile(attemptPath);
-			} catch (FileAlreadyExistsException eAlreadyExists) {
-				appendixNum++;
-			}
-		} while (finalPath == null);
-		
-		return finalPath;
 	}
 	
 	private static class TestInfo implements Iterable<TestRunInfo> {

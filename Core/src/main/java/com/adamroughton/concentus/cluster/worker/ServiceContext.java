@@ -4,6 +4,8 @@ import com.adamroughton.concentus.data.cluster.kryo.ClusterState;
 
 public interface ServiceContext<TState extends Enum<TState> & ClusterState> {
 
+	void enterState(TState newState, Object stateData);
+	
 	void enterState(TState newState, Object stateData, TState expectedCurrentState);
 	
 	void enterState(TState newState, Object stateData, int expectedStateChangeIndex);
