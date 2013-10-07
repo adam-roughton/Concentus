@@ -48,7 +48,7 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		actionCollectorPort: Int,
 		actionCollectorRecvBufferLength: Int,
 		actionCollectorSendBufferLength: Int,
-		canonicalStateUpdatePort: Int,
+		requestedCanonicalStateUpdatePort: Int,
         sendQueueSize: Int,
         serviceId: Int,
 		concentusHandle: ConcentusHandle, 
@@ -125,9 +125,9 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 			}
 			.reduceByKey((v1, v2) => v1.union(v2))
 			.foreach((rdd, time) => {
-			  val collectiveVarMap = new Int2ObjectOpenHashMap[CollectiveVariable](rdd.count.asInstanceOf[Int])
-			  rdd.foreach(idVarPair => collectiveVarMap.put(idVarPair._1, idVarPair._2))
-			  canonicalStateProcessor.onTickCompleted(time.milliseconds, collectiveVarMap)
+				val collectiveVarMap = new Int2ObjectOpenHashMap[CollectiveVariable](rdd.count.asInstanceOf[Int])
+				rdd.foreach(idVarPair => collectiveVarMap.put(idVarPair._1, idVarPair._2))
+				canonicalStateProcessor.onTickCompleted(time.milliseconds, collectiveVarMap)
 			})
 		Log.info("Starting spark context")
 		ssc.start
@@ -136,8 +136,10 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		// set up canonical state pub socket
 		
 		val pubSocketSettings = SocketSettings.create()
-			.bindToPort(canonicalStateUpdatePort);
+			.bindToPort(requestedCanonicalStateUpdatePort);
 		val pubSocketId = socketManager.create(ZMQ.PUB, pubSocketSettings, "pubSocket")
+		val canonicalStateUpdatePort = socketManager.getBoundPort(pubSocketId)
+		
 		val pubSocketMessenger = socketManager.getSocketMutex(pubSocketId)
 		val statePublisher = MessagingUtil.asSocketOwner("canonicalStatePublisher", pubEventQueue, new Publisher(pubHeader), pubSocketMessenger)
 		
@@ -151,7 +153,9 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		      }
 		    } catch {
 		      case eInterrupted: InterruptedException => {
+		         Log.info("Stopping Spark Streaming Context...")
 		         ssc.stop
+		         Log.info("Spark Streaming Context Stopped")
 		      }
 		    }
 		  } 

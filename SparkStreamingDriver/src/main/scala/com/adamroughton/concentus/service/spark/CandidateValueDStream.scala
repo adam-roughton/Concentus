@@ -55,12 +55,13 @@ import spark.Logging
 import com.adamroughton.concentus.cluster.worker.ServiceContainerImpl
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicReference
+import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap
 
 private case object DoInit
 private case class ActionCollectorReady(actionCollector: TickDriven)
 private case class RegisterTickReceiver(streamId: Int, receiverActor: ActorRef, objId: String)
 private case class Tick(time: Long)
-private case object TickAck
+private case class TickAck(time: Long)
 private case class Initialize(lastTick: Long, tickDuration: Long)
 
 class CandidateValueDStream(@transient ssc_ : StreamingContext,
@@ -73,7 +74,7 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
 		extends NetworkInputDStream[CandidateValue](ssc_) {
   
 	private var lastTickTime = 0l
-	implicit val timeout = Timeout(1 minute)
+	implicit val timeout = Timeout(5 minutes)
 	val env = SparkEnv.get
 	
 	def getReceiver() = {
@@ -101,8 +102,10 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
     override def compute(validTime: Time): Option[RDD[CandidateValue]] = {
 		val tickTime = validTime.milliseconds
 		if (tickTime > lastTickTime) {
+			logInfo("Starting tick " + tickTime)
 			val future = tickManager ? Tick(tickTime)
 			Await.result(future, timeout.duration)
+			logInfo("Finishing tick " + tickTime)
 			lastTickTime = tickTime
 		}
 		super.compute(validTime)
@@ -111,13 +114,17 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
 	private class TickManagerActor(zeroTime: Long, tickDuration: Duration) extends Actor {
 		
 		private var receiverActor: Option[ActorRef] = None
-		private var pendingRes: Option[ActorRef] = None
 		private var lastTick: Long = zeroTime
+		private val tickToCallerRefLookup = new Long2ObjectOpenHashMap[ActorRef]
 		
 		private val addressFunc = (ref: ActorRef) => ref.path.elements.reduce((s1, s2) => s1 + "/" + s2)
 		
-		override def preStart() = {
+		override def preStart = {
 		   logInfo("TickManagerActor registering at: " + addressFunc(self.actorRef))
+		}
+		
+		override def postStop = {
+		   tickToCallerRefLookup.values().foreach(callerRef => callerRef ! true)
 		}
 		
 		def receive = {
@@ -125,26 +132,23 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
 			    logInfo("RegisterTickReceiver! StreamID=" + streamId + ", receiverActor=" + receiverActor + ", sender=" + sender)
 				this.receiverActor = Some(receiverActor)
 				sender ! Initialize(lastTick, tickDuration.milliseconds)
-				logInfo("Sent Initialize message to " + sender)
-			}
-			case TickAck => {
-				pendingRes match {
-				  case Some(res) => {
-				    res ! true
-				    pendingRes = None
-				  }
-				  case None =>
-				}
 			}
 			case Tick(time: Long) => {
 				receiverActor match {
 				  case Some(receiver) => {
-				    pendingRes = Some(sender)
+				    tickToCallerRefLookup.put(time, sender)
 				    receiver ! Tick(time)
 				  }
 				  case None => sender ! true
 				}
 				lastTick = time
+			}
+			case TickAck(time: Long) => {
+				logInfo("Got tick ACK for tick " + time)
+				if (tickToCallerRefLookup.containsKey(time)) {
+				   logInfo("Had waiting caller")
+				   tickToCallerRefLookup.get(time) ! true
+				}
 			}
 		}
 	}
@@ -226,6 +230,7 @@ class ActionReceiver(
 	}
 	
 	def onTick(time: Long, candidateValuesIterator: java.util.Iterator[CandidateValue]) = {
+		logInfo("Pushing block for tick " + time)
 		val candidateValues = new ArrayBuffer[CandidateValue]
 		candidateValuesIterator.copyToBuffer(candidateValues)
 		
@@ -271,22 +276,39 @@ class ActionReceiver(
 			}
 			case Initialize(lastTick: Long, tickDuration: Long) => initialize(lastTick, tickDuration)
 			case ActionCollectorReady(actionCollector: TickDriven) => {
+			    logInfo("Action collector ready")
 				this.actionCollector = Some(actionCollector)
 				context.become(connected, true)
 			}
-			case Tick(time: Long) => sender ! TickAck
-			case TickProcessingDone(time: Long) => if (time >= lastTick) tickManager ! TickAck
+			case Tick(time: Long) => {
+			  logInfo("Received tick " + time + ", but the action collector is not yet ready. Returning ACK")
+			  sender ! TickAck(time)
+			}
+			case TickProcessingDone(time: Long) => {
+			  logInfo("Tick processing done for " + time)
+			  tickManager ! TickAck(time)
+			}
 		}
 		
 		private def connected: Receive = {
 		  	case Tick(time: Long) => {
+		  	    logInfo("Received tick " + time)
 			    actionCollector match {
-			       case Some(collector) => collector.tick(time)
-			       case None => sender ! TickAck
+			       case Some(collector) => {
+			         logInfo("Forwarding tick " + time + " to collector")
+			         collector.tick(time)
+			       }
+			       case None => {
+			         logInfo("No collector, so responding with ACK for tick " + time)
+			         sender ! TickAck(time)
+			       }
 			    }
 			    lastTick = time
 			}
-			case TickProcessingDone(time: Long) => if (time >= lastTick) tickManager ! TickAck
+			case TickProcessingDone(time: Long) => {
+			  logInfo("Tick processing done for tick " + time)
+			  tickManager ! TickAck(time)
+			}
 			case _ =>
 		}
 		
@@ -346,7 +368,10 @@ private object ServiceContainerFactory extends Logging {
 		        "com.adamroughton.concentus.cluster.worker.ServiceContainer" ::
 				"com.adamroughton.concentus.actioncollector.TickDelegate" ::
 				"com.adamroughton.concentus.actioncollector.TickDriven" ::
-				"com.adamroughton.concentus.data.model.kryo.CandidateValue" :: Nil).toArray
+				"com.adamroughton.concentus.data.ResizingBuffer" ::
+				"com.adamroughton.concentus.data.model.kryo.CandidateValue" :: 
+				"com.adamroughton.concentus.data.model.kryo.CandidateValueStrategy" ::
+				"com.adamroughton.concentus.data.model.kryo.CandidateValueGroupKey" :: Nil).toArray
 		
 		/*
 		 * Don't capture the scala-library as we want to share 

@@ -23,6 +23,8 @@ import com.esotericsoftware.minlog.Log;
 
 public class CrowdAloud implements ApplicationVariant {
 	
+	private static final boolean PRINT_UPDATES = true;
+	
 	public enum Mode {
 		TEXT,
 		SYMBOL
@@ -179,7 +181,9 @@ public class CrowdAloud implements ApplicationVariant {
 		@Override
 		public void createUpdate(ResizingBuffer updateData, long time,
 				Int2ObjectMap<CollectiveVariable> variables) {
+			Log.info("CrowdAloud!: Creating update!");
 			if (variables.containsKey(TOP_SIGNAL_VAR.getVariableId())) {
+				Log.info("CrowdAloud!: Got variable");
 				CollectiveVariable topSignalVar = variables.get(TOP_SIGNAL_VAR.getVariableId());
 				ChunkWriter topWordWriter = new ChunkWriter(updateData);
 				for (CandidateValue signalValue : topSignalVar) {
@@ -239,29 +243,30 @@ public class CrowdAloud implements ApplicationVariant {
 
 		@Override
 		public void onUpdate(CanonicalStateUpdate update) {
-//			if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
-//				ChunkReader updateChunkReader = new ChunkReader(update.getData());
-//				StringBuilder stateBuilder = new StringBuilder();
-//				stateBuilder.append("update [");
-//				boolean isFirst = true;
-//				int chunkCount = 0;
-//				for (ResizingBuffer chunkBuffer : updateChunkReader.asBuffers()) {
-//					if (isFirst) {
-//						isFirst = false;
-//					} else {
-//						stateBuilder.append(", ");
-//					}
-//					chunkCount++;
-//					int score = chunkBuffer.readInt(0);
-//					String word = chunkBuffer.readString(ResizingBuffer.INT_SIZE, StandardCharsets.UTF_16);
-//					
-//					stateBuilder.append(String.format("{'%s': %d}", word, score));
-//				}
-//				stateBuilder.append(", chunkCount=").append(chunkCount);
-//				stateBuilder.append("]");
-//				Log.info(stateBuilder.toString());
-//			}
-			
+			if (PRINT_UPDATES) {
+				if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
+					ChunkReader updateChunkReader = new ChunkReader(update.getData());
+					StringBuilder stateBuilder = new StringBuilder();
+					stateBuilder.append("update [");
+					boolean isFirst = true;
+					int chunkCount = 0;
+					for (ResizingBuffer chunkBuffer : updateChunkReader.asBuffers()) {
+						if (isFirst) {
+							isFirst = false;
+						} else {
+							stateBuilder.append(", ");
+						}
+						chunkCount++;
+						int score = chunkBuffer.readInt(0);
+						String word = chunkBuffer.readString(ResizingBuffer.INT_SIZE, StandardCharsets.UTF_16);
+						
+						stateBuilder.append(String.format("{'%s': %d}", word, score));
+					}
+					stateBuilder.append(", chunkCount=").append(chunkCount);
+					stateBuilder.append("]");
+					Log.info(stateBuilder.toString());
+				}
+			}
 		}
 		
 	}
@@ -304,29 +309,30 @@ public class CrowdAloud implements ApplicationVariant {
 
 		@Override
 		public void onUpdate(CanonicalStateUpdate update) {
-//			if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
-//				ChunkReader updateChunkReader = new ChunkReader(update.getData());
-//				StringBuilder stateBuilder = new StringBuilder();
-//				stateBuilder.append("update [");
-//				boolean isFirst = true;
-//				int chunkCount = 0;
-//				for (ResizingBuffer chunkBuffer : updateChunkReader.asBuffers()) {
-//					if (isFirst) {
-//						isFirst = false;
-//					} else {
-//						stateBuilder.append(", ");
-//					}
-//					chunkCount++;
-//					int score = chunkBuffer.readInt(0);
-//					int symbolId = chunkBuffer.readByte(ResizingBuffer.INT_SIZE);
-//					
-//					stateBuilder.append(String.format("{'%d': %d}", symbolId, score));
-//				}
-//				stateBuilder.append(", chunkCount=").append(chunkCount);
-//				stateBuilder.append("]");
-//				Log.info(stateBuilder.toString());
-//			}
-			
+			if (PRINT_UPDATES) {
+				if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
+					ChunkReader updateChunkReader = new ChunkReader(update.getData());
+					StringBuilder stateBuilder = new StringBuilder();
+					stateBuilder.append("update [");
+					boolean isFirst = true;
+					int chunkCount = 0;
+					for (ResizingBuffer chunkBuffer : updateChunkReader.asBuffers()) {
+						if (isFirst) {
+							isFirst = false;
+						} else {
+							stateBuilder.append(", ");
+						}
+						chunkCount++;
+						int score = chunkBuffer.readInt(0);
+						int symbolId = chunkBuffer.readByte(ResizingBuffer.INT_SIZE);
+						
+						stateBuilder.append(String.format("{'%d': %d}", symbolId, score));
+					}
+					stateBuilder.append(", chunkCount=").append(chunkCount);
+					stateBuilder.append("]");
+					Log.info(stateBuilder.toString());
+				}
+			}
 		}
 		
 	}
