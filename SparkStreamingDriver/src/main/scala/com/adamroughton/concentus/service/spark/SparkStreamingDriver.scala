@@ -2,11 +2,8 @@ package com.adamroughton.concentus.service.spark
 
 import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
-
 import scala.Array.canBuildFrom
-
 import org.zeromq.ZMQ
-
 import com.adamroughton.concentus.ComponentResolver
 import com.adamroughton.concentus.ConcentusHandle
 import com.adamroughton.concentus.Constants
@@ -37,12 +34,12 @@ import com.adamroughton.concentus.util.Util
 import com.esotericsoftware.kryo.Kryo
 import com.esotericsoftware.minlog.Log
 import com.lmax.disruptor.YieldingWaitStrategy
-
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap
 import spark.{KryoRegistrator => SparkKyroRegistrator}
 import spark.streaming.Milliseconds
 import spark.streaming.StreamingContext
 import spark.streaming.StreamingContext.toPairDStreamFunctions
+import com.adamroughton.concentus.ConcentusEndpoints
 
 class SparkStreamingDriver[TBuffer <: ResizingBuffer](
         sparkHome: String,
@@ -165,7 +162,7 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		
 		// register the publish endpoint
 		val address = concentusHandle.getNetworkAddress.getHostAddress
-		val pubEndpoint = new ServiceEndpoint(serviceId, CoreServices.CANONICAL_STATE.getId, address, canonicalStateUpdatePort)
+		val pubEndpoint = new ServiceEndpoint(serviceId, ConcentusEndpoints.CANONICAL_STATE_PUB.getId(), address, canonicalStateUpdatePort)
 		cluster.registerServiceEndpoint(pubEndpoint)
 	}
 	

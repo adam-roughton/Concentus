@@ -37,11 +37,11 @@ public class ParentLastURLClassLoader extends URLClassLoader {
 	@Override
 	protected Class<?> loadClass(String name, boolean resolve)
 			throws ClassNotFoundException {
-		_logger.info("Looking for class {}", name);
+		_logger.trace("Looking for class {}", name);
 		// return previously loaded classes from this class loader
 		Class<?> klass = findLoadedClass(name);		
 		if (klass == null) {
-			_logger.info("Class {} not previously loaded, looking in the system class loader", name);
+			_logger.trace("Class {} not previously loaded, looking in the system class loader", name);
 			try {
 				klass = _systemClassLoader.loadClass(name);
 			} catch (ClassNotFoundException eNotFound) {
@@ -53,12 +53,12 @@ public class ParentLastURLClassLoader extends URLClassLoader {
 					// class is on the pass-through list: delegate to the parent class loader
 					klass = super.loadClass(name, resolve);
 				} else {
-					_logger.info("Class {} not in the system class loader, looking in this class loader", name);
+					_logger.trace("Class {} not in the system class loader, looking in this class loader", name);
 					try {
 						// look in the URLs of this class loader first
 						klass = findClass(name);
 					} catch (ClassNotFoundException eNotFound) {
-						_logger.info("Class {} not found in this class loader; delegating to parent", name);
+						_logger.trace("Class {} not found in this class loader; delegating to parent", name);
 						// if not found, delegate to the parent class loader
 						klass = super.loadClass(name, resolve);
 					}
@@ -68,7 +68,7 @@ public class ParentLastURLClassLoader extends URLClassLoader {
 		if (resolve) {
 			resolveClass(klass);
 		}
-		_logger.info("Returning class {}", name);
+		_logger.trace("Returning class {}", name);
 		return klass;
 	}
 	

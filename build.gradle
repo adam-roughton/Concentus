@@ -228,11 +228,6 @@ project(':SparkStreamingDriver') {
 			 * (this is already on the spark classpath anyway)
 			 */
 			exclude group:'org.jboss.netty', module:'netty'
-			
-			/*
-			 * causes issues with ZooKeeper and curator 
-			 */
-			exclude group:'com.github.sgroschupf', module:'zkclient'
 		}
 		testCompile project(path: ':Core', configuration: 'tests')
 	}

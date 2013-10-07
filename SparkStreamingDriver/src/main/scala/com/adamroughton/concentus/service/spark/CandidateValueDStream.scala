@@ -54,8 +54,10 @@ import com.adamroughton.concentus.actioncollector.TickDriven
 import spark.Logging
 import com.adamroughton.concentus.cluster.worker.ServiceContainerImpl
 import java.io.Closeable
+import java.util.concurrent.atomic.AtomicReference
 
 private case object DoInit
+private case class ActionCollectorReady(actionCollector: TickDriven)
 private case class RegisterTickReceiver(streamId: Int, receiverActor: ActorRef, objId: String)
 private case class Tick(time: Long)
 private case object TickAck
@@ -169,30 +171,49 @@ class ActionReceiver(
 	 * that doesn't include the dependencies of the driver class (and this
 	 * receiver).
 	 */
-	lazy private val actorSystem = createActorSystem("ActionReceiver", getHost, 0)._1
-//	{
-//	   /*
-//	    * Reuse config from the provided actor system, ensuring the netty port
-//	    * is unique
-//	    */
-//	   val config = ConfigFactory.parseString("""
-//	       akka.stdout-loglevel = "%s"
-//	       akka.remote.netty.port = %d
-//	       """.format("INFO", 0))
-//			   .withFallback(env.actorSystem.settings.config)
-//	   logInfo(config.toString())
-//			   
-//	   ActorSystem("ActionReceiver", config, getClass.getClassLoader)
-//	}
+	lazy private val actorSystem = {
+	  // get the host name of this worker
+	  val host = {
+	      val provider = env.actorSystem.asInstanceOf[ActorSystemImpl].provider
+	      provider.asInstanceOf[RemoteActorRefProvider].transport.address.host.get
+	  }
+	  
+	  val port = 0
+	  
+	  /*
+	   * Taken from spark.util.AkkaUtils.createActorSystem which is unfortunately
+	   * package private. Reusing spark settings.
+	   */
+	  val akkaThreads = System.getProperty("spark.akka.threads", "4").toInt
+      val akkaBatchSize = System.getProperty("spark.akka.batchSize", "15").toInt
+      val akkaTimeout = System.getProperty("spark.akka.timeout", "60").toInt
+      val akkaFrameSize = System.getProperty("spark.akka.frameSize", "10").toInt
+      val lifecycleEvents = System.getProperty("spark.akka.logLifecycleEvents", "false").toBoolean
+	  
+	  val conf = ConfigFactory.parseString("""
+	      akka.daemonic = on
+	      akka.event-handlers = ["akka.event.slf4j.Slf4jEventHandler"]
+	      akka.stdout-loglevel = "ERROR"
+	      akka.actor.provider = "akka.remote.RemoteActorRefProvider"
+	      akka.remote.transport = "akka.remote.netty.NettyRemoteTransport"
+	      akka.remote.netty.hostname = "%s"
+	      akka.remote.netty.port = %d
+	      akka.remote.netty.connection-timeout = %ds
+	      akka.remote.netty.message-frame-size = %d MiB
+	      akka.remote.netty.execution-pool-size = %d
+	      akka.actor.default-dispatcher.throughput = %d
+	      akka.remote.log-remote-lifecycle-events = %s
+      """.format(host, port, akkaTimeout, akkaFrameSize, akkaThreads, akkaBatchSize,
+                 if (lifecycleEvents) "on" else "off"))
+	  
+	  ActorSystem("ActionReceiver", conf, getClass.getClassLoader)
+	}
 	
 	lazy private val tickActor = actorSystem.actorOf(
 	    	Props(new TickReceiverActor(zooKeeperAddress, zooKeeperAppRoot)), "ActionCollector-" + streamId)
 	    	
 	protected def onStart() {
 	    logInfo("streamId=" + streamId)
-	    
-	    logInfo("my classloader = " + getClass.getClassLoader.toString)
-	    logInfo("zookeeper classloader = " + classOf[org.apache.zookeeper.ZooKeeper].getClassLoader.toString)
 	    
 	    actorSystem
 		tickActor
@@ -248,16 +269,13 @@ class ActionReceiver(
 					self ! DoInit
 				}
 			}
-			case Initialize(lastTick: Long, tickDuration: Long) => {
-			    initialize(lastTick, tickDuration)
-			    context.become(connected, true)
+			case Initialize(lastTick: Long, tickDuration: Long) => initialize(lastTick, tickDuration)
+			case ActionCollectorReady(actionCollector: TickDriven) => {
+				this.actionCollector = Some(actionCollector)
+				context.become(connected, true)
 			}
-			case Tick(time: Long) => {
-				sender ! TickAck
-			}
-			case TickProcessingDone(time: Long) => {
-			  if (time >= lastTick) tickManager ! TickAck
-			}
+			case Tick(time: Long) => sender ! TickAck
+			case TickProcessingDone(time: Long) => if (time >= lastTick) tickManager ! TickAck
 		}
 		
 		private def connected: Receive = {
@@ -268,20 +286,28 @@ class ActionReceiver(
 			    }
 			    lastTick = time
 			}
-			case TickProcessingDone(time: Long) => {
-			    if (time >= lastTick) tickManager ! TickAck
-			}
+			case TickProcessingDone(time: Long) => if (time >= lastTick) tickManager ! TickAck
 			case _ =>
 		}
 		
 		private def initialize(lastTick: Long, tickDuration: Long) = {
 			logInfo("Initializing")
+			
+			actionCollectorContainer match {
+			  case Some(container) => {
+			    logInfo("Closing existing container")
+			    container.close()
+			  }
+			  case None =>
+			}
+			
 			this.lastTick = lastTick
 			this.tickDuration = tickDuration
-			val (service, container) = serviceContainerFactory.create(
+			val container = serviceContainerFactory.create(
 			    lastTick, 
 			    tickDuration, 
 			    ActionReceiver.this, 
+			    actionCollector => self ! ActionCollectorReady(actionCollector),
 			    e => stopOnError(e), 
 			    stop, 
 			    actionCollectorPort, 
@@ -290,62 +316,13 @@ class ActionReceiver(
 			    zooKeeperAddress, 
 			    zooKeeperAppRoot, 
 			    componentResolverBytes)
-			actionCollector = Some(service)
 			actionCollectorContainer = Some(container)
 			container.start()
 			logInfo("Started Action Collector Container")
 		}
 		
 	}
-	
-	/**
-   * Creates an ActorSystem ready for remoting, with various Spark features. Returns both the
-   * ActorSystem itself and its port (which is hard to get from Akka).
-   *
-   * Note: the `name` parameter is important, as even if a client sends a message to right
-   * host + port, if the system name is incorrect, Akka will drop the message.
-   */
-  def createActorSystem(name: String, host: String, port: Int): (ActorSystem, Int) = {
-    val akkaThreads = System.getProperty("spark.akka.threads", "4").toInt
-    val akkaBatchSize = System.getProperty("spark.akka.batchSize", "15").toInt
-    val akkaTimeout = System.getProperty("spark.akka.timeout", "60").toInt
-    val akkaFrameSize = System.getProperty("spark.akka.frameSize", "10").toInt
-    val lifecycleEvents = System.getProperty("spark.akka.logLifecycleEvents", "false").toBoolean
-    val akkaConf = ConfigFactory.parseString("""
-      akka.daemonic = on
-      akka.event-handlers = ["akka.event.slf4j.Slf4jEventHandler"]
-      akka.stdout-loglevel = "ERROR"
-      akka.actor.provider = "akka.remote.RemoteActorRefProvider"
-      akka.remote.transport = "akka.remote.netty.NettyRemoteTransport"
-      akka.remote.netty.hostname = "%s"
-      akka.remote.netty.port = %d
-      akka.remote.netty.connection-timeout = %ds
-      akka.remote.netty.message-frame-size = %d MiB
-      akka.remote.netty.execution-pool-size = %d
-      akka.actor.default-dispatcher.throughput = %d
-      akka.remote.log-remote-lifecycle-events = %s
-      """.format(host, port, akkaTimeout, akkaFrameSize, akkaThreads, akkaBatchSize,
-                 if (lifecycleEvents) "on" else "off"))
-
-    val actorSystem = ActorSystem(name, akkaConf, getClass.getClassLoader)
-
-    // Figure out the port number we bound to, in case port was passed as 0. This is a bit of a
-    // hack because Akka doesn't let you figure out the port through the public API yet.
-    val provider = actorSystem.asInstanceOf[ActorSystemImpl].provider
-    val boundPort = provider.asInstanceOf[RemoteActorRefProvider].transport.address.port.get
-    return (actorSystem, boundPort)
-  }
-  
-  def getHost: String = {
-    val provider = env.actorSystem.asInstanceOf[ActorSystemImpl].provider
-    provider.asInstanceOf[RemoteActorRefProvider].transport.address.host.get
-  }
-	
 }
-
-/*
- * The following classes are for getting around the incompatible ZooKeeper version class loader issue
- */
 
 /*
  * Unfortunately an incompatible version of ZooKeeper is loaded by a parent
@@ -368,6 +345,7 @@ private object ServiceContainerFactory extends Logging {
 		        "com.adamroughton.concentus.service.spark.ServiceContainerFactory" ::
 		        "com.adamroughton.concentus.cluster.worker.ServiceContainer" ::
 				"com.adamroughton.concentus.actioncollector.TickDelegate" ::
+				"com.adamroughton.concentus.actioncollector.TickDriven" ::
 				"com.adamroughton.concentus.data.model.kryo.CandidateValue" :: Nil).toArray
 		
 		/*
@@ -406,6 +384,7 @@ private trait ServiceContainerFactory {
         startTime: Long,
         tickDuration: Long,
         tickDelegate: TickDelegate,
+        actionCollectorReadyDelegate: (TickDriven) => Unit,
         stopOnErrorDelegate: (Exception) => Unit,
         stopDelegate: () => Unit,
 		actionCollectorPort: Int,
@@ -413,7 +392,7 @@ private trait ServiceContainerFactory {
 	    actionCollectorSendBufferLength: Int,
 		zooKeeperAddress: String,
 		zooKeeperAppRoot: String,
-		componentResolverBytes: Array[Byte]): (TickDriven, ServiceContainer)
+		componentResolverBytes: Array[Byte]): ServiceContainer
 }
 
 private class ServiceContainerEntry extends ServiceContainerFactory with Logging {
@@ -424,6 +403,7 @@ private class ServiceContainerEntry extends ServiceContainerFactory with Logging
 	    startTime: Long,
         tickDuration: Long,
         tickDelegate: TickDelegate,
+        actionCollectorReadyDelegate: (TickDriven) => Unit,
         stopOnErrorDelegate: (Exception) => Unit,
         stopDelegate: () => Unit,
 	    actionCollectorPort: Int,
@@ -431,7 +411,7 @@ private class ServiceContainerEntry extends ServiceContainerFactory with Logging
 	    actionCollectorSendBufferLength: Int,
 		zooKeeperAddress: String,
 		zooKeeperAppRoot: String,
-		componentResolverBytes: Array[Byte]): (TickDriven, ServiceContainer) = {
+		componentResolverBytes: Array[Byte]): ServiceContainer = {
 			val clock = new DefaultClock
 			
 			// get the receiver's address
@@ -456,7 +436,6 @@ private class ServiceContainerEntry extends ServiceContainerFactory with Logging
 			}
 			logInfo("Using receiver address " + receiverAddress)
 			
-			val serviceRef = new Container[ActionCollectorService[_ <: ResizingBuffer]]
 			val actionCollectorDeployment = new ActionCollectorServiceDeployment(actionCollectorPort, -1, 
 			    actionCollectorRecvBufferLength, actionCollectorSendBufferLength, tickDelegate, startTime, tickDuration) {
 			   
@@ -465,7 +444,7 @@ private class ServiceContainerEntry extends ServiceContainerFactory with Logging
 			      resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
 					  val service = super.createService(serviceId, initData, context, handle, metricContext, resolver)
 							  .asInstanceOf[ActionCollectorService[_ <: ResizingBuffer]]
-					  serviceRef.set(service) 
+					  actionCollectorReadyDelegate(service)
 			    	  service
 			  }
 			  
@@ -496,10 +475,8 @@ private class ServiceContainerEntry extends ServiceContainerFactory with Logging
 			
 			val clusterHandleSettings = new ClusterHandleSettings(zooKeeperAddress, 
 			    zooKeeperAppRoot, concentusHandle)
-			val serviceContainer = new ServiceContainerImpl(clusterHandleSettings, concentusHandle, 
+			new ServiceContainerImpl(clusterHandleSettings, concentusHandle, 
 			    actionCollectorDeployment, componentResolver)
-			
-			(serviceRef.get(), serviceContainer)
 	}
 	
 }

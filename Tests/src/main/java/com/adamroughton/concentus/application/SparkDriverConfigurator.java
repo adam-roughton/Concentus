@@ -33,9 +33,12 @@ class SparkDriverConfigurator implements DeploymentConfigurator {
 			
 			// spark requires the path of the driver jar and all of its dependencies
 			List<String> jarFilePaths = new ArrayList<>();
-			for (String projectJar : new String[] {"concentus-core-1.0-SNAPSHOT.jar", 
+			for (String projectJar : new String[] {
+					"concentus-core-1.0-SNAPSHOT.jar", 
 					"concentus-service-1.0-SNAPSHOT.jar", 
-					"concentus-sparkstreamingdriver-1.0-SNAPSHOT.jar"}) {
+					"concentus-sparkstreamingdriver-1.0-SNAPSHOT.jar",
+					"concentus-crowdhammer-1.0-SNAPSHOT.jar",
+					"concentus-tests-1.0-SNAPSHOT.jar"}) {
 				Path projectJarPath = assertFileExists(workingDir.resolve(projectJar));
 				jarFilePaths.add(projectJarPath.toString());
 			}
