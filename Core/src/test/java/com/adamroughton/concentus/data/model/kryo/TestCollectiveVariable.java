@@ -1,9 +1,10 @@
-package com.adamroughton.concentus.model;
+package com.adamroughton.concentus.data.model.kryo;
 
 import com.adamroughton.concentus.data.BytesUtil;
 import com.adamroughton.concentus.data.model.kryo.CandidateValue;
 import com.adamroughton.concentus.data.model.kryo.CollectiveVariable;
 import com.adamroughton.concentus.data.model.kryo.MatchingDataStrategy;
+import com.adamroughton.concentus.util.Util;
 
 import org.junit.Test;
 import static junit.framework.Assert.*;
@@ -11,7 +12,7 @@ import static junit.framework.Assert.*;
 public class TestCollectiveVariable {
 
 	@Test
-	public void sameLengthOtherAllHigherMerge() {
+	public void sameLengthOtherAllHigherUnion() {
 		CollectiveVariable var1 = new CollectiveVariable(5, 0);
 		CollectiveVariable var2 = new CollectiveVariable(5, 0);
 		
@@ -37,7 +38,7 @@ public class TestCollectiveVariable {
 	}
 	
 	@Test
-	public void sameLengthMixedScoresMerge() {
+	public void sameLengthMixedScoresUnion() {
 		CollectiveVariable var1 = new CollectiveVariable(5, 0);
 		CollectiveVariable var2 = new CollectiveVariable(5, 0);
 		
@@ -63,7 +64,7 @@ public class TestCollectiveVariable {
 	}
 	
 	@Test
-	public void differentLengthMergeOnLarge() {
+	public void differentLengthUnionOnLarge() {
 		CollectiveVariable var1 = new CollectiveVariable(7, 0);
 		CollectiveVariable var2 = new CollectiveVariable(5, 0);
 		
@@ -89,7 +90,7 @@ public class TestCollectiveVariable {
 	}
 	
 	@Test
-	public void differentLengthMergeOnSmall() {
+	public void differentLengthUnionOnSmall() {
 		CollectiveVariable var1 = new CollectiveVariable(7, 0);
 		CollectiveVariable var2 = new CollectiveVariable(5, 0);
 		
@@ -115,7 +116,7 @@ public class TestCollectiveVariable {
 	}
 	
 	@Test
-	public void mergeOnZeroLengthWithNonZeroLength() {
+	public void unionOnZeroLengthWithNonZeroLength() {
 		CollectiveVariable var1 = new CollectiveVariable(0, 0);
 		CollectiveVariable var2 = new CollectiveVariable(5, 0);
 		
@@ -131,7 +132,7 @@ public class TestCollectiveVariable {
 	}
 	
 	@Test
-	public void mergeOnZeroLengthBothZeroLength() {
+	public void unionOnZeroLengthBothZeroLength() {
 		CollectiveVariable var1 = new CollectiveVariable(0, 0);
 		CollectiveVariable var2 = new CollectiveVariable(0, 0);
 		
@@ -141,7 +142,7 @@ public class TestCollectiveVariable {
 	}
 	
 	@Test
-	public void mergeOnNonZeroLengthWithZeroLength() {
+	public void unionOnNonZeroLengthWithZeroLength() {
 		CollectiveVariable var1 = new CollectiveVariable(5, 0);
 		CollectiveVariable var2 = new CollectiveVariable(0, 0);
 		
@@ -158,6 +159,26 @@ public class TestCollectiveVariable {
 			byte[] expData = new byte[4];
 			BytesUtil.writeInt(expData, 0, (4 - i));
 			assertEquals(new CandidateValue(new MatchingDataStrategy(),0, (4 - i) * 10, expData), res.getValue(i));
+		}
+	}
+	
+	@Test
+	public void sameLengthWithNullsUnion() {
+		CollectiveVariable var1 = new CollectiveVariable(5, 0);
+		CollectiveVariable var2 = new CollectiveVariable(5, 0);
+		
+		CandidateValue topValue = new CandidateValue(new MatchingDataStrategy(), 0, 70, Util.intToBytes(2));
+		CandidateValue secondValue = new CandidateValue(new MatchingDataStrategy(), 0, 50, Util.intToBytes(1));
+		
+		var1.push(secondValue);
+		var2.push(topValue);
+		
+		CollectiveVariable res = var1.union(var2);
+		
+		assertEquals(2, res.getValueCount());
+		CandidateValue[] expected = new CandidateValue[] { topValue, secondValue };
+		for (int i = 0; i < expected.length; i++) {
+			assertEquals(expected[i], res.getValue(i));
 		}
 	}
 	

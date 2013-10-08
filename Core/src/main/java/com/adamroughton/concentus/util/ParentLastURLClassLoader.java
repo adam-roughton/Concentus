@@ -49,7 +49,7 @@ public class ParentLastURLClassLoader extends URLClassLoader {
 			}
 			if (klass == null) {
 				if (_passThroughSet.contains(name)) {
-					_logger.info("Class {} in the pass through list - delegating to parent", name);
+					_logger.trace("Class {} in the pass through list - delegating to parent", name);
 					// class is on the pass-through list: delegate to the parent class loader
 					klass = super.loadClass(name, resolve);
 				} else {

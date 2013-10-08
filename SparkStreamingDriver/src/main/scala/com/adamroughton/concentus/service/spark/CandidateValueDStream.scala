@@ -56,6 +56,7 @@ import com.adamroughton.concentus.cluster.worker.ServiceContainerImpl
 import java.io.Closeable
 import java.util.concurrent.atomic.AtomicReference
 import it.unimi.dsi.fastutil.longs.Long2ObjectOpenHashMap
+import java.util.concurrent.TimeoutException
 
 private case object DoInit
 private case class ActionCollectorReady(actionCollector: TickDriven)
@@ -71,10 +72,12 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
     zooKeeperAddress: String,
     zooKeeperAppRoot: String,
     resolver: ComponentResolver[_ <: ResizingBuffer]) 
-		extends NetworkInputDStream[CandidateValue](ssc_) {
+		extends NetworkInputDStream[CandidateValue](ssc_) with Logging {
+  
+	initLogging
   
 	private var lastTickTime = 0l
-	implicit val timeout = Timeout(5 minutes)
+	implicit val timeout = Timeout(30 seconds)
 	val env = SparkEnv.get
 	
 	def getReceiver() = {
@@ -102,10 +105,15 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
     override def compute(validTime: Time): Option[RDD[CandidateValue]] = {
 		val tickTime = validTime.milliseconds
 		if (tickTime > lastTickTime) {
-			logInfo("Starting tick " + tickTime)
 			val future = tickManager ? Tick(tickTime)
-			Await.result(future, timeout.duration)
-			logInfo("Finishing tick " + tickTime)
+			try {
+				Await.result(future, timeout.duration)
+			} catch {
+			  case (eTimedOut: TimeoutException) => {
+			    logWarning("Timed out waiting for tick " + tickTime + 
+			        ": proceeding without tick.")
+			  }
+			}
 			lastTickTime = tickTime
 		}
 		super.compute(validTime)
@@ -144,9 +152,7 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
 				lastTick = time
 			}
 			case TickAck(time: Long) => {
-				logInfo("Got tick ACK for tick " + time)
 				if (tickToCallerRefLookup.containsKey(time)) {
-				   logInfo("Had waiting caller")
 				   tickToCallerRefLookup.get(time) ! true
 				}
 			}
@@ -217,8 +223,6 @@ class ActionReceiver(
 	    	Props(new TickReceiverActor(zooKeeperAddress, zooKeeperAppRoot)), "ActionCollector-" + streamId)
 	    	
 	protected def onStart() {
-	    logInfo("streamId=" + streamId)
-	    
 	    actorSystem
 		tickActor
 	}
@@ -230,7 +234,6 @@ class ActionReceiver(
 	}
 	
 	def onTick(time: Long, candidateValuesIterator: java.util.Iterator[CandidateValue]) = {
-		logInfo("Pushing block for tick " + time)
 		val candidateValues = new ArrayBuffer[CandidateValue]
 		candidateValuesIterator.copyToBuffer(candidateValues)
 		
@@ -276,7 +279,6 @@ class ActionReceiver(
 			}
 			case Initialize(lastTick: Long, tickDuration: Long) => initialize(lastTick, tickDuration)
 			case ActionCollectorReady(actionCollector: TickDriven) => {
-			    logInfo("Action collector ready")
 				this.actionCollector = Some(actionCollector)
 				context.become(connected, true)
 			}
@@ -284,31 +286,24 @@ class ActionReceiver(
 			  logInfo("Received tick " + time + ", but the action collector is not yet ready. Returning ACK")
 			  sender ! TickAck(time)
 			}
-			case TickProcessingDone(time: Long) => {
-			  logInfo("Tick processing done for " + time)
-			  tickManager ! TickAck(time)
-			}
+			case TickProcessingDone(time: Long) =>  tickManager ! TickAck(time)
 		}
 		
 		private def connected: Receive = {
 		  	case Tick(time: Long) => {
-		  	    logInfo("Received tick " + time)
 			    actionCollector match {
 			       case Some(collector) => {
-			         logInfo("Forwarding tick " + time + " to collector")
-			         collector.tick(time)
+			         if (!collector.tick(time)) {
+			           // collector is not ready to process ticks yet,
+			           // so just ACK
+			           sender ! TickAck(time)
+			         }
 			       }
-			       case None => {
-			         logInfo("No collector, so responding with ACK for tick " + time)
-			         sender ! TickAck(time)
-			       }
+			       case None => sender ! TickAck(time)
 			    }
 			    lastTick = time
 			}
-			case TickProcessingDone(time: Long) => {
-			  logInfo("Tick processing done for tick " + time)
-			  tickManager ! TickAck(time)
-			}
+			case TickProcessingDone(time: Long) => tickManager ! TickAck(time)
 			case _ =>
 		}
 		

@@ -120,6 +120,7 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 	private final SocketSettings _routerSocketSettings;
 	private final SocketSettings _tickSubSocketSettings;
 	
+	private volatile boolean _canProcessTicks = false;
 	private Mutex<Messenger<TBuffer>> _internalTickMessenger;
 	private final TBuffer _internalTickBuffer;
 	private final TickEvent _tickEvent = new TickEvent();
@@ -173,7 +174,9 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 		_internalTickBuffer = _socketManager.getBufferFactory().newInstance(32);
 	}
 
-	public void tick(final long time) {
+	public boolean tick(final long time) {
+		if (!_canProcessTicks) return false;
+		
 		_internalTickMessenger.runAsOwner(new OwnerDelegate<Messenger<TBuffer>>() {
 
 			@Override
@@ -192,6 +195,7 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 			}
 			
 		});
+		return true;
 	}
 	
 	@Override
@@ -281,18 +285,20 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 		ServiceEndpoint endpoint = new ServiceEndpoint(_actionCollectorId, ConcentusEndpoints.ACTION_COLLECTOR.getId(), 
 				_concentusHandle.getNetworkAddress().getHostAddress(), 
 				recvPort);
-		cluster.registerServiceEndpoint(endpoint);
+		cluster.registerServiceEndpoint(endpoint);		
 	}
 
 	@Override
 	protected void onStart(StateData stateData,
 			ClusterHandle cluster) throws Exception {
 		_pipeline.start();
+		_canProcessTicks = true;
 	}
 
 	@Override
 	protected void onShutdown(StateData stateData,
 			ClusterHandle cluster) throws Exception {
+		_canProcessTicks = false;
 		if (_pipeline != null) {
 			try {
 				_pipeline.halt(60, TimeUnit.SECONDS);

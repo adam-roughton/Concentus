@@ -1,6 +1,8 @@
 package com.adamroughton.concentus.data.model.kryo;
 
-public interface CandidateValueStrategy {
+import java.io.Serializable;
+
+public interface CandidateValueStrategy extends Serializable {
 
 	boolean canUnion(CandidateValue val1, CandidateValue val2);
 	

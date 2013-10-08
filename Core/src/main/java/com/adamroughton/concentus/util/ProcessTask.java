@@ -84,7 +84,7 @@ public final class ProcessTask implements Runnable {
 	}
 	
 	public boolean hasStopped() {
-		return _state.get() != State.STOPPED;
+		return _state.get() == State.STOPPED;
 	}
 	
 	public void stop() {

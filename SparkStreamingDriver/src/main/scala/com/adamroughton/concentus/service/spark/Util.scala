@@ -27,4 +27,3 @@ private case class ArgList(list: List[String]) {
 	}
 }
 
-  

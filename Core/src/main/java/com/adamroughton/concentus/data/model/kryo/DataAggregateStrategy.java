@@ -2,6 +2,8 @@ package com.adamroughton.concentus.data.model.kryo;
 
 public abstract class DataAggregateStrategy implements CandidateValueStrategy {
 	
+	private static final long serialVersionUID = 1L;
+
 	@Override
 	public final boolean canUnion(CandidateValue val1, CandidateValue val2) {
 		return true;
@@ -21,6 +23,8 @@ public abstract class DataAggregateStrategy implements CandidateValueStrategy {
 	
 	public final class VariableIdKey implements CandidateValueGroupKey {
 
+		private static final long serialVersionUID = 1L;
+		
 		private CandidateValue _value;
 		private int _variableId;
 		

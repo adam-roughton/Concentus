@@ -97,6 +97,8 @@ public class CollectivePong implements ApplicationVariant {
 	
 	public static class PaddleAggregateStrategy extends DataAggregateStrategy {
 		
+		private static final long serialVersionUID = 1L;
+
 		@Override
 		protected byte[] aggregate(CandidateValue val1, CandidateValue val2) {
 			byte[] sumPaddleBar = new byte[PADDLE_CHUNK_COUNT * INT_SIZE];

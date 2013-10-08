@@ -177,11 +177,27 @@ public class CrowdAloud implements ApplicationVariant {
 		public CollectiveVariableDefinition[] variableDefinitions() {
 			return new CollectiveVariableDefinition[] { TOP_SIGNAL_VAR };
 		}
+		
+		private static String varMapToString(Int2ObjectMap<CollectiveVariable> variables) {
+			StringBuilder strBuilder = new StringBuilder();
+			strBuilder.append("[count=").append(variables.size()).append(", elements=[");
+			boolean isFirst = true;
+			for (it.unimi.dsi.fastutil.ints.Int2ObjectMap.Entry<CollectiveVariable> entry : variables.int2ObjectEntrySet()) {
+				if (isFirst) {
+					isFirst = false;
+				} else {
+					strBuilder.append(", ");
+				}
+				strBuilder.append("(").append(entry.getIntKey()).append(",").append(entry.getValue()).append(")");
+			}
+			strBuilder.append("]]");
+			return strBuilder.toString();
+		}
 
 		@Override
 		public void createUpdate(ResizingBuffer updateData, long time,
 				Int2ObjectMap<CollectiveVariable> variables) {
-			Log.info("CrowdAloud!: Creating update!");
+			Log.info("CrowdAloud!: Creating update! with variables " + varMapToString(variables));
 			if (variables.containsKey(TOP_SIGNAL_VAR.getVariableId())) {
 				Log.info("CrowdAloud!: Got variable");
 				CollectiveVariable topSignalVar = variables.get(TOP_SIGNAL_VAR.getVariableId());

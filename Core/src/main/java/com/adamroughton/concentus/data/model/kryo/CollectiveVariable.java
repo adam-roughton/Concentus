@@ -1,11 +1,15 @@
 package com.adamroughton.concentus.data.model.kryo;
 
+import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Iterator;
 import java.util.NoSuchElementException;
+import java.util.Objects;
 
-public final class CollectiveVariable implements Iterable<CandidateValue> {
+public final class CollectiveVariable implements Iterable<CandidateValue>, Serializable {
 
+	private static final long serialVersionUID = 1L;
+	
 	private int _variableId;
 	private CandidateValue[] _candidateValues;
 	private int _valueCount;
@@ -28,7 +32,7 @@ public final class CollectiveVariable implements Iterable<CandidateValue> {
 	private static CandidateValue[] initWithElement(CandidateValue initValue, int count) {
 		if (count <= 0) throw new IllegalArgumentException("The count must be at least one to accomodate the initial value.");
 		CandidateValue[] values = new CandidateValue[count];
-		values[0] = initValue;
+		values[0] = Objects.requireNonNull(initValue);;
 		return values;
 	}
 	
@@ -90,7 +94,6 @@ public final class CollectiveVariable implements Iterable<CandidateValue> {
 			} else if (var2Index < var2Count) {
 				nextValue = var2Values[var2Index++];
 			} else {
-				mergeIndex++;
 				break;
 			}
 			mergedValues[mergeIndex] = nextValue;		
@@ -141,4 +144,13 @@ public final class CollectiveVariable implements Iterable<CandidateValue> {
 			}
 		};
 	}
+
+	@Override
+	public String toString() {
+		return "CollectiveVariable [variableId=" + _variableId
+				+ ", candidateValues=" + Arrays.toString(_candidateValues)
+				+ "]";
+	}
+	
+	
 }

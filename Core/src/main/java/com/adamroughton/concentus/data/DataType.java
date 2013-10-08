@@ -42,6 +42,7 @@ import com.adamroughton.concentus.data.model.bufferbacked.ActionReceipt;
 import com.adamroughton.concentus.data.model.bufferbacked.BufferBackedEffect;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
 import com.adamroughton.concentus.data.model.kryo.CandidateValue;
+import com.adamroughton.concentus.data.model.kryo.CollectiveVariable;
 import com.esotericsoftware.kryo.Kryo;
 import com.esotericsoftware.kryo.Serializer;
 import com.esotericsoftware.kryo.io.Input;
@@ -81,9 +82,10 @@ public enum DataType implements KryoRegistratorDelegate {
 	
 	EFFECT(101, BUFFER_BACKED, BufferBackedEffect.class),
 	CANDIDATE_VALUE(102, KRYO, CandidateValue.class),
-	CANONICAL_STATE_UPDATE(103, BUFFER_BACKED, CanonicalStateUpdate.class),
-	ACTION_RECEIPT(104, BUFFER_BACKED, ActionReceipt.class),
-	ACTION_RECEIPT_META_DATA(105, BUFFER_BACKED, ActionReceiptMetaData.class),
+	COLLECTIVE_VARIABLE(103, KRYO, CollectiveVariable.class),
+	CANONICAL_STATE_UPDATE(104, BUFFER_BACKED, CanonicalStateUpdate.class),
+	ACTION_RECEIPT(105, BUFFER_BACKED, ActionReceipt.class),
+	ACTION_RECEIPT_META_DATA(106, BUFFER_BACKED, ActionReceiptMetaData.class),
 	
 	/*
 	 * Cluster types

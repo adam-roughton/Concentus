@@ -1,5 +1,6 @@
 package com.adamroughton.concentus.data.model.kryo;
 
+import java.io.Serializable;
 import java.util.Arrays;
 import java.util.Objects;
 
@@ -16,8 +17,10 @@ import static com.adamroughton.concentus.data.ResizingBuffer.*;
  * @author Adam Roughton
  *
  */
-public final class CandidateValue implements Comparable<CandidateValue> {
+public final class CandidateValue implements Comparable<CandidateValue>, Serializable {
 
+	private static final long serialVersionUID = 1L;
+	
 	private CandidateValueGroupKey _groupKey;
 	private CandidateValueStrategy _strategy;
 	private int _variableId;
@@ -43,13 +46,14 @@ public final class CandidateValue implements Comparable<CandidateValue> {
 	}
 	
 	public CandidateValue(CandidateValueStrategy strategy, int varId, int score, byte[] data) {
-		_strategy = Objects.requireNonNull(strategy);
-		_groupKey = _strategy.createGroupKey(this);
 		_variableId = varId;
 		_score = score;
 		if (data == null) data = new byte[0];
 		_valueData = data;
 		_valueDataHash = Arrays.hashCode(_valueData);
+		
+		_strategy = Objects.requireNonNull(strategy);
+		_groupKey = _strategy.createGroupKey(this);
 	}
 	
 	public int getVariableId() {

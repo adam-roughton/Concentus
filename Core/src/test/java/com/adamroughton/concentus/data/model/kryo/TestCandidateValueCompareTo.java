@@ -1,4 +1,4 @@
-package com.adamroughton.concentus.data.model;
+package com.adamroughton.concentus.data.model.kryo;
 
 import java.util.Arrays;
 

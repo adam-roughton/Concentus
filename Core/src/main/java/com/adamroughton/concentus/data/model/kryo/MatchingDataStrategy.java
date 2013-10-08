@@ -4,6 +4,8 @@ import java.util.Arrays;
 
 public final class MatchingDataStrategy implements CandidateValueStrategy {
 	
+	private static final long serialVersionUID = 1L;
+
 	@Override
 	public boolean canUnion(CandidateValue val1, CandidateValue val2) {
 		return val1.getValueDataHash() == val2.getValueDataHash() && Arrays.equals(val1.getValueData(), val2.getValueData());
@@ -21,6 +23,8 @@ public final class MatchingDataStrategy implements CandidateValueStrategy {
 	
 	public final class MatchingDataKey implements CandidateValueGroupKey {
 
+		private static final long serialVersionUID = 1L;
+		
 		private CandidateValue _value;
 		private int _variableId;
 		private byte[] _valueData;

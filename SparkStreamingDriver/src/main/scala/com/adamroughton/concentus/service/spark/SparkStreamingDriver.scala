@@ -40,6 +40,8 @@ import spark.streaming.Milliseconds
 import spark.streaming.StreamingContext
 import spark.streaming.StreamingContext.toPairDStreamFunctions
 import com.adamroughton.concentus.ConcentusEndpoints
+import scala.collection.JavaConversions._
+import spark.SparkEnv
 
 class SparkStreamingDriver[TBuffer <: ResizingBuffer](
         sparkHome: String,
@@ -56,9 +58,8 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		resolver: ComponentResolver[TBuffer]) 
 			extends ConcentusServiceBase {
   
-  	System.setProperty("spark.serializer", "spark.KryoSerializer")
+	System.setProperty("spark.serializer", "spark.KryoSerializer")
     System.setProperty("spark.kryo.registrator", "com.adamroughton.concentus.service.spark.KryoRegistrator")
-    System.setProperty("spark.akka.logLifecycleEvents", "true")
   
     val executor = Executors.newCachedThreadPool()
     val socketManager = resolver.newSocketManager(concentusHandle.getClock())
@@ -114,19 +115,29 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 			ssc.registerInputStream(stream)
 
 			stream.map(v => (v.groupKey, v))
-				.reduceByKey((v1, v2) => v1.union(v2))
+				.reduceByKey((v1, v2) => {
+				  if (!v1.canUnion(v2)) throw new RuntimeException("group keys equal?=" + v1.groupKey.equals(v2.groupKey) + 
+				      ", v1.groupKey.hashCode=" + v1.groupKey.hashCode + ", v2.groupKey.hashCode=" + v2.groupKey.hashCode + 
+				      ", v1.groupKey.data=" + v1.getValueData + ", v2.data=" + v2.getValueData)
+				  v1.union(v2)
+				})
 		}
-		val combinedStream = streams.reduce((s1, s2) => s1.union(s2))
-			.reduceByKey((v1, v2) => v1.union(v2))
+		streams.reduce((s1, s2) => s1.union(s2))
+			.reduceByKey((v1, v2) => {
+			  if (!v1.canUnion(v2)) throw new RuntimeException("group keys equal?=" + v1.groupKey.equals(v2.groupKey) + 
+				      ", v1.groupKey.hashCode=" + v1.groupKey.hashCode + ", v2.groupKey.hashCode=" + v2.groupKey.hashCode + 
+				      ", v1.data=" + v1.getValueData + ", v2.data=" + v2.getValueData)
+			  v1.union(v2)
+			})
 			.map { 
-				case (k, v) => {			  
-					(v.getVariableId, new CollectiveVariable(topNMap.value(v.getVariableId), v))
-				} 
+				case (k, v) => (v.getVariableId, new CollectiveVariable(topNMap.value(v.getVariableId), v))
 			}
 			.reduceByKey((v1, v2) => v1.union(v2))
 			.foreach((rdd, time) => {
-				val collectiveVarMap = new Int2ObjectOpenHashMap[CollectiveVariable](rdd.count.asInstanceOf[Int])
-				rdd.foreach(idVarPair => collectiveVarMap.put(idVarPair._1, idVarPair._2))
+				val collectiveVarMap = new Int2ObjectOpenHashMap[CollectiveVariable](rdd.count.asInstanceOf[Int])				
+				for (idVarPair <- rdd.collect) {
+				  collectiveVarMap.put(idVarPair._1, idVarPair._2)
+				}
 				canonicalStateProcessor.onTickCompleted(time.milliseconds, collectiveVarMap)
 			})
 		Log.info("Starting spark context")
