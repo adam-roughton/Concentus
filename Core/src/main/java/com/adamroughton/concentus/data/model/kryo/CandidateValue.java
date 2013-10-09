@@ -93,26 +93,44 @@ public final class CandidateValue implements Comparable<CandidateValue>, Seriali
 		else if (other._variableId != this._variableId)
 			return other._variableId - this._variableId;
 		else {
-			// compare the data segments in long, int and then byte chunks
-			int[] chunkSegmentLengths = new int[] { LONG_SIZE, INT_SIZE, 1 };
-			
-			byte[] thisData = this._valueData;
-			byte[] otherData = other._valueData;
-			
-			int cursor = 0;
-			for (int chunkLength : chunkSegmentLengths) {
-				int chunkCount = (thisData.length - cursor) / chunkLength;
-				for (int i = 0; i < chunkCount; i++) {
-					long otherDataSeg = readChunk(otherData, cursor + i * chunkLength, chunkLength);
-					long thisDataSeg = readChunk(thisData, cursor + i * chunkLength, chunkLength);
-					if (otherDataSeg != thisDataSeg) {
-						return (int) (otherDataSeg - thisDataSeg);
-					} 
-				}
-				cursor += chunkCount * chunkLength;
-			}
-			return 0;
+			return dataCompareTo(other);
 		}
+	}
+	
+	public int dataCompareTo(CandidateValue other) {
+		// compare the data segments in long, int and then byte chunks
+		int[] chunkSegmentLengths = new int[] { LONG_SIZE, INT_SIZE, 1 };
+		
+		byte[] thisData = this._valueData;
+		byte[] otherData = other._valueData;
+		
+		int cursor = 0;
+		for (int chunkLength : chunkSegmentLengths) {
+			int chunkCount = (thisData.length - cursor) / chunkLength;
+			for (int i = 0; i < chunkCount; i++) {
+				long otherDataSeg = readChunk(otherData, cursor + i * chunkLength, chunkLength);
+				long thisDataSeg = readChunk(thisData, cursor + i * chunkLength, chunkLength);
+				if (otherDataSeg != thisDataSeg) {
+					// if the chunk length is greater than the return type,
+					// we need to compare on the high and low integer parts
+					// of the long individually (a direct cast of the difference
+					// to an integer can still be greater than Integer.MAX_VALUE)
+					if (chunkLength > INT_SIZE) {
+						int highIntOtherSeg = (int) ((otherDataSeg >>> 32) & 0xFFFFFFFF);
+						int highIntThisSeg = (int) ((thisDataSeg >>> 32) & 0xFFFFFFFF);
+						if (highIntOtherSeg != highIntThisSeg) {
+							return highIntOtherSeg - highIntThisSeg;
+						} else {
+							return (int) ((otherDataSeg & 0xFFFFFFFF) - (thisDataSeg & 0xFFFFFFFF));
+						}
+					} else {
+						return (int) (otherDataSeg - thisDataSeg);
+					}
+				} 
+			}
+			cursor += chunkCount * chunkLength;
+		}
+		return 0;
 	}
 	
 	private long readChunk(byte[] data, int offset, int chunkLength) {

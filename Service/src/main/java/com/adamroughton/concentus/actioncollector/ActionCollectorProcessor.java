@@ -222,8 +222,13 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 		long tailSeq = headSeq - reliableEventWindow.getLength() + 1;
 		
 		long requestedStartSeq = replayRequest.getStartSequence();
+		long requestedEndSeq = requestedStartSeq + replayRequest.getCount() - 1; // endSeq is inclusive
+		
 		long startSeq = Math.max(tailSeq, requestedStartSeq);
-		long endSeq = Math.min(headSeq, startSeq + replayRequest.getCount());
+		
+		// this can work out to be less than the startSeq if requestedEndSeq < tailSeq: this is safe, and 
+		// will result in the replay loop terminating immediately
+		long endSeq = Math.min(headSeq, requestedEndSeq); 
 		
 		if (startSeq > requestedStartSeq) {
 			Log.warn(String.format("Client Handler %d: requested %d, but %d " +

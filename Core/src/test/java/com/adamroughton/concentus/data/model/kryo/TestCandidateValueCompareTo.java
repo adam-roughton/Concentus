@@ -44,6 +44,14 @@ public class TestCandidateValueCompareTo {
 	}
 	
 	@Test
+	public void differentDataHighIntsOfLongSegmentMismatch() {
+		CandidateValue val1 = newValue(0, 100, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+		CandidateValue val2 = newValue(0, 100, 3, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+		CandidateValue val3 = newValue(0, 100, 15, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+		assertComparableCorrect(val1, val2, val3);
+	}
+	
+	@Test
 	public void differentDataSameHash() {
 		CandidateValue val1 = newValue(0, 100, 0, 0, 30, 32);
 		CandidateValue val2 = newValue(0, 100, 0, 0, 31, 1);

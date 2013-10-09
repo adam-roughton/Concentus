@@ -4,6 +4,7 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 
 import java.util.Collections;
+import java.util.Comparator;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateProcessor;
@@ -44,7 +45,29 @@ public class DirectStateProcessor<TBuffer extends ResizingBuffer> implements Dea
 		
 		// sort the values
 		try {
-			Collections.sort(event.candidateValues);
+			Collections.sort(event.candidateValues, new Comparator<CandidateValue>() {
+
+				// sort in order of varId, value data length, value data contents, then score
+				@Override
+				public int compare(CandidateValue val1, CandidateValue val2) {
+					byte[] val1Data = val1.getValueData();
+					byte[] val2Data = val2.getValueData();
+					
+					if (val2.getVariableId() != val1.getVariableId())
+						return val2.getVariableId() - val1.getVariableId();
+					else if (val2Data.length != val1Data.length)
+						return val2Data.length - val1Data.length;
+					else {
+						int dataCompareTo = val1.dataCompareTo(val2);
+						if (dataCompareTo != 0) {
+							return dataCompareTo;
+						} else {
+							return val2.getScore() - val1.getScore();
+						}
+					}
+				}
+				
+			});
 		} catch (IllegalArgumentException eSort) {
 			StringBuilder strBuilder = new StringBuilder();
 			strBuilder.append("[");
