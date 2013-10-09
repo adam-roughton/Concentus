@@ -58,6 +58,7 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		resolver: ComponentResolver[TBuffer]) 
 			extends ConcentusServiceBase {
   
+    System.setProperty("spark.executor.memory", "4g")
 	System.setProperty("spark.serializer", "spark.KryoSerializer")
     System.setProperty("spark.kryo.registrator", "com.adamroughton.concentus.service.spark.KryoRegistrator")
   
