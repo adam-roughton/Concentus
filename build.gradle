@@ -149,6 +149,7 @@ project(':Core') {
 	configurations {
 		compile.exclude group:'org.slf4j', module:'slf4j-log4j12' // remove sl4j binding
 		compile.exclude group:'log4j', module:'log4j', version:'1.2.15'
+		compile.exclude module:'asm', version:'4.0'
 	}
 	
 	dependencies {
