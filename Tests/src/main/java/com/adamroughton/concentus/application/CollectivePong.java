@@ -1,5 +1,7 @@
 package com.adamroughton.concentus.application;
 
+import java.util.Arrays;
+
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
 import com.adamroughton.concentus.InstanceFactory;
@@ -83,9 +85,11 @@ public class CollectivePong implements ApplicationVariant {
 	
 	public static class AgentFactory implements InstanceFactory<Agent> {
 
+		private final boolean _logUpdates = ApplicationVariant.SharedConfig.logUpdatesOneClientPerWorker;
+		
 		@Override
 		public Agent newInstance() {
-			return new Agent();
+			return new Agent(_logUpdates);
 		}
 
 		@Override
@@ -191,11 +195,21 @@ public class CollectivePong implements ApplicationVariant {
 	}
 	
 	public static class Agent implements ClientAgent {
-
+		
+		private final boolean _logUpdates;
 		private long _clientIdBits = -1;
 		private long _inputCountSeq = 0;
 		
 		private int _prevPaddlePos = 512;
+		
+		@SuppressWarnings("unused")
+		private Agent() {
+			_logUpdates = false;
+		}
+		
+		public Agent(boolean logUpdates) {
+			_logUpdates = logUpdates;
+		}
 		
 		@Override
 		public void setClientId(long clientIdBits) {
@@ -217,15 +231,16 @@ public class CollectivePong implements ApplicationVariant {
 
 		@Override
 		public void onUpdate(CanonicalStateUpdate update) {
-//			if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
-//				ResizingBuffer updateBuffer = update.getData();
-//				int[] paddleBar = new int[PADDLE_CHUNK_COUNT];
-//				for (int i = 0; i < PADDLE_CHUNK_COUNT; i++) {
-//					paddleBar[i] = updateBuffer.readInt(i * INT_SIZE);
-//				}
-//				Log.info(Arrays.toString(paddleBar));
-//			}
-			
+			if (_logUpdates) {
+				if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
+					ResizingBuffer updateBuffer = update.getData();
+					int[] paddleBar = new int[PADDLE_CHUNK_COUNT];
+					for (int i = 0; i < PADDLE_CHUNK_COUNT; i++) {
+						paddleBar[i] = updateBuffer.readInt(i * INT_SIZE);
+					}
+					Log.info(Arrays.toString(paddleBar));
+				}
+			}
 		}
 		
 	}

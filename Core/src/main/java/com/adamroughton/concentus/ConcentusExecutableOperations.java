@@ -75,7 +75,7 @@ public class ConcentusExecutableOperations {
 					String.format("The ZooKeeper App Root '%s' was not a valid root path " +
 							"(can be '/' or '/[A-Za-z0-9]+')", zooKeeperAppRoot));
 		}	
-		ConcentusHandle concentusHandle = new ConcentusHandle(clock, hostAddress, zooKeeperAddress, traceFlagSet);
+		ConcentusHandle concentusHandle = new ConcentusHandle(clock, hostAddress, zooKeeperAddress, zooKeeperAppRoot, traceFlagSet);
 		UUID clusterId = UUID.randomUUID();
 		ClusterHandleSettings clusterHandleSettings = new ClusterHandleSettings(zooKeeperAddress, zooKeeperAppRoot, 
 				clusterId, null, concentusHandle);

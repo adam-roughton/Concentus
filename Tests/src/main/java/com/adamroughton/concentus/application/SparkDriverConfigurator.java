@@ -20,7 +20,7 @@ import com.google.common.base.Objects;
 
 class SparkDriverConfigurator implements DeploymentConfigurator {
 
-	private static class DataCache {
+	static class DataCache {
 		
 		public final static String SPARK_HOME;
 		public final static String[] DRIVER_DEPENDENCIES;

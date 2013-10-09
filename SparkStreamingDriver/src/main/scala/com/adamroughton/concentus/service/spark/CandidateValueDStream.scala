@@ -478,6 +478,7 @@ private class ServiceContainerEntry extends ServiceContainerFactory with Logging
 			    clock, 
 			    receiverAddress, 
 			    zooKeeperAddress, 
+			    zooKeeperAppRoot,
 			    Collections.emptySet()) {
 			  
 			  override def signalFatalException(ex: Throwable) = {

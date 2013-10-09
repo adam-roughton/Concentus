@@ -29,6 +29,7 @@ public class ConcentusHandle implements FatalExceptionCallback {
 	private final Clock _clock;
 	private final InetAddress _networkAddress;
 	private final String _zooKeeperAddress;
+	private final String _zooKeeperAppRoot;
 	
 	private final Set<String> _traceFlagLookup;
 	
@@ -36,10 +37,12 @@ public class ConcentusHandle implements FatalExceptionCallback {
 			Clock clock, 
 			InetAddress networkAddress,
 			String zooKeeperAddress,
+			String zooKeeperAppRoot,
 			Set<String> traceFlagLookup) {
 		_clock = Objects.requireNonNull(clock);
 		_networkAddress = Objects.requireNonNull(networkAddress);
 		_zooKeeperAddress = Objects.requireNonNull(zooKeeperAddress);
+		_zooKeeperAppRoot = Objects.requireNonNull(zooKeeperAppRoot);
 		_traceFlagLookup = Objects.requireNonNull(traceFlagLookup);
 	}
 	
@@ -53,6 +56,10 @@ public class ConcentusHandle implements FatalExceptionCallback {
 	
 	public String getZooKeeperAddress() {
 		return _zooKeeperAddress;
+	}
+	
+	public String getZooKeeperAppRoot() {
+		return _zooKeeperAppRoot;
 	}
 	
 	@Override

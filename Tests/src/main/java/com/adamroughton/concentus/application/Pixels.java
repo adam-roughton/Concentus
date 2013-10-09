@@ -15,6 +15,7 @@ import com.adamroughton.concentus.data.model.kryo.MatchingDataStrategy;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.model.CollectiveVariableDefinition;
 import com.adamroughton.concentus.model.UserEffectSet;
+import com.esotericsoftware.minlog.Log;
 
 import static com.adamroughton.concentus.data.ResizingBuffer.*;
 
@@ -88,9 +89,11 @@ public class Pixels implements ApplicationVariant {
 	
 	public static class AgentFactory implements InstanceFactory<Agent> {
 
+		private final boolean _logUpdates = ApplicationVariant.SharedConfig.logUpdatesOneClientPerWorker;
+		
 		@Override
 		public Agent newInstance() {
-			return new Agent();
+			return new Agent(_logUpdates);
 		}
 
 		@Override
@@ -197,15 +200,26 @@ public class Pixels implements ApplicationVariant {
 	
 	public static class Agent implements ClientAgent {
 
+		
 		// used for hue generation
 		private static final int HUE_RANGE = 1024 * 1024;
 		
+		private final boolean _logUpdates;
 		private long _clientIdBits = -1;
 		private long _inputCountUntilSignal = 0;
 		private long _inputCountSeq = 0;
 		
 		private float _currentHue = -1;
 		private int _pixelId = 0;
+		
+		@SuppressWarnings("unused")
+		private Agent() {
+			_logUpdates = false;
+		}
+		
+		public Agent(boolean logUpdates) {
+			_logUpdates = logUpdates;
+		}
 		
 		@Override
 		public void setClientId(long clientIdBits) {
@@ -238,6 +252,9 @@ public class Pixels implements ApplicationVariant {
 
 		@Override
 		public void onUpdate(CanonicalStateUpdate update) {
+			if (_logUpdates) {
+				Log.info("Got update of size " + update.getData().getContentSize() + " for time " + update.getTime());
+			}
 		}
 		
 	}

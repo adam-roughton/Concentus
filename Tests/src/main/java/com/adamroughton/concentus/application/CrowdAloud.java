@@ -23,8 +23,6 @@ import com.esotericsoftware.minlog.Log;
 
 public class CrowdAloud implements ApplicationVariant {
 	
-	private static final boolean PRINT_UPDATES = true;
-	
 	public enum Mode {
 		TEXT,
 		SYMBOL
@@ -105,9 +103,11 @@ public class CrowdAloud implements ApplicationVariant {
 	
 	public static class TextAgentFactory implements InstanceFactory<TextAgent> {
 
+		private final boolean _logUpdates = ApplicationVariant.SharedConfig.logUpdatesOneClientPerWorker;
+		
 		@Override
 		public TextAgent newInstance() {
-			return new TextAgent();
+			return new TextAgent(_logUpdates);
 		}
 
 		@Override
@@ -119,9 +119,11 @@ public class CrowdAloud implements ApplicationVariant {
 	
 	public static class SymbolAgentFactory implements InstanceFactory<SymbolAgent> {
 
+		private final boolean _logUpdates = ApplicationVariant.SharedConfig.logUpdatesOneClientPerWorker;
+		
 		@Override
 		public SymbolAgent newInstance() {
-			return new SymbolAgent();
+			return new SymbolAgent(_logUpdates);
 		}
 
 		@Override
@@ -217,11 +219,21 @@ public class CrowdAloud implements ApplicationVariant {
 
 		private static final String CHARACTERS = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOP!?0123456789";
 
+		private final boolean _logUpdates;
 		private long _clientIdBits = -1;
 		private long _inputCountUntilSignal = 0;
 		private long _inputCountSeq = 0;
 		
 		private String _currentWord; 
+		
+		@SuppressWarnings("unused")
+		private TextAgent() {
+			_logUpdates = false;
+		}
+		
+		public TextAgent(boolean logUpdates) {
+			_logUpdates = logUpdates;
+		}
 		
 		@Override
 		public void setClientId(long clientIdBits) {
@@ -259,7 +271,7 @@ public class CrowdAloud implements ApplicationVariant {
 
 		@Override
 		public void onUpdate(CanonicalStateUpdate update) {
-			if (PRINT_UPDATES) {
+			if (_logUpdates) {
 				if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
 					ChunkReader updateChunkReader = new ChunkReader(update.getData());
 					StringBuilder stateBuilder = new StringBuilder();
@@ -289,11 +301,22 @@ public class CrowdAloud implements ApplicationVariant {
 	
 	public static class SymbolAgent implements ClientAgent {
 
+		
 		private long _clientIdBits = -1;
 		private long _inputCountUntilSignal = 0;
 		private long _inputCountSeq = 0;
+		private final boolean _logUpdates;
 		
 		private int _currentSymbol = -1; 
+		
+		@SuppressWarnings("unused")
+		private SymbolAgent() {
+			_logUpdates = false;
+		}
+		
+		public SymbolAgent(boolean logUpdates) {
+			_logUpdates = logUpdates;
+		}
 		
 		@Override
 		public void setClientId(long clientIdBits) {
@@ -325,7 +348,7 @@ public class CrowdAloud implements ApplicationVariant {
 
 		@Override
 		public void onUpdate(CanonicalStateUpdate update) {
-			if (PRINT_UPDATES) {
+			if (_logUpdates) {
 				if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
 					ChunkReader updateChunkReader = new ChunkReader(update.getData());
 					StringBuilder stateBuilder = new StringBuilder();

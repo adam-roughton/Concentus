@@ -544,6 +544,7 @@ public class ClusterTestTask implements TestTask {
 	
 	private void reportProgress(String message) {
 		sendToListeners(new TestTaskEvent(_currentRunInfo, message));
+		Log.info(message);
 	}
 	
 	private void sendToListeners(final TestTaskEvent testTaskEvent) {
@@ -632,4 +633,5 @@ public class ClusterTestTask implements TestTask {
 		}
 		return pairSet;
 	}
+
 }

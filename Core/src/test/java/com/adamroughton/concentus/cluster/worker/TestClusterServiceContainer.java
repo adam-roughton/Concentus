@@ -265,7 +265,7 @@ public class TestClusterServiceContainer extends TestClusterBase {
 			newContainer(UUID clusterId, final TService service, final Class<TState> stateType, final String serviceType, 
 					final Object preStartData) throws Throwable {
 		ConcentusHandle concentusHandle = new ConcentusHandle(new DrivableClock(), InetAddress.getLocalHost(), 
-				getZooKeeperAddress(), Collections.<String>emptySet());
+				getZooKeeperAddress(), ROOT, Collections.<String>emptySet());
 		ClusterHandleSettings clusterHandleSettings = new ClusterHandleSettings(getZooKeeperAddress(), ROOT, clusterId, _exCallback);
 		
 		final AtomicReference<ServiceContext<TState>> serviceContextContainer = new AtomicReference<>();

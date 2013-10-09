@@ -9,7 +9,7 @@ import com.adamroughton.concentus.crowdhammer.Test;
 import com.adamroughton.concentus.crowdhammer.TestDeploymentSet;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService.ClientHandlerServiceDeployment;
 
-public class Experiment {
+public class ExperimentP2 {
 	
 	public static void main(String[] args) throws Exception {
 		ApplicationVariant.SharedConfig.logUpdatesOneClientPerWorker = false;
@@ -17,9 +17,7 @@ public class Experiment {
 		long[] tickDurations = new long[] { 1000, 100 };
 		
 		ListClientCount clientCountIterable = new ListClientCount(5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000, 100000);
-		//new SingleDisruptorConfigurator()
-		//new SparkDriverConfigurator() 
-		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SingleDisruptorConfigurator(), new SparkDriverSingleServerConfigurator() };
+		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverConfigurator() };
 		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CrowdAloud(Mode.SYMBOL), new CrowdAloud(Mode.TEXT), new CollectivePong(), new Pixels() };
 		Test test;
 		for (DeploymentConfigurator deploymentConfigurator : depConfigs) {
@@ -29,7 +27,7 @@ public class Experiment {
 						
 					TestDeploymentSet testDeploymentSet = new TestDeploymentSet(deploymentConfigurator.deploymentName(), 
 							applicationVar.getAgentFactory());
-					deploymentConfigurator.configure(testDeploymentSet, 1)
+					deploymentConfigurator.configure(testDeploymentSet, 4)
 						.addDeployment(new ClientHandlerServiceDeployment(-1, 2048, 2048), 4)
 						.setWorkerCount(4);
 					
