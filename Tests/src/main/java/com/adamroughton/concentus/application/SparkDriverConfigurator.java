@@ -58,6 +58,7 @@ class SparkDriverConfigurator implements DeploymentConfigurator {
 				for (Path path : libDirStream) {
 					String jarPath = path.toString();
 					if (jarPath.contains("asm-all-3.3.1")) continue;
+					if (jarPath.contains("asm-4.0")) continue;
 					jarFilePaths.add(path.toString());
 				}
 			} catch (IOException eIO) {
