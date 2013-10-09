@@ -218,10 +218,6 @@ project(':SparkStreamingDriver') {
 		}
 	}
 	
-	configurations {
-		compile.exclude group:'asm', module:'asm-all', version:'3.3.1'
-	}
-	
 	dependencies {
 		compile project(':Service')
 		compile ('org.spark-project:spark-streaming_2.9.3:0.7.3') {
@@ -243,34 +239,6 @@ project(':CrowdHammer') {
 		compile 'org.xerial:sqlite-jdbc:3.7.15-M1' // for native mode on mac osx 10.8
 		testCompile project(path: ':Core', configuration: 'tests')
 	}
-	
-	def createLocalExecWorkerClosure = { serviceClassName, serviceArgs ->
-		{ ->
-			javaexec {
-				main = "com.adamroughton.concentus.crowdhammer.CrowdHammerWorker"
-				classpath = sourceSets.main.runtimeClasspath
-				args "-s" + serviceClassName, "-pconfig.yaml", "-a127.0.0.1", "-z127.0.0.1:50000"
-				serviceArgs.each { serviceArg ->
-					args serviceArg
-				} 
-				jvmArgs '-Djava.library.path=/usr/local/lib'
-				workingDir rootProject.workingDir
-			}
-		}
-	}
-	
-	task runLocalWorkerService(dependsOn: makeWorkingDir) << {
-		createLocalExecWorkerClosure('com.adamroughton.concentus.crowdhammer.worker.WorkerService', ["-n1000"]).call()
-	}
-	
-	task runLocalCoordinator(dependsOn: makeWorkingDir, type: JavaExec) {
-		main = "com.adamroughton.concentus.crowdhammer.CrowdHammerCoordinator"
-		classpath = sourceSets.main.runtimeClasspath
-		args "-pconfig.yaml", "-a127.0.0.1", "-z127.0.0.1:50000"
-		jvmArgs '-Djava.library.path=/usr/local/lib'
-		workingDir rootProject.workingDir
-	}
-	
 }
 
 project(':Tests') {
