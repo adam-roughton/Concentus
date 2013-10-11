@@ -25,7 +25,7 @@ class SparkMasterService(
     serviceId: Int,
     serviceContext: ServiceContext[ServiceState],
     concentusHandle: ConcentusHandle) 
-		extends ExternalProcessServiceBase(serviceContext, concentusHandle) {
+		extends ExternalProcessServiceBase("SparkMaster", serviceContext, concentusHandle) {
   
   override def onBind(stateData: StateData, cluster: ClusterHandle) = {
      val sparkRunCmd = Paths.get(sparkHome).resolve("run").toString

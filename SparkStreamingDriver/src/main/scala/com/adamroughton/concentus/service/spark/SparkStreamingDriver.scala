@@ -116,27 +116,18 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 			ssc.registerInputStream(stream)
 
 			stream.map(v => (v.groupKey, v))
-				.reduceByKey((v1, v2) => {
-				  if (!v1.canUnion(v2)) throw new RuntimeException("group keys equal?=" + v1.groupKey.equals(v2.groupKey) + 
-				      ", v1.groupKey.hashCode=" + v1.groupKey.hashCode + ", v2.groupKey.hashCode=" + v2.groupKey.hashCode + 
-				      ", v1.groupKey.data=" + v1.getValueData + ", v2.data=" + v2.getValueData)
-				  v1.union(v2)
-				})
+				.reduceByKey((v1, v2) => v1.union(v2))
 		}
 		streams.reduce((s1, s2) => s1.union(s2))
-			.reduceByKey((v1, v2) => {
-			  if (!v1.canUnion(v2)) throw new RuntimeException("group keys equal?=" + v1.groupKey.equals(v2.groupKey) + 
-				      ", v1.groupKey.hashCode=" + v1.groupKey.hashCode + ", v2.groupKey.hashCode=" + v2.groupKey.hashCode + 
-				      ", v1.data=" + v1.getValueData + ", v2.data=" + v2.getValueData)
-			  v1.union(v2)
-			})
+			.reduceByKey((v1, v2) => v1.union(v2))
 			.map { 
 				case (k, v) => (v.getVariableId, new CollectiveVariable(topNMap.value(v.getVariableId), v))
 			}
 			.reduceByKey((v1, v2) => v1.union(v2))
 			.foreach((rdd, time) => {
-				val collectiveVarMap = new Int2ObjectOpenHashMap[CollectiveVariable](rdd.count.asInstanceOf[Int])				
-				for (idVarPair <- rdd.collect) {
+				val idVarPairs = rdd.collect
+				val collectiveVarMap = new Int2ObjectOpenHashMap[CollectiveVariable](idVarPairs.length)				
+				for (idVarPair <- idVarPairs) {
 				  collectiveVarMap.put(idVarPair._1, idVarPair._2)
 				}
 				canonicalStateProcessor.onTickCompleted(time.milliseconds, collectiveVarMap)

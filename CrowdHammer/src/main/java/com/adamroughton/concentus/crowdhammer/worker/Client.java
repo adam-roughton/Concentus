@@ -15,7 +15,6 @@
  */
 package com.adamroughton.concentus.crowdhammer.worker;
 
-import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
@@ -33,7 +32,6 @@ import com.adamroughton.concentus.data.events.bufferbacked.ClientConnectEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientInputEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ClientUpdateEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.ConnectResponseEvent;
-import com.adamroughton.concentus.data.model.ClientId;
 import com.adamroughton.concentus.data.model.bufferbacked.ActionReceipt;
 import com.adamroughton.concentus.data.model.bufferbacked.BufferBackedEffect;
 import com.adamroughton.concentus.data.model.bufferbacked.CanonicalStateUpdate;
@@ -46,7 +44,6 @@ import com.adamroughton.concentus.metric.StatsMetric;
 import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
 import com.adamroughton.concentus.util.Util;
 import com.esotericsoftware.kryo.util.IntArray;
-import com.esotericsoftware.minlog.Log;
 
 import static com.adamroughton.concentus.Constants.TIME_STEP_IN_MS;
 

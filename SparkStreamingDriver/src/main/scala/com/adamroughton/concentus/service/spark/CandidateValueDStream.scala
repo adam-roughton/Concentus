@@ -105,6 +105,15 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
     override def compute(validTime: Time): Option[RDD[CandidateValue]] = {
 		val tickTime = validTime.milliseconds
 		if (tickTime > lastTickTime) {
+			/*
+			 * Need next chosen time to be consistent between
+			 * DStreams. Receiver can emit actions with the next
+			 * tick time equal to lastTickTime + slideWindow, but
+			 * on generation request effect state at some time after
+			 * this time if the stream is late (i.e. compute the state as
+			 * if the update had been skipped).
+			 */
+		  
 			val future = tickManager ? Tick(tickTime)
 			try {
 				Await.result(future, timeout.duration)

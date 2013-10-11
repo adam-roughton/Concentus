@@ -2,6 +2,7 @@ package com.adamroughton.concentus.application;
 
 import java.util.concurrent.TimeUnit;
 
+import com.adamroughton.concentus.application.CrowdAloud.Mode;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService.ClientHandlerServiceDeployment;
 import com.adamroughton.concentus.crowdhammer.CrowdHammer;
 import com.adamroughton.concentus.crowdhammer.ListClientCount;
@@ -18,8 +19,8 @@ public class CrowdAloudSignalSparkExperiment {
 		ListClientCount clientCountIterable = new ListClientCount(5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000, 100000);
 		//new SingleDisruptorConfigurator()
 		//new SparkDriverConfigurator() 
-		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverSingleServerConfigurator() };
-		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new Pixels() };
+		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverConfigurator() };
+		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CrowdAloud(Mode.SYMBOL) };
 		Test test;
 		for (DeploymentConfigurator deploymentConfigurator : depConfigs) {
 			for (ApplicationVariant applicationVar : applicationVariants) {
@@ -28,7 +29,7 @@ public class CrowdAloudSignalSparkExperiment {
 						
 					TestDeploymentSet testDeploymentSet = new TestDeploymentSet(deploymentConfigurator.deploymentName(), 
 							applicationVar.getAgentFactory());
-					deploymentConfigurator.configure(testDeploymentSet, 1)
+					deploymentConfigurator.configure(testDeploymentSet, 4)
 						.addDeployment(new ClientHandlerServiceDeployment(-1, 2048, 2048), 4)
 						.setWorkerCount(4);
 					

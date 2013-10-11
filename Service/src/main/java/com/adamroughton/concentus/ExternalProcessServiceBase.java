@@ -1,9 +1,5 @@
 package com.adamroughton.concentus;
 
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.lang.ProcessBuilder.Redirect;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -29,11 +25,13 @@ import com.esotericsoftware.minlog.Log;
 public class ExternalProcessServiceBase extends ConcentusServiceBase {
 
 	private final ExecutorService _processMonitorExecutor = Executors.newSingleThreadExecutor();
+	private final String _name;
 	private final ServiceContext<ServiceState> _serviceContext;
 	private final ConcentusHandle _concentusHandle;
 	private ProcessTask _currentProcessTask = null;
 	
-	public ExternalProcessServiceBase(ServiceContext<ServiceState> serviceContext, ConcentusHandle concentusHandle) {
+	public ExternalProcessServiceBase(String name, ServiceContext<ServiceState> serviceContext, ConcentusHandle concentusHandle) {
+		_name = Objects.requireNonNull(name);
 		_serviceContext = Objects.requireNonNull(serviceContext);
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 	}
@@ -49,50 +47,32 @@ public class ExternalProcessServiceBase extends ConcentusServiceBase {
 		List<String> commands = new ArrayList<>(args.size() + 1);
 		commands.add(command);
 		commands.addAll(args);
-		final ProcessBuilder processBuilder = new ProcessBuilder(commands);
-		processBuilder.redirectOutput(Redirect.INHERIT);
+		
 		ProcessDelegate processTaskDelegate = new ProcessDelegate() {
 			
 			@Override
-			public void runProcess(final Process process) throws InterruptedException {
-				final StringBuilder stdErrBuilder = new StringBuilder();
-				Thread stdErrCollector = new Thread() {
-				
-					public void run() {
-						try (BufferedReader stderrReader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
-							String readLine;
-							do {
-								readLine = stderrReader.readLine();
-								Log.info("External process stderr: " + readLine);
-								if (readLine != null) stdErrBuilder.append(readLine + '\n');
-							} while (readLine != null);
-						} catch (IOException eIO) {
-							Log.error("Error reading stderr stream from external process", eIO);
-						}
-					}
-				};
-				stdErrCollector.start();				
-				
-				int retCode = process.waitFor();
-				stdErrCollector.join();
-				
-				ProcessReturnInfo retInfo;
-				if (retCode == 0) {
-					retInfo = new ProcessReturnInfo(ReturnType.OK, null);
-				} else {
-					retInfo = new ProcessReturnInfo(ReturnType.ERROR, stdErrBuilder.toString());
-				}
-				Log.info("ExternalProcessServiceBase.startProcess: Signalling process death - retInfo=" + retInfo);
-				_serviceContext.enterState(ServiceState.SHUTDOWN, retInfo);
+			public void configureProcess(final Process process) throws InterruptedException {				
 			}
 
 			@Override
-			public void handleError(Exception e) {
-				ProcessReturnInfo retInfo = new ProcessReturnInfo(ReturnType.ERROR, Util.stackTraceToString(e));
+			public void onStop(ReasonType reason, int retCode, String stdoutBuffer,
+					String stdErrBuffer, Exception exception) {
+				ProcessReturnInfo retInfo;
+				if (reason == ReasonType.ERROR) {
+					retInfo = new ProcessReturnInfo(ReturnType.ERROR, Util.stackTraceToString(exception));
+				} else if (retCode == 0) {
+					retInfo = new ProcessReturnInfo(ReturnType.OK, null);
+				} else {
+					retInfo = new ProcessReturnInfo(ReturnType.ERROR, stdErrBuffer);
+				}
+				
+				Log.info("ExternalProcessServiceBase.startProcess: Signalling process death - retInfo=" + retInfo);
 				_serviceContext.enterState(ServiceState.SHUTDOWN, retInfo);
 			}
+			
 		};
-		_currentProcessTask = new ProcessTask(processBuilder, processTaskDelegate);
+		int stdErrBufferLength = 256 * 1024;
+		_currentProcessTask = new ProcessTask(_name, 0, stdErrBufferLength, commands, processTaskDelegate);
 		_processMonitorExecutor.execute(_currentProcessTask);
 	}
 

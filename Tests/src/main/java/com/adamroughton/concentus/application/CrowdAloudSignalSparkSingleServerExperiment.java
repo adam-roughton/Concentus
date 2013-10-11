@@ -2,6 +2,7 @@ package com.adamroughton.concentus.application;
 
 import java.util.concurrent.TimeUnit;
 
+import com.adamroughton.concentus.application.CrowdAloud.Mode;
 import com.adamroughton.concentus.clienthandler.ClientHandlerService.ClientHandlerServiceDeployment;
 import com.adamroughton.concentus.crowdhammer.CrowdHammer;
 import com.adamroughton.concentus.crowdhammer.ListClientCount;
@@ -19,7 +20,7 @@ public class CrowdAloudSignalSparkSingleServerExperiment {
 		//new SingleDisruptorConfigurator()
 		//new SparkDriverConfigurator() 
 		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverSingleServerConfigurator() };
-		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CollectivePong() };
+		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CrowdAloud(Mode.SYMBOL) };
 		Test test;
 		for (DeploymentConfigurator deploymentConfigurator : depConfigs) {
 			for (ApplicationVariant applicationVar : applicationVariants) {

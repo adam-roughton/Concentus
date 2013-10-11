@@ -31,10 +31,6 @@ import com.esotericsoftware.kryo.io.Output;
 import com.esotericsoftware.minlog.Log;
 
 import java.io.BufferedOutputStream;
-import java.io.BufferedReader;
-import java.io.IOException;
-import java.io.InputStreamReader;
-import java.lang.ProcessBuilder.Redirect;
 import java.nio.file.Paths;
 
 import org.apache.commons.cli.Option;
@@ -190,57 +186,37 @@ public final class Guardian implements ClusterService<GuardianState> {
 		arguments.add(_classpath);
 		arguments.add(GuardianServiceHost.class.getCanonicalName());
 		
-		final ProcessBuilder processBuilder = new ProcessBuilder(arguments);
-		processBuilder.redirectOutput(Redirect.INHERIT);
 		ProcessDelegate processTaskDelegate = new ProcessDelegate() {
 			
 			@Override
-			public void runProcess(final Process process) throws InterruptedException {
-				final StringBuilder stdErrBuilder = new StringBuilder();
-				Thread stdErrCollector = new Thread() {
-				
-					public void run() {
-						try (BufferedReader stderrReader = new BufferedReader(new InputStreamReader(process.getErrorStream()))) {
-							String readLine;
-							do {
-								readLine = stderrReader.readLine();
-								Log.info("GuardianServiceHost (stderr): " + readLine);
-								if (readLine != null) stdErrBuilder.append(readLine + '\n');
-							} while (readLine != null);
-						} catch (IOException eIO) {
-						}
-					}
-				};
-				stdErrCollector.start();				
-			
+			public void configureProcess(final Process process) throws InterruptedException {	
+				// write init message to GuardianServiceHost
 				BufferedOutputStream hostStdIn = new BufferedOutputStream(process.getOutputStream());
 				Output output = new Output(hostStdIn);
 				_kryo.writeClassAndObject(output, initMsg);
 				output.flush();
-				output.close();
-				
-				int retCode = process.waitFor();
-				stdErrCollector.join();
-				
+				output.close();				
+			}
+
+			@Override
+			public void onStop(ReasonType reason, int retCode,
+					String stdoutBuffer, String stdErrBuffer, Exception e) {
 				ProcessReturnInfo retInfo;
-				if (retCode == 0) {
+				if (reason == ReasonType.ERROR) {
+					retInfo = new ProcessReturnInfo(ReturnType.ERROR, "Error running process: " 
+									+ Util.stackTraceToString(e));
+				} else if (retCode == 0) {
 					retInfo = new ProcessReturnInfo(ReturnType.OK, null);
 				} else {
-					retInfo = new ProcessReturnInfo(ReturnType.ERROR, stdErrBuilder.toString());
+					retInfo = new ProcessReturnInfo(ReturnType.ERROR, stdErrBuffer);
 				}
 				Log.info("Guardian.onRun: Signalling process death - retInfo=" + retInfo + ", stateChangeIndex=" + stateChangeIndex);
 				_serviceContext.enterState(GuardianState.READY, retInfo, stateChangeIndex);
 			}
-
-			@Override
-			public void handleError(Exception e) {
-				_serviceContext.enterState(GuardianState.READY, 
-						new ProcessReturnInfo(ReturnType.ERROR, "Error running process: " 
-								+ Util.stackTraceToString(e)), 
-						stateChangeIndex);
-			}
 		};
-		_currentProcessTask = new ProcessTask(processBuilder, processTaskDelegate);
+		// buffer up to 512kb of stderr (buffer is chars) (ZooKeeper max is 1MB)
+		int stdErrBufferLength = 256 * 1024;
+		_currentProcessTask = new ProcessTask(deployment.serviceInfo().serviceType(), 0, stdErrBufferLength, arguments, processTaskDelegate);
 		_taskExecutor.execute(_currentProcessTask);
 	}
 	

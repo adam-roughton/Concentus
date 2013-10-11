@@ -1,21 +1,35 @@
 package com.adamroughton.concentus.util;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.InputStreamReader;
+import java.util.List;
 import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.concurrent.locks.Condition;
 import java.util.concurrent.locks.Lock;
 import java.util.concurrent.locks.ReentrantLock;
 
-import com.esotericsoftware.minlog.Log;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+
+import com.adamroughton.concentus.util.ProcessTask.ProcessDelegate.ReasonType;
 
 public final class ProcessTask implements Runnable {
 
 	public static interface ProcessDelegate {
-		void runProcess(Process process) throws InterruptedException;
-		void handleError(Exception e);
+		
+		public enum ReasonType {
+			STOPPED,
+			ERROR
+		}
+		
+		void configureProcess(Process process) throws InterruptedException;
+		void onStop(ReasonType reason, int retCode, String stdoutBuffer, String stdErrBuffer, Exception e);
 	}
 	
 	public enum State {
@@ -24,33 +38,52 @@ public final class ProcessTask implements Runnable {
 		STOPPED
 	}
 	
+	private final Logger _log = LoggerFactory.getLogger(ProcessTask.class);
+	
 	private final AtomicReference<ProcessTask.State> _state = new AtomicReference<>(State.INIT);
 	
+	private final String _name;
+	private final int _stdOutBufferLength;
+	private final int _stdErrBufferLength;
 	private final ProcessBuilder _processBuilder;
 	private final ProcessTask.ProcessDelegate _delegate;
 	private final Lock _lock = new ReentrantLock();
 	private final Condition _processStateCondition = _lock.newCondition();
-	
+
 	private volatile Thread _processThread = null;
 	
-	public ProcessTask(ProcessBuilder processBuilder, ProcessTask.ProcessDelegate delegate) {
-		_processBuilder = Objects.requireNonNull(processBuilder);
+	public ProcessTask(String name, 
+			int stdOutBufferLength,
+			int stdErrBufferLength,
+			List<String> commands, 
+			ProcessTask.ProcessDelegate delegate) {
+		_name = Objects.requireNonNull(name);
+		_stdOutBufferLength = stdOutBufferLength;
+		_stdErrBufferLength = stdErrBufferLength;
+		_processBuilder = new ProcessBuilder(commands);
 		_delegate = Objects.requireNonNull(delegate);
 	}
 	
 	@Override
 	public void run() {
 		if (!_state.compareAndSet(State.INIT, State.RUNNING)) {
-			Log.warn("Tried to start process task more than once!");
+			_log.warn("Tried to start process task more than once!");
 			return;
 		}
 		_processThread = Thread.currentThread();
 		
 		final Process process;
+		ProcessPipeConsumer stdOutConsumer = null;
+		ProcessPipeConsumer stdErrConsumer = null;
+		
+		Thread stdOutConsumerThread = null;
+		Thread stdErrConsumerThread = null;
+		
+		
 		try {
 			process = _processBuilder.start();
 		} catch (IOException eStart) {
-			_delegate.handleError(eStart);
+			_delegate.onStop(ReasonType.ERROR, -1, null, null, eStart);
 			_state.set(State.STOPPED);
 			return;
 		}
@@ -62,16 +95,41 @@ public final class ProcessTask implements Runnable {
 				}
 				
 			});
-			_delegate.runProcess(process);
+			_delegate.configureProcess(process);
+			
+			stdOutConsumer = new ProcessPipeConsumer(_name, _stdOutBufferLength, process.getInputStream());
+			stdErrConsumer = new ProcessPipeConsumer(_name, _stdErrBufferLength, process.getErrorStream());
+			
+			stdOutConsumerThread = new Thread(stdOutConsumer);
+			stdErrConsumerThread = new Thread(stdErrConsumer);
+			
+			stdOutConsumerThread.start();
+			stdErrConsumerThread.start();
+			
+			process.waitFor();
 		} catch (InterruptedException eInterrupted) {
 			destroyIfRunning(process);
 		} finally {
 			while (_state.get() == State.RUNNING) {
 				try {
-					int retVal = process.waitFor();
-					Log.info("ProcessTask.run: got retval " + retVal);
+					int retCode = process.waitFor();
+					_log.info(_name + ":> " + "Got return code " + retCode);
+					
+					String stdOutBuffer = "";
+					String stdErrBuffer = "";
+					if (stdOutConsumerThread != null) {
+						stdOutConsumerThread.join();
+						stdOutBuffer = stdOutConsumer.getPipeBuffer().toString();
+					}
+					if (stdErrConsumerThread != null) {
+						stdErrConsumerThread.join();
+						stdErrBuffer = stdErrConsumer.getPipeBuffer().toString();
+					}
+					
+					_delegate.onStop(ReasonType.STOPPED, retCode, stdOutBuffer,	stdErrBuffer, null);
 					_state.set(State.STOPPED);
 				} catch (InterruptedException e) {
+					_log.warn("Interrupted waiting for process to terminate - looping until process is dead.");
 				}
 			}
 			_lock.lock();
@@ -128,6 +186,45 @@ public final class ProcessTask implements Runnable {
 			process.exitValue();
 		} catch (IllegalThreadStateException eNotStopped) {
 			process.destroy();
+		}
+	}
+	
+	private static class ProcessPipeConsumer implements Runnable {
+		private final Logger _log = LoggerFactory.getLogger(ProcessTask.class);
+		
+		private final AtomicBoolean _isRunning = new AtomicBoolean(false);
+		private final CircularStringBuffer _pipeBuffer;
+		private final String _prefix;
+		private final InputStream _pipe;
+		
+		public ProcessPipeConsumer(String prefix, int bufferLength, InputStream pipe) {
+			_prefix = prefix;
+			_pipeBuffer = new CircularStringBuffer(bufferLength);
+			_pipe = Objects.requireNonNull(pipe);
+		}
+		
+		@Override
+		public void run() {
+			if (!_isRunning.compareAndSet(false, true)) {
+				throw new IllegalStateException("This process pipe to log adapter is already started");
+			}
+			try (BufferedReader pipeReader = new BufferedReader(new InputStreamReader(_pipe))) {
+				String readLine;
+				do {
+					readLine = pipeReader.readLine();
+					if (readLine != null) {
+						_pipeBuffer.append(readLine + '\n');
+						_log.info(_prefix + ":> " + readLine);
+					}
+				} while (readLine != null);
+			} catch (IOException eIO) {
+			} finally {
+				_isRunning.set(false);
+			}
+		}
+		
+		public CircularStringBuffer getPipeBuffer() {
+			return _pipeBuffer;
 		}
 	}
 }

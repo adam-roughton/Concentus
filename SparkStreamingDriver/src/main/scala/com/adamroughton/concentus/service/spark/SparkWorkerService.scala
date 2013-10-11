@@ -20,7 +20,7 @@ import scala.collection.mutable.ListBuffer
 import scala.collection.JavaConversions._
 
 class SparkWorkerService(sparkHome: String, workerPort: Int, workerWebUIPort: Int, serviceContext: ServiceContext[ServiceState], concentusHandle: ConcentusHandle) 
-		extends ExternalProcessServiceBase(serviceContext, concentusHandle) {
+		extends ExternalProcessServiceBase("SparkWorker", serviceContext, concentusHandle) {
   
   override def onBind(stateData: StateData, cluster: ClusterHandle) = {
      val masterEndpoints = cluster.getAllServiceEndpoints(SparkMasterService.masterEndpointType)
