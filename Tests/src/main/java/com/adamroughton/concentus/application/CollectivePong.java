@@ -105,14 +105,15 @@ public class CollectivePong implements ApplicationVariant {
 
 		@Override
 		protected byte[] aggregate(CandidateValue val1, CandidateValue val2) {
-			byte[] sumPaddleBar = new byte[PADDLE_CHUNK_COUNT * INT_SIZE];
-			for (int i = 0; i < PADDLE_CHUNK_COUNT; i++) {
-				int offset = i * INT_SIZE;
-				int paddleChunkValue = BytesUtil.readInt(val1.getValueData(), offset) + 
-						BytesUtil.readInt(val2.getValueData(), offset);
-				BytesUtil.writeInt(sumPaddleBar, offset, paddleChunkValue);
-			}
-			return sumPaddleBar;
+			return val1.getValueData();
+//			byte[] sumPaddleBar = new byte[PADDLE_CHUNK_COUNT * INT_SIZE];
+//			for (int i = 0; i < PADDLE_CHUNK_COUNT; i++) {
+//				int offset = i * INT_SIZE;
+//				int paddleChunkValue = BytesUtil.readInt(val1.getValueData(), offset) + 
+//						BytesUtil.readInt(val2.getValueData(), offset);
+//				BytesUtil.writeInt(sumPaddleBar, offset, paddleChunkValue);
+//			}
+//			return sumPaddleBar;
 		}
 		
 	}
