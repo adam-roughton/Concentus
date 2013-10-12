@@ -30,6 +30,9 @@ class SparkMasterService(
   override def onBind(stateData: StateData, cluster: ClusterHandle) = {
      val sparkRunCmd = Paths.get(sparkHome).resolve("run").toString
      startProcess(sparkRunCmd, "spark.deploy.master.Master", "-i", masterAddress, "-p", masterPort.toString);
+     
+     // wait 10 seconds for master process to start and bind
+     Thread.sleep(10000)
      Log.info("Started spark master at spark://" + masterAddress + ":" + masterPort);
     
      val sparkMasterEndpoint = new ServiceEndpoint(serviceId, SparkMasterService.masterEndpointType, 

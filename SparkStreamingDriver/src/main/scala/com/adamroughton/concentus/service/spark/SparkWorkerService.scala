@@ -40,6 +40,9 @@ class SparkWorkerService(sparkHome: String, workerPort: Int, workerWebUIPort: In
        
      startProcess(sparkRunCmd, workerArgs.toList)
      
+     // wait 10 seconds for the worker process to start
+     Thread.sleep(10000)
+     
      Log.info("Started spark worker");
   } 
   
