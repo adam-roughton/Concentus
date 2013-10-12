@@ -13,7 +13,7 @@ public class PixelsSparkSingleServerExperiment {
 	public static void main(String[] args) throws Exception {
 		ApplicationVariant.SharedConfig.logUpdatesOneClientPerWorker = false;
 		
-		long[] tickDurations = new long[] { 100 };
+		long[] tickDurations = new long[] { 500 };
 		
 		ListClientCount clientCountIterable = new ListClientCount(5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000);
 		//new SingleDisruptorConfigurator()

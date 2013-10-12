@@ -5,6 +5,8 @@ import it.unimi.dsi.fastutil.ints.Int2ObjectOpenHashMap;
 
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.Objects;
+import java.util.concurrent.TimeUnit;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.canonicalstate.CanonicalStateProcessor;
@@ -16,6 +18,7 @@ import com.adamroughton.concentus.messaging.OutgoingEventHeader;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.MetricGroup;
+import com.adamroughton.concentus.metric.StatsMetric;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.model.CollectiveVariableDefinition;
 
@@ -25,6 +28,10 @@ public class DirectStateProcessor<TBuffer extends ResizingBuffer> implements Dea
 	private final CanonicalStateProcessor<TBuffer> _canonicalStateProcessor;
 	private final Int2ObjectMap<CollectiveVariable> _variablesMap;
 	private final MetricGroup _metricGroup;
+	
+	private final Clock _clock;
+	private final StatsMetric _aggregationTimeStatsMetric;
+	private final StatsMetric _aggregationBatchLengthStatsMetric;
 	
 	public DirectStateProcessor(
 			CollectiveApplication application,
@@ -36,12 +43,21 @@ public class DirectStateProcessor<TBuffer extends ResizingBuffer> implements Dea
 				_metricGroup, metricContext);				
 		_variablesMap = new Int2ObjectOpenHashMap<>();
 		_variableDefinitions = application.variableDefinitions();
+		
+		_clock = Objects.requireNonNull(clock);
+		_aggregationTimeStatsMetric = _metricGroup.add(metricContext.newStatsMetric("directStateProcessor", 
+				"aggregationMillis", false));
+		_aggregationBatchLengthStatsMetric = _metricGroup.add(metricContext.newStatsMetric("directStateProcessor", 
+				"aggregationBatchLength", false));
 	}
 	
 	@Override
 	public void onEvent(ComputeStateEvent event, long sequence,
 			boolean endOfBatch) throws Exception {
+		long startTime = _clock.nanoTime();
+		
 		int count = event.candidateValues.size();
+		_aggregationBatchLengthStatsMetric.push(count);
 		
 		// sort the values
 		try {
@@ -110,7 +126,10 @@ public class DirectStateProcessor<TBuffer extends ResizingBuffer> implements Dea
 		if (currentValue != null) {
 			currentVariable.push(currentValue);
 		}
+		
+		long aggregationDuration = _clock.nanoTime() - startTime;
 		_canonicalStateProcessor.onTickCompleted(time, _variablesMap);
+		_aggregationTimeStatsMetric.push(TimeUnit.NANOSECONDS.toMillis(aggregationDuration));
 	}
 	
 	private void prepareVariables(Int2ObjectMap<CollectiveVariable> variableMap) {

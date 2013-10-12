@@ -378,7 +378,7 @@ public class ClusterTestTask implements TestTask {
 				Thread.sleep(sleepTime);
 				
 				reportProgress("Stopping test...");
-				timeoutTracker = new TimeoutTracker(5, TimeUnit.MINUTES);
+				timeoutTracker = new TimeoutTracker(10, TimeUnit.MINUTES);
 				setTestState(TestTask.State.TEARING_DOWN);
 				
 				// tear down services (shutdown)

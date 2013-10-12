@@ -14,13 +14,13 @@ public class LocalTest {
 	public static void main(String[] args) throws Exception {
 		ApplicationVariant.SharedConfig.logUpdatesOneClientPerWorker = true;
 		
-		long[] tickDurations = new long[] { 1000 };
+		long[] tickDurations = new long[] { 100 };
 		
 		ListClientCount clientCountIterable = new ListClientCount(1000);
 		//new SingleDisruptorConfigurator()
 		//new SparkDriverConfigurator() 
-		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverSingleServerConfigurator(), new SingleDisruptorConfigurator() };
-		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CrowdAloud(Mode.SYMBOL), new CrowdAloud(Mode.TEXT), new CollectivePong(1024), new Pixels() };
+		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SingleDisruptorConfigurator() };
+		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CollectivePong(1024), new Pixels() };
 		Test test;
 		for (DeploymentConfigurator deploymentConfigurator : depConfigs) {
 			for (ApplicationVariant applicationVar : applicationVariants) {

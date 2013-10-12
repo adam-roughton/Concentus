@@ -42,6 +42,7 @@ import spark.streaming.StreamingContext.toPairDStreamFunctions
 import com.adamroughton.concentus.ConcentusEndpoints
 import scala.collection.JavaConversions._
 import spark.SparkEnv
+import akka.actor.Actor
 
 class SparkStreamingDriver[TBuffer <: ResizingBuffer](
         sparkHome: String,
@@ -114,7 +115,7 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 			val stream = new CandidateValueDStream(ssc, actionCollectorPort, actionCollectorRecvBufferLength, 
 			    actionCollectorSendBufferLength, zooKeeperAddress, zooKeeperAppRoot, resolver)
 			ssc.registerInputStream(stream)
-
+			
 			stream.map(v => (v.groupKey, v))
 				.reduceByKey((v1, v2) => v1.union(v2))
 		}

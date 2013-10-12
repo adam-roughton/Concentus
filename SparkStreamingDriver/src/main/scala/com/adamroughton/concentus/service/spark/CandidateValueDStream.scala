@@ -127,7 +127,7 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
 		}
 		super.compute(validTime)
     }
-
+    
 	private class TickManagerActor(zeroTime: Long, tickDuration: Duration) extends Actor {
 		
 		private var receiverActor: Option[ActorRef] = None
