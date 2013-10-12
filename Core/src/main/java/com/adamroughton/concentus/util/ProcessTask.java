@@ -79,7 +79,7 @@ public final class ProcessTask implements Runnable {
 		Thread stdOutConsumerThread = null;
 		Thread stdErrConsumerThread = null;
 		
-		
+		boolean wasKilled = false;
 		try {
 			process = _processBuilder.start();
 		} catch (IOException eStart) {
@@ -109,10 +109,20 @@ public final class ProcessTask implements Runnable {
 			process.waitFor();
 		} catch (InterruptedException eInterrupted) {
 			destroyIfRunning(process);
+			wasKilled = true;
 		} finally {
 			while (_state.get() == State.RUNNING) {
 				try {
 					int retCode = process.waitFor();
+					if (wasKilled) {
+						/* 
+						 * if the process was forcibly stopped by a thread
+						 * interrupt, behave as if the process terminated
+						 * normally
+						 */ 
+						retCode = 0;
+					}
+					
 					_log.info(_name + ":> " + "Got return code " + retCode);
 					
 					String stdOutBuffer = "";
