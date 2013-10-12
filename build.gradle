@@ -111,8 +111,6 @@ subprojects {
 	}
 	
 	configurations {
-		compile.exclude group:'org.slf4j', module:'slf4j-log4j12' // remove sl4j binding
-		compile.exclude group:'log4j', module:'log4j', version:'1.2.15'
 		all*.exclude group:'org.ow2.asm', version:'4.0' // conflicts with asm-3.3.1 used by spark 0.7.3
 	}
 
@@ -151,6 +149,11 @@ subprojects {
 }
 
 project(':Core') {
+	
+	configurations {
+		compile.exclude group:'org.slf4j', module:'slf4j-log4j12' // remove sl4j binding
+		compile.exclude group:'log4j', module:'log4j', version:'1.2.15'
+	}
 	
 	dependencies {
 		compile 'com.lmax:disruptor:3.0.1'

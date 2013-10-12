@@ -51,7 +51,7 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 	
 	private final Int2ObjectMap<StructuredSlidingWindowMap<ResizingBuffer>> _clientHandlerReliableEventStoreLookup = 
 			new Int2ObjectOpenHashMap<>();
-	
+			
 	public ActionCollectorProcessor(
 			int actionCollectorId,
 			IncomingEventHeader recvHeader,
@@ -64,6 +64,7 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 		_recvHeader = Objects.requireNonNull(recvHeader);
 		_actionProcessingLogic = new ActionProcessingLogic(application, tickDuration, startTime);
 		_tickDelegate = Objects.requireNonNull(tickDelegate);
+
 		_sendQueue = Objects.requireNonNull(sendQueue);
 	}
 	
@@ -307,7 +308,5 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 						}
 					});	
 	}
-	
-
 
 }

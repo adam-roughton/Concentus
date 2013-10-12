@@ -32,7 +32,9 @@ public final class ActionProcessingLogic {
 	
 	private long _lastTick;
 	
-	public ActionProcessingLogic(CollectiveApplication application, long tickDuration, long startTime) {
+	public ActionProcessingLogic(CollectiveApplication application, 
+			long tickDuration, 
+			long startTime) {
 		_application = application;
 		_effects = new Object2ObjectOpenHashMap<>();
 		_tickDuration = tickDuration;
@@ -206,6 +208,7 @@ public final class ActionProcessingLogic {
 						ArrayBackedResizingBuffer next = iterator.next();
 						_effect.attachToBuffer(next);
 						_next = _application.apply(_effect, time);
+						
 						_effect.releaseBuffer();
 						if (_next.getScore() > 0) {
 							return true;

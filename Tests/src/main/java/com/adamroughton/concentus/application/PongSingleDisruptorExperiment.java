@@ -19,7 +19,7 @@ public class PongSingleDisruptorExperiment {
 		//new SingleDisruptorConfigurator()
 		//new SparkDriverConfigurator() 
 		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SingleDisruptorConfigurator() };
-		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CollectivePong() };
+		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CollectivePong(1024) };
 		Test test;
 		for (DeploymentConfigurator deploymentConfigurator : depConfigs) {
 			for (ApplicationVariant applicationVar : applicationVariants) {

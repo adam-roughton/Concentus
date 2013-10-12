@@ -23,9 +23,15 @@ import static com.adamroughton.concentus.data.ResizingBuffer.*;
 
 public class CollectivePong implements ApplicationVariant {
 	
+	private final int _paddleChunkCount;
+	
+	public CollectivePong(int paddleChunkCount) {
+		_paddleChunkCount = paddleChunkCount;
+	}
+	
 	@Override
 	public InstanceFactory<? extends CollectiveApplication> getApplicationFactory(long tickDuration) {
-		return new ApplicationFactory(tickDuration);
+		return new ApplicationFactory(_paddleChunkCount, tickDuration);
 	}
 
 	@Override
@@ -57,23 +63,24 @@ public class CollectivePong implements ApplicationVariant {
 	private static final int PADDLE_VAR_ID = 0;
 	private static final int PADDLE_HEIGHT = 8;
 	private static final CollectiveVariableDefinition PADDLE_BAR_VARIABLE = new CollectiveVariableDefinition(PADDLE_VAR_ID, 1);
-	private static final int PADDLE_CHUNK_COUNT = 1024;
 	
 	public static class ApplicationFactory implements InstanceFactory<Application> {
 
 		private long _tickDuration;
+		private int _paddleChunkCount;
 		
 		// for Kryo
 		@SuppressWarnings("unused")
 		private ApplicationFactory() { }
 		
-		public ApplicationFactory(long tickDuration) {
+		public ApplicationFactory(int paddleChunkCount, long tickDuration) {
+			_paddleChunkCount = paddleChunkCount;
 			_tickDuration = tickDuration;
 		}
 		
 		@Override
 		public Application newInstance() {
-			return new Application(_tickDuration);
+			return new Application(_paddleChunkCount, _tickDuration);
 		}
 
 		@Override
@@ -86,10 +93,17 @@ public class CollectivePong implements ApplicationVariant {
 	public static class AgentFactory implements InstanceFactory<Agent> {
 
 		private final boolean _logUpdates = ApplicationVariant.SharedConfig.logUpdatesOneClientPerWorker;
+		private int _paddleChunkCount;
+		
+		private AgentFactory() { }
+		
+		public AgentFactory(int paddleChunkCount) {
+			_paddleChunkCount = paddleChunkCount;
+		}
 		
 		@Override
 		public Agent newInstance() {
-			return new Agent(_logUpdates);
+			return new Agent(_paddleChunkCount, _logUpdates);
 		}
 
 		@Override
@@ -102,27 +116,36 @@ public class CollectivePong implements ApplicationVariant {
 	public static class PaddleAggregateStrategy extends DataAggregateStrategy {
 		
 		private static final long serialVersionUID = 1L;
-
+		
+		private int _paddleChunkCount;
+		
+		private PaddleAggregateStrategy() { }
+		
+		public PaddleAggregateStrategy(int paddleChunkCount) {
+			_paddleChunkCount = paddleChunkCount;
+		}
+		
 		@Override
 		protected byte[] aggregate(CandidateValue val1, CandidateValue val2) {
-			return val1.getValueData();
-//			byte[] sumPaddleBar = new byte[PADDLE_CHUNK_COUNT * INT_SIZE];
-//			for (int i = 0; i < PADDLE_CHUNK_COUNT; i++) {
-//				int offset = i * INT_SIZE;
-//				int paddleChunkValue = BytesUtil.readInt(val1.getValueData(), offset) + 
-//						BytesUtil.readInt(val2.getValueData(), offset);
-//				BytesUtil.writeInt(sumPaddleBar, offset, paddleChunkValue);
-//			}
-//			return sumPaddleBar;
+			byte[] sumPaddleBar = new byte[_paddleChunkCount * INT_SIZE];
+			for (int i = 0; i < _paddleChunkCount; i++) {
+				int offset = i * INT_SIZE;
+				int paddleChunkValue = BytesUtil.readInt(val1.getValueData(), offset) + 
+						BytesUtil.readInt(val2.getValueData(), offset);
+				BytesUtil.writeInt(sumPaddleBar, offset, paddleChunkValue);
+			}
+			return sumPaddleBar;
 		}
 		
 	}
 	
 	public static class Application implements CollectiveApplication {
 
-		private long _tickDuration;
+		private final int _paddleChunkCount;
+		private final long _tickDuration;
 		
-		public Application(long tickDuration) {
+		public Application(int paddleChunkCount, long tickDuration) {
+			_paddleChunkCount = paddleChunkCount;
 			_tickDuration = tickDuration;
 		}
 		
@@ -133,9 +156,9 @@ public class CollectivePong implements ApplicationVariant {
 				// get paddle top position
 				int paddleTopPos = actionData.readInt(0);
 				
-				if (paddleTopPos > PADDLE_CHUNK_COUNT - PADDLE_HEIGHT)
+				if (paddleTopPos > _paddleChunkCount - PADDLE_HEIGHT)
 					throw new IllegalStateException("The paddle position must fit " +
-							"in the bounds of the game (0 - " + PADDLE_CHUNK_COUNT + "); " +
+							"in the bounds of the game (0 - " + _paddleChunkCount + "); " +
 							"was [" + paddleTopPos + " - " + paddleTopPos + PADDLE_HEIGHT + "]");
 				
 				effectSet.newEffect(PADDLE_VAR_ID, EffectType.PADDLE_POS.getId(), actionData.readBytes(0, INT_SIZE));
@@ -148,7 +171,7 @@ public class CollectivePong implements ApplicationVariant {
 			if (effectTypeId == EffectType.PADDLE_POS.getId()) {
 				// get paddle top position
 				int paddleTopPos = BytesUtil.readInt(effect.getData(), 0);
-				byte[] paddleBar = new byte[PADDLE_CHUNK_COUNT * INT_SIZE];
+				byte[] paddleBar = new byte[_paddleChunkCount * INT_SIZE];
 				
 				for (int i = 0; i < PADDLE_HEIGHT; i++) {
 					BytesUtil.writeInt(paddleBar, (i + paddleTopPos) * INT_SIZE, 1);
@@ -185,7 +208,7 @@ public class CollectivePong implements ApplicationVariant {
 				}
 			}
 			if (paddleBar == null) {
-				paddleBar = new byte[PADDLE_CHUNK_COUNT * INT_SIZE];
+				paddleBar = new byte[_paddleChunkCount * INT_SIZE];
 			}
 			
 			// do game logic here
@@ -198,6 +221,7 @@ public class CollectivePong implements ApplicationVariant {
 	public static class Agent implements ClientAgent {
 		
 		private final boolean _logUpdates;
+		private final int _paddleChunkCount;
 		private long _clientIdBits = -1;
 		private long _inputCountSeq = 0;
 		
@@ -205,10 +229,12 @@ public class CollectivePong implements ApplicationVariant {
 		
 		@SuppressWarnings("unused")
 		private Agent() {
+			_paddleChunkCount = 1;
 			_logUpdates = false;
 		}
 		
-		public Agent(boolean logUpdates) {
+		public Agent(int paddleChunkCount, boolean logUpdates) {
+			_paddleChunkCount = paddleChunkCount;
 			_logUpdates = logUpdates;
 		}
 		
@@ -235,8 +261,8 @@ public class CollectivePong implements ApplicationVariant {
 			if (_logUpdates) {
 				if (_clientIdBits != -1 && ClientId.fromBits(_clientIdBits).getClientIndex() == 0) {
 					ResizingBuffer updateBuffer = update.getData();
-					int[] paddleBar = new int[PADDLE_CHUNK_COUNT];
-					for (int i = 0; i < PADDLE_CHUNK_COUNT; i++) {
+					int[] paddleBar = new int[_paddleChunkCount];
+					for (int i = 0; i < _paddleChunkCount; i++) {
 						paddleBar[i] = updateBuffer.readInt(i * INT_SIZE);
 					}
 					Log.info(Arrays.toString(paddleBar));
