@@ -13,9 +13,9 @@ public class PixelsSparkExperiment {
 	public static void main(String[] args) throws Exception {
 		ApplicationVariant.SharedConfig.logUpdatesOneClientPerWorker = false;
 		
-		long[] tickDurations = new long[] { 1000, 100 };
+		long[] tickDurations = new long[] { 1000, 500, 100 };
 		
-		ListClientCount clientCountIterable = new ListClientCount(5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000, 100000);
+		ListClientCount clientCountIterable = new ListClientCount(5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000);
 		//new SingleDisruptorConfigurator()
 		//new SparkDriverConfigurator() 
 		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverConfigurator() };
