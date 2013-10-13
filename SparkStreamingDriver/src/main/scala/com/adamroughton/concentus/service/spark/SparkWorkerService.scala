@@ -18,6 +18,7 @@ import com.esotericsoftware.minlog.Log
 import java.nio.file.Paths
 import scala.collection.mutable.ListBuffer
 import scala.collection.JavaConversions._
+import com.adamroughton.concentus.actioncollector.ActionCollectorService
 
 class SparkWorkerService(sparkHome: String, workerPort: Int, workerWebUIPort: Int, serviceContext: ServiceContext[ServiceState], concentusHandle: ConcentusHandle) 
 		extends ExternalProcessServiceBase("SparkWorker", serviceContext, concentusHandle) {
@@ -55,7 +56,7 @@ object SparkWorkerService {
 }
 
 class SparkWorkerServiceDeployment(sparkHome: String, workerPort: Int, workerWebUIPort: Int) 
-	extends ServiceDeploymentBase[ServiceState](SparkWorkerService.serviceInfo) {
+	extends ServiceDeploymentBase[ServiceState](SparkWorkerService.serviceInfo, ActionCollectorService.SERVICE_INFO) {
     
   def this(sparkHome: String) = this(sparkHome, 0, 0)
   

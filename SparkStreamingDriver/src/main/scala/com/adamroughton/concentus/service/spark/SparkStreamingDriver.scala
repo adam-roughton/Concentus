@@ -8,7 +8,6 @@ import com.adamroughton.concentus.ComponentResolver
 import com.adamroughton.concentus.ConcentusHandle
 import com.adamroughton.concentus.Constants
 import com.adamroughton.concentus.CoreServices
-import com.adamroughton.concentus.actioncollector.ActionCollectorService
 import com.adamroughton.concentus.canonicalstate.CanonicalStateProcessor
 import com.adamroughton.concentus.cluster.worker.ClusterHandle
 import com.adamroughton.concentus.cluster.worker.ClusterService
@@ -207,8 +206,7 @@ class SparkStreamingDriverDeployment(
 		actionCollectorSendBufferLength: Int,
 		canonicalStateUpdatePort: Int,
 		sendQueueSize: Int) extends ServiceDeploymentBase[ServiceState](
-		    SparkStreamingDriver.serviceInfo, 
-		    ActionCollectorService.SERVICE_INFO) {
+		    SparkStreamingDriver.serviceInfo) {
   
   def this() = this(null, Array[String](), 0, 0, 0, 0, 0, 0)
 		    
