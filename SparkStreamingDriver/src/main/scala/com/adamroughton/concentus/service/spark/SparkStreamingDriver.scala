@@ -61,6 +61,7 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
     System.setProperty("spark.executor.memory", "4g")
 	System.setProperty("spark.serializer", "spark.KryoSerializer")
     System.setProperty("spark.kryo.registrator", "com.adamroughton.concentus.service.spark.KryoRegistrator")
+    System.setProperty("spark.akka.logLifecycleEvents", "true")
   
     val executor = Executors.newCachedThreadPool()
     val socketManager = resolver.newSocketManager(concentusHandle.getClock())
