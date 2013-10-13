@@ -2,7 +2,9 @@ package com.adamroughton.concentus.util;
 
 import java.net.URL;
 import java.net.URLClassLoader;
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 import org.slf4j.Logger;
@@ -12,15 +14,21 @@ public class ParentLastURLClassLoader extends URLClassLoader {
 
 	private final ClassLoader _systemClassLoader;
 	private final Set<String> _passThroughSet;
+	private final List<String> _wildcardList;
 	
 	private final Logger _logger = LoggerFactory.getLogger(ParentLastURLClassLoader.class);
 	
 	public ParentLastURLClassLoader(URL[] urls, String[] passThroughList, ClassLoader parent) {
 		super(urls, parent);
 		
+		_wildcardList = new ArrayList<>();
 		_passThroughSet = new HashSet<>(passThroughList.length);
 		for (String className : passThroughList) {
-			_passThroughSet.add(className);
+			if (className.endsWith("*")) {
+				_wildcardList.add(className.substring(0, className.length()));
+			} else {
+				_passThroughSet.add(className);
+			}
 		}
 		
 		ClassLoader systemClassLoader = ClassLoader.getSystemClassLoader();
@@ -48,7 +56,7 @@ public class ParentLastURLClassLoader extends URLClassLoader {
 				// ignore
 			}
 			if (klass == null) {
-				if (_passThroughSet.contains(name)) {
+				if (passToParent(name)) {
 					_logger.trace("Class {} in the pass through list - delegating to parent", name);
 					// class is on the pass-through list: delegate to the parent class loader
 					klass = super.loadClass(name, resolve);
@@ -70,6 +78,15 @@ public class ParentLastURLClassLoader extends URLClassLoader {
 		}
 		_logger.trace("Returning class {}", name);
 		return klass;
+	}
+	
+	private boolean passToParent(String className) {
+		if (_passThroughSet.contains(className)) return true;
+		
+		for (String partialName : _wildcardList) {
+			if (className.startsWith(partialName)) return true;
+		}
+		return false;
 	}
 	
 }

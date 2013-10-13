@@ -377,6 +377,7 @@ private object ServiceContainerFactory extends Logging {
 		Class.forName("org.zeromq.ZMQ", true, providedClassLoader)
 		
 		val passThroughList = (
+		        "org.zeromq.*" ::
 		        "com.adamroughton.concentus.service.spark.ServiceContainerFactory" ::
 		        "com.adamroughton.concentus.cluster.worker.ServiceContainer" ::
 				"com.adamroughton.concentus.actioncollector.TickDelegate" ::
