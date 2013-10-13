@@ -25,7 +25,7 @@ public class ParentLastURLClassLoader extends URLClassLoader {
 		_passThroughSet = new HashSet<>(passThroughList.length);
 		for (String className : passThroughList) {
 			if (className.endsWith("*")) {
-				_wildcardList.add(className.substring(0, className.length()));
+				_wildcardList.add(className.substring(0, className.length() - 1));
 			} else {
 				_passThroughSet.add(className);
 			}
