@@ -35,7 +35,6 @@ import akka.util.duration.intToDurationInt
 import spark.RDD
 import spark.SparkEnv
 import spark.storage.StorageLevel
-import spark.storage.StorageLevel.MEMORY_ONLY
 import spark.streaming.Duration
 import spark.streaming.StreamingContext
 import spark.streaming.Time
@@ -84,7 +83,7 @@ class CandidateValueDStream(@transient ssc_ : StreamingContext,
 	  logInfo("Creating receiver")
 	  val libraryPath = System.getProperty("java.library.path")
 	  new ActionReceiver(actionCollectorPort, actionCollectorRecvBufferLength, 
-	    actionCollectorSendBufferLength, MEMORY_ONLY, zooKeeperAddress, zooKeeperAppRoot, {
+	    actionCollectorSendBufferLength, StorageLevel.MEMORY_ONLY_SER, zooKeeperAddress, zooKeeperAppRoot, {
 		   val kryo = Util.newKryoInstance();
 		   Util.toKryoBytes(kryo, resolver)
 	  	}, libraryPath)
