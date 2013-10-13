@@ -366,6 +366,16 @@ private object ServiceContainerFactory extends Logging {
 		addLibraryPath(libraryPath)
     
 		val providedClassLoader = getClass.getClassLoader.asInstanceOf[URLClassLoader]
+		
+		/*
+		 * Make the parent class loader pull in the ZMQ library (which
+		 * we just added to the library path): each JVM can only load a
+		 * library once and we don't want our class loader to claim ownership
+		 * as we may be hosting more than one receiver on the worker (not ideal,
+		 * but left to the whim of Spark).
+		 */
+		Class.forName("org.zeromq.ZMQ", true, providedClassLoader)
+		
 		val passThroughList = (
 		        "com.adamroughton.concentus.service.spark.ServiceContainerFactory" ::
 		        "com.adamroughton.concentus.cluster.worker.ServiceContainer" ::
@@ -375,7 +385,7 @@ private object ServiceContainerFactory extends Logging {
 				"com.adamroughton.concentus.data.model.kryo.CandidateValue" :: 
 				"com.adamroughton.concentus.data.model.kryo.CandidateValueStrategy" ::
 				"com.adamroughton.concentus.data.model.kryo.CandidateValueGroupKey" :: Nil).toArray
-		
+				
 		/*
 		 * Don't capture the scala-library as we want to share 
 		 * scala objects between the current class loader and 
