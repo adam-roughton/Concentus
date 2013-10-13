@@ -116,6 +116,7 @@ public class ResultExtractor {
 								@Override
 								public void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException {
 									if (isNewBucketId && hasPartial) {
+										testRunResultSet.bucketCount++; // collect just for the first metric (remaining will have the same count)
 										testRunResultSet.connectedClientCount.push(partialCount);
 										partialCount = 0;
 										hasPartial = false;
@@ -353,6 +354,7 @@ public class ResultExtractor {
 		public final RunningStats sentActionThroughput = new RunningStats();
 		public final RunningStats actionToCanonicalStateLatency = new RunningStats();
 		public int lateActionToCanonicalStateLatency = 0;
+		public int bucketCount = 0;
 		
 		public TestRunResultSet(TestInfo test, TestRunInfo run) {
 			this.test = Objects.requireNonNull(test);
@@ -363,6 +365,7 @@ public class ResultExtractor {
 			StringBuilder strBuilder = new StringBuilder()
 				.append("testName").append(",")
 				.append("deploymentName").append(",")
+				.append("bucketCount").append(",")
 				.append("clientCount").append(",");
 			appendStatsHeader(strBuilder, "connectedClientCount").append(",");
 			appendStatsHeader(strBuilder, "sentActionThroughput").append(",");
@@ -386,6 +389,7 @@ public class ResultExtractor {
 			strBuilder
 				.append(test.testName).append(",")
 				.append(test.deploymentName).append(",")
+				.append(bucketCount).append(",")
 				.append(run.clientCount).append(",");
 			appendAsCSVString(strBuilder, connectedClientCount).append(",");
 			appendAsCSVString(strBuilder, sentActionThroughput).append(",");

@@ -2,30 +2,16 @@ package com.adamroughton.concentus.crowdhammer.metriclistener;
 
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
 
-import java.io.IOException;
-import java.nio.file.FileVisitResult;
-import java.nio.file.FileVisitor;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.attribute.BasicFileAttributes;
-import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Statement;
 import java.util.HashSet;
 import java.util.Set;
 
 import org.javatuples.Pair;
 import org.javatuples.Triplet;
-import org.junit.After;
-import org.junit.AfterClass;
-import org.junit.Before;
-import org.junit.BeforeClass;
 import org.junit.Test;
 
 import com.adamroughton.concentus.crowdhammer.ClientAgent;
-import com.adamroughton.concentus.crowdhammer.metriccollector.SqliteMetricStore;
 import com.adamroughton.concentus.data.ResizingBuffer;
 import com.adamroughton.concentus.data.events.bufferbacked.ActionEvent;
 import com.adamroughton.concentus.data.model.Effect;
@@ -38,68 +24,7 @@ import com.adamroughton.concentus.model.UserEffectSet;
 
 import static org.junit.Assert.*;
 
-public class TestSqliteMetricStore {
-
-	static {
-		try {
-			Class.forName("org.sqlite.JDBC");
-		} catch (ClassNotFoundException e) {
-			throw new RuntimeException(String.format("The driver for handling the sqlite database " +
-					"for metric results was not found: '%s'", e.getMessage()), e);
-		}
-	}
-	
-	private static Path _tempDir;
-	private Path _dbFile;
-	private SqliteMetricStore _metricStore;
-	
-	@BeforeClass
-	public static void setUpClass() throws IOException {
-		_tempDir = Files.createTempDirectory("metricDbs");
-	}
-	
-	@AfterClass
-	public static void tearDownClass() throws IOException {
-		Files.walkFileTree(_tempDir, new FileVisitor<Path>() {
-
-			@Override
-			public FileVisitResult preVisitDirectory(Path dir,
-					BasicFileAttributes attrs) throws IOException {
-				return FileVisitResult.CONTINUE;
-			}
-
-			@Override
-			public FileVisitResult visitFile(Path file,
-					BasicFileAttributes attrs) throws IOException {
-				Files.delete(file);
-				return FileVisitResult.CONTINUE;
-			}
-
-			@Override
-			public FileVisitResult visitFileFailed(Path file, IOException exc)
-					throws IOException {
-				return FileVisitResult.TERMINATE;
-			}
-
-			@Override
-			public FileVisitResult postVisitDirectory(Path dir, IOException exc)
-					throws IOException {
-				return FileVisitResult.CONTINUE;
-			}
-		});
-		Files.delete(_tempDir);
-	}
-	
-	@Before
-	public void setUp() throws IOException {
-		_dbFile = Files.createTempFile(_tempDir, "testMetric", "sqlite");
-		_metricStore = new SqliteMetricStore(_dbFile);
-	}
-	
-	@After
-	public void tearDown() throws IOException {
-		Files.delete(_dbFile);
-	}
+public class TestSqliteMetricStore extends TestSqliteMetricStoreBase {
 	
 	@Test
 	public void testPushRunMetaData() {
@@ -146,21 +71,6 @@ public class TestSqliteMetricStore {
 			}
 		});
 		
-	}
-	
-	private void assertDbState(String sql, AssertDelegate resultSetEvalDelegate) {
-		try (Connection connection = DriverManager.getConnection(String.format("jdbc:sqlite:%s", _dbFile.toString()))) {
-			Statement statement = connection.createStatement();
-			statement.setQueryTimeout(30);
-			ResultSet resultSet = statement.executeQuery(sql);
-			resultSetEvalDelegate.assertDbState(resultSet);
-		} catch (SQLException eSql) {
-			throw new RuntimeException("Error asserting db state", eSql);
-		}
-	}
-	
-	private static interface AssertDelegate {
-		void assertDbState(ResultSet resultSet) throws SQLException;
 	}
 	
 	private static class TestApplicationClass implements CollectiveApplication {

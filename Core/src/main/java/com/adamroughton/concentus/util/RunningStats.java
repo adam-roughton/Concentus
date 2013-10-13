@@ -106,7 +106,7 @@ public class RunningStats {
 				double meanDiff = _mean - mean;
 				int newN = count + _count;
 				_mean = (_count * _mean + count * mean) / (newN);
-				_sumSqrs += sumSqrs + (meanDiff * meanDiff) * (_count * count / newN);
+				_sumSqrs += sumSqrs + (meanDiff * meanDiff) * (((double) _count) * count / newN);
 				_min = Math.min(min, _min);
 				_max = Math.max(max, _max);
 				_count = newN;
