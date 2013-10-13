@@ -44,7 +44,7 @@ import spark.SparkEnv
 import akka.actor.Actor
 
 class SparkStreamingDriver[TBuffer <: ResizingBuffer](
-        sparkHome: String,
+        _config: ConcentusSparkConfig,
         jarFilePaths: Array[String],
         receiverCount: Int,
 		actionCollectorPort: Int,
@@ -56,12 +56,15 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		concentusHandle: ConcentusHandle, 
 		metricContext: MetricContext,
 		resolver: ComponentResolver[TBuffer]) 
-			extends ConcentusServiceBase {
+			extends ConcentusServiceBase with ScratchSpaceUser {
   
-    System.setProperty("spark.executor.memory", "4g")
+	def config = _config
+  
+    System.setProperty("spark.executor.memory", config.memoryProperty)
 	System.setProperty("spark.serializer", "spark.KryoSerializer")
     System.setProperty("spark.kryo.registrator", "com.adamroughton.concentus.service.spark.KryoRegistrator")
-    System.setProperty("spark.akka.logLifecycleEvents", "true")
+    System.setProperty("spark.akka.logLifecycleEvents", config.logLifecycleEvents.toString)
+    System.setProperty("spark.local.dir", config.scratchDir)
   
     val executor = Executors.newCachedThreadPool()
     val socketManager = resolver.newSocketManager(concentusHandle.getClock())
@@ -104,7 +107,7 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
     	val sparkMasterUrl = "spark://" + masterEndpoint.ipAddress + ":" + masterEndpoint.port
     	
     	Log.info("Creating spark context")
-    	val ssc = new StreamingContext(sparkMasterUrl, "Concentus", Milliseconds(tickDuration), sparkHome, jarFilePaths, Map())
+    	val ssc = new StreamingContext(sparkMasterUrl, "Concentus", Milliseconds(tickDuration), config.sparkHome, jarFilePaths, Map())
     	
     	// broadcast varId => topNCount mapping
     	val topNMap = ssc.sparkContext.broadcast(
@@ -174,11 +177,11 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 		cluster.registerServiceEndpoint(pubEndpoint)
 	}
 	
-	override def onStart(stateData: StateData, cluster: ClusterHandle) = {
+	protected override def onStart(stateData: StateData, cluster: ClusterHandle) = {
 	  pipeline.start
 	}
 	
-	override def onShutdown(stateData: StateData, cluster: ClusterHandle) = {
+	protected override def onShutdown(stateData: StateData, cluster: ClusterHandle) = {
 	  if (pipeline != null) {
 		  pipeline.halt(30, TimeUnit.SECONDS)
 	  }
@@ -199,7 +202,7 @@ object SparkStreamingDriver {
 }
 
 class SparkStreamingDriverDeployment(
-		sparkHome: String,
+		config: ConcentusSparkConfig,
 		jarFilePaths: Array[String],
 		receiverCount: Int,
 		actionCollectorPort: Int,
@@ -219,7 +222,7 @@ class SparkStreamingDriverDeployment(
       concentusHandle: ConcentusHandle,
       metricContext: MetricContext,
       resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
-    new SparkStreamingDriver(sparkHome, jarFilePaths, receiverCount, actionCollectorPort, actionCollectorRecvBufferLength, 
+    new SparkStreamingDriver(config, jarFilePaths, receiverCount, actionCollectorPort, actionCollectorRecvBufferLength, 
         actionCollectorSendBufferLength, canonicalStateUpdatePort, sendQueueSize, serviceId, concentusHandle, metricContext, resolver)
   }
 }

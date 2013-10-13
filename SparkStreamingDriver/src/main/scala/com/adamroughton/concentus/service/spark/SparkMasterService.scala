@@ -17,18 +17,22 @@ import java.nio.file.Path
 import com.esotericsoftware.minlog.Log
 import java.nio.file.Paths
 import com.adamroughton.concentus.cluster.worker.ServiceDeployment
+import org.apache.commons.io.FileUtils
+import java.nio.file.Files
 
 class SparkMasterService(
-    sparkHome: String,
+    _config: ConcentusSparkConfig,
     masterAddress: String,
     masterPort: Int,
     serviceId: Int,
     serviceContext: ServiceContext[ServiceState],
     concentusHandle: ConcentusHandle) 
-		extends ExternalProcessServiceBase("SparkMaster", serviceContext, concentusHandle) {
+		extends ExternalProcessServiceBase("SparkMaster", serviceContext, concentusHandle) with ScratchSpaceUser {
+  
+  def config = _config
   
   override def onBind(stateData: StateData, cluster: ClusterHandle) = {
-     val sparkRunCmd = Paths.get(sparkHome).resolve("run").toString
+     val sparkRunCmd = Paths.get(config.sparkHome).resolve("run").toString
      startProcess(sparkRunCmd, "spark.deploy.master.Master", "-i", masterAddress, "-p", masterPort.toString);
      
      // wait 10 seconds for master process to start and bind
@@ -39,7 +43,7 @@ class SparkMasterService(
          masterAddress, masterPort)
 	 cluster.registerServiceEndpoint(sparkMasterEndpoint)
   }
-  
+
 }
 
 object SparkMasterService {
@@ -49,7 +53,7 @@ object SparkMasterService {
   
 }
 
-class SparkMasterServiceDeployment(sparkHome: String, masterPort: Int) 
+class SparkMasterServiceDeployment(config: ConcentusSparkConfig, masterPort: Int) 
 	extends ServiceDeploymentBase(SparkMasterService.serviceInfo) {
   
   def this() = this(null, 7077)
@@ -63,7 +67,7 @@ class SparkMasterServiceDeployment(sparkHome: String, masterPort: Int)
       metricContext: MetricContext,
       resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
     val masterAddress = concentusHandle.getNetworkAddress.getHostAddress
-    new SparkMasterService(sparkHome, masterAddress, masterPort, serviceId, serviceContext, concentusHandle)
+    new SparkMasterService(config, masterAddress, masterPort, serviceId, serviceContext, concentusHandle)
   }
   
 }

@@ -13,6 +13,7 @@ import org.apache.commons.io.FilenameUtils;
 
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.crowdhammer.TestDeploymentSet;
+import com.adamroughton.concentus.service.spark.ConcentusSparkConfig;
 import com.adamroughton.concentus.service.spark.SparkMasterServiceDeployment;
 import com.adamroughton.concentus.service.spark.SparkStreamingDriverDeployment;
 import com.adamroughton.concentus.service.spark.SparkWorkerServiceDeployment;
@@ -23,6 +24,7 @@ class SparkDriverConfigurator implements DeploymentConfigurator {
 	static class DataCache {
 		
 		public final static String SPARK_HOME;
+		public final static String SPARK_SCRATCH;
 		public final static String[] DRIVER_DEPENDENCIES;
 		
 		static {
@@ -30,6 +32,9 @@ class SparkDriverConfigurator implements DeploymentConfigurator {
 			Path workingDir = Paths.get(System.getProperty("user.dir"));
 			Path sparkHomePath = assertDirExists(workingDir.resolve("spark-0.7.3"));
 			SPARK_HOME = sparkHomePath.toString();
+			
+			Path sparkScratchPath = workingDir.resolve("sparkScratch");
+			SPARK_SCRATCH = sparkScratchPath.toString();
 			
 			// spark requires the path of the driver jar and all of its dependencies
 			List<String> jarFilePaths = new ArrayList<>();
@@ -93,10 +98,12 @@ class SparkDriverConfigurator implements DeploymentConfigurator {
 	
 	@Override
 	public TestDeploymentSet configure(TestDeploymentSet deploymentSet, int receiverCount) {
+		ConcentusSparkConfig config = new ConcentusSparkConfig(DataCache.SPARK_HOME, DataCache.SPARK_SCRATCH, true, "4g", false);
+		
 		return deploymentSet
-			.addDeployment(new SparkMasterServiceDeployment(DataCache.SPARK_HOME, 7077), 1)
-			.addDeployment(new SparkWorkerServiceDeployment(DataCache.SPARK_HOME), receiverCount)
-			.addDeployment(new SparkStreamingDriverDeployment(DataCache.SPARK_HOME, DataCache.DRIVER_DEPENDENCIES, receiverCount, -1, 
+			.addDeployment(new SparkMasterServiceDeployment(config, 7077), 1)
+			.addDeployment(new SparkWorkerServiceDeployment(config), receiverCount)
+			.addDeployment(new SparkStreamingDriverDeployment(config, DataCache.DRIVER_DEPENDENCIES, receiverCount, -1, 
 					Constants.MSG_BUFFER_ENTRY_LENGTH, Constants.MSG_BUFFER_ENTRY_LENGTH, -1, 
 					Constants.MSG_BUFFER_ENTRY_LENGTH), 1);
 	}

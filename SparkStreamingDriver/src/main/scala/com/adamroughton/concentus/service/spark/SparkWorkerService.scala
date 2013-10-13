@@ -20,17 +20,20 @@ import scala.collection.mutable.ListBuffer
 import scala.collection.JavaConversions._
 import com.adamroughton.concentus.actioncollector.ActionCollectorService
 
-class SparkWorkerService(sparkHome: String, workerPort: Int, workerWebUIPort: Int, serviceContext: ServiceContext[ServiceState], concentusHandle: ConcentusHandle) 
-		extends ExternalProcessServiceBase("SparkWorker", serviceContext, concentusHandle) {
+class SparkWorkerService(_config: ConcentusSparkConfig, workerPort: Int, workerWebUIPort: Int, 
+    serviceContext: ServiceContext[ServiceState], concentusHandle: ConcentusHandle) 
+		extends ExternalProcessServiceBase("SparkWorker", serviceContext, concentusHandle) with ScratchSpaceUser {
   
-  override def onBind(stateData: StateData, cluster: ClusterHandle) = {
+  def config = _config
+  
+  protected override def onBind(stateData: StateData, cluster: ClusterHandle) = {
      val masterEndpoints = cluster.getAllServiceEndpoints(SparkMasterService.masterEndpointType)
      val masterEndpoint = if (masterEndpoints.size < 1) {
        throw new RuntimeException("There are no spark master services registered! Cannot start spark worker.");
      } else {
        masterEndpoints.get(0)
      }     
-     val sparkRunCmd = Paths.get(sparkHome).resolve("run").toString
+     val sparkRunCmd = Paths.get(config.sparkHome).resolve("run").toString
      Log.info("Starting spark worker")
      
      val workerArgs = "spark.deploy.worker.Worker" :: 
@@ -55,10 +58,10 @@ object SparkWorkerService {
   
 }
 
-class SparkWorkerServiceDeployment(sparkHome: String, workerPort: Int, workerWebUIPort: Int) 
+class SparkWorkerServiceDeployment(config: ConcentusSparkConfig, workerPort: Int, workerWebUIPort: Int) 
 	extends ServiceDeploymentBase[ServiceState](SparkWorkerService.serviceInfo, ActionCollectorService.SERVICE_INFO) {
     
-  def this(sparkHome: String) = this(sparkHome, 0, 0)
+  def this(config: ConcentusSparkConfig) = this(config, 0, 0)
   
   def this() = this(null, 0, 0)
   
@@ -70,7 +73,7 @@ class SparkWorkerServiceDeployment(sparkHome: String, workerPort: Int, workerWeb
       concentusHandle: ConcentusHandle,
       metricContext: MetricContext,
       resolver: ComponentResolver[TBuffer]): ClusterService[ServiceState] = {
-    new SparkWorkerService(sparkHome, workerPort, workerWebUIPort, serviceContext, concentusHandle)
+    new SparkWorkerService(config, workerPort, workerWebUIPort, serviceContext, concentusHandle)
   }
   
 }
