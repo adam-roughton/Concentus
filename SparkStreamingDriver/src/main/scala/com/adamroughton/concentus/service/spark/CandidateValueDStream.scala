@@ -361,44 +361,44 @@ private object ServiceContainerFactory extends Logging {
   
   initLogging
   
+  /*
+   * library path should be added to the ClassLoader class (addLibraryPath) before
+   * instantiation
+   */
+  private lazy val passThroughClassLoader = {
+    val providedClassLoader = getClass.getClassLoader.asInstanceOf[URLClassLoader]
+    
+    val passThroughList = (
+	        "org.slf4j.*" ::
+	        "org.apache.log4j.*" ::
+	        "com.adamroughton.concentus.service.spark.ServiceContainerFactory" ::
+	        "com.adamroughton.concentus.cluster.worker.ServiceContainer" ::
+			"com.adamroughton.concentus.actioncollector.TickDelegate" ::
+			"com.adamroughton.concentus.actioncollector.TickDriven" ::
+			"com.adamroughton.concentus.data.ResizingBuffer" ::
+			"com.adamroughton.concentus.data.model.kryo.CandidateValue" :: 
+			"com.adamroughton.concentus.data.model.kryo.CandidateValueStrategy" ::
+			"com.adamroughton.concentus.data.model.kryo.CandidateValueGroupKey" :: Nil).toArray
+			
+	/*
+	 * Don't capture the scala-library as we want to share 
+	 * scala objects between the current class loader and 
+	 * the new one
+	 */
+	val urls = (for {
+	  url <- providedClassLoader.getURLs
+	  if (!url.getPath.contains("scala-library"))
+	} yield url).toArray
+			
+	new ParentLastURLClassLoader(urls, passThroughList, providedClassLoader)
+  }
+  
   def newFactory(libraryPath: String): ServiceContainerFactory = {
         // ensure we have all required libraries on the path
 		addLibraryPath(libraryPath)
     
-		val providedClassLoader = getClass.getClassLoader.asInstanceOf[URLClassLoader]
-		
-		/*
-		 * Make the parent class loader pull in the ZMQ library (which
-		 * we just added to the library path): each JVM can only load a
-		 * library once and we don't want our class loader to claim ownership
-		 * as we may be hosting more than one receiver on the worker (not ideal,
-		 * but left to the whim of Spark).
-		 */
-		Class.forName("org.zeromq.ZMQ", true, providedClassLoader)
-		
-		val passThroughList = (
-		        "org.zeromq.*" ::
-		        "com.adamroughton.concentus.service.spark.ServiceContainerFactory" ::
-		        "com.adamroughton.concentus.cluster.worker.ServiceContainer" ::
-				"com.adamroughton.concentus.actioncollector.TickDelegate" ::
-				"com.adamroughton.concentus.actioncollector.TickDriven" ::
-				"com.adamroughton.concentus.data.ResizingBuffer" ::
-				"com.adamroughton.concentus.data.model.kryo.CandidateValue" :: 
-				"com.adamroughton.concentus.data.model.kryo.CandidateValueStrategy" ::
-				"com.adamroughton.concentus.data.model.kryo.CandidateValueGroupKey" :: Nil).toArray
-				
-		/*
-		 * Don't capture the scala-library as we want to share 
-		 * scala objects between the current class loader and 
-		 * the new one
-		 */
-		val urls = (for {
-		  url <- providedClassLoader.getURLs
-		  if (!url.getPath.contains("scala-library"))
-		} yield url).toArray
-				
-		val containerClassLoader = new ParentLastURLClassLoader(urls, passThroughList, providedClassLoader)
-		val containerFactoryClass = Class.forName("com.adamroughton.concentus.service.spark.ServiceContainerEntry", true, containerClassLoader)
+		val containerFactoryClass = Class.forName("com.adamroughton.concentus.service.spark.ServiceContainerEntry", 
+		    true, passThroughClassLoader)
 		logInfo("Container class loader = " + containerFactoryClass.getClassLoader)
 		containerFactoryClass.newInstance.asInstanceOf[ServiceContainerFactory]
   }
