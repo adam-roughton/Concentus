@@ -17,7 +17,7 @@ public class ExperimentP2 {
 		long[] tickDurations = new long[] { 1000, 500, 100 };
 		
 		ListClientCount clientCountIterable = new ListClientCount(5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000);
-		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverConfigurator() };
+		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverSingleServerConfigurator() };
 		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CollectivePong(256), new CollectivePong(1024), new Pixels() };
 		Test test;
 		for (DeploymentConfigurator deploymentConfigurator : depConfigs) {
