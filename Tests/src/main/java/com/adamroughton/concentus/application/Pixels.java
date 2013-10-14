@@ -193,7 +193,7 @@ public class Pixels implements ApplicationVariant {
 			}
 			// for now assume some wonderful compression (or other technique for representing
 			// the data in a terse way)			
-			updateData.writeByte(511, (byte) 1);
+			updateData.writeByte(256 * 1024 - 1, (byte) 1);
 		}
 		
 	}

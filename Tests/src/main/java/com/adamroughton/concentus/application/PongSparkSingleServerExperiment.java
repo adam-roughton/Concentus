@@ -18,7 +18,7 @@ public class PongSparkSingleServerExperiment {
 		ListClientCount clientCountIterable = new ListClientCount(5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000);
 		//new SingleDisruptorConfigurator()
 		//new SparkDriverConfigurator() 
-		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverSingleServerConfigurator() };
+		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverSingleServerConfigurator("4g") };
 		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CollectivePong(1024) };
 		Test test;
 		for (DeploymentConfigurator deploymentConfigurator : depConfigs) {

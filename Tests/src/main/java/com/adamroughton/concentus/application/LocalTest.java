@@ -18,7 +18,7 @@ public class LocalTest {
 		
 		ListClientCount clientCountIterable = new ListClientCount(1000);
 		//new SingleDisruptorConfigurator()
-		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverSingleServerConfigurator() };
+		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverSingleServerConfigurator("1g") };
 		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CollectivePong(1024), new Pixels() };
 		Test test;
 		for (DeploymentConfigurator deploymentConfigurator : depConfigs) {

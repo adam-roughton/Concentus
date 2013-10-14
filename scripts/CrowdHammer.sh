@@ -39,7 +39,7 @@ CLASSPATH="concentus-core-1.0-SNAPSHOT.jar:concentus-crowdhammer-1.0-SNAPSHOT.ja
 if [[ $1 = "Coordinator" ]]; then
    java -cp $CLASSPATH -Djava.library.path=/usr/local/lib -Xmx4g -XX:+UseCompressedOops -server -d64 com.adamroughton.concentus.crowdhammer.CrowdHammerCli -zkaddr $ZOO_KEEPER_ADDRESS -hostaddr $ADDRESS
 else
-   java -cp $CLASSPATH -Djava.library.path=/usr/local/lib com.adamroughton.concentus.cluster.worker.Guardian -zkaddr $ZOO_KEEPER_ADDRESS -hostaddr $ADDRESS -svmargs "-Djava.library.path=/usr/local/lib -Xmx2g -XX:+UseCompressedOops -server -d64"
+   java -cp $CLASSPATH -Djava.library.path=/usr/local/lib com.adamroughton.concentus.cluster.worker.Guardian -zkaddr $ZOO_KEEPER_ADDRESS -hostaddr $ADDRESS -svmargs "-Djava.library.path=/usr/local/lib -Xmx4g -XX:+UseCompressedOops -server -d64"
 fi
 
 # return to the original directory

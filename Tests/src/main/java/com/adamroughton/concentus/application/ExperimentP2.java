@@ -17,12 +17,12 @@ public class ExperimentP2 {
 		long[] tickDurations = new long[] { 1000, 500, 100 };
 		
 		ListClientCount clientCountIterable = new ListClientCount(5000, 10000, 15000, 20000, 25000, 30000, 35000, 40000, 45000, 50000);
-		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverSingleServerConfigurator() };
+		DeploymentConfigurator[] depConfigs = new DeploymentConfigurator[] { new SparkDriverSingleServerConfigurator("4g"), new SingleDisruptorConfigurator() };
 		ApplicationVariant[] applicationVariants = new ApplicationVariant[] { new CrowdAloud(Mode.SYMBOL), new CrowdAloud(Mode.TEXT), new CollectivePong(256), new CollectivePong(1024), new Pixels() };
 		Test test;
-		for (DeploymentConfigurator deploymentConfigurator : depConfigs) {
-			for (ApplicationVariant applicationVar : applicationVariants) {
-				for (long tickDuration: tickDurations) {
+		for (long tickDuration: tickDurations) {
+			for (DeploymentConfigurator deploymentConfigurator : depConfigs) {
+				for (ApplicationVariant applicationVar : applicationVariants) {
 					String testName = applicationVar.name() + "_tickRate=" + tickDuration;
 						
 					TestDeploymentSet testDeploymentSet = new TestDeploymentSet(deploymentConfigurator.deploymentName(), 

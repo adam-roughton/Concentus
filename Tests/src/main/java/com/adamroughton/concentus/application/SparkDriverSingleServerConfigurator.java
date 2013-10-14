@@ -1,5 +1,7 @@
 package com.adamroughton.concentus.application;
 
+import java.util.Objects;
+
 import com.adamroughton.concentus.Constants;
 import com.adamroughton.concentus.application.SparkDriverConfigurator.DataCache;
 import com.adamroughton.concentus.crowdhammer.TestDeploymentSet;
@@ -11,9 +13,15 @@ import com.adamroughton.concentus.service.spark.SparkWorkerServiceDeployment;
 
 class SparkDriverSingleServerConfigurator implements DeploymentConfigurator {
 	
+	private final String _memoryProperty;
+	
+	public SparkDriverSingleServerConfigurator(String memoryProperty) {
+		_memoryProperty = Objects.requireNonNull(memoryProperty);
+	}
+	
 	@Override
 	public TestDeploymentSet configure(TestDeploymentSet deploymentSet, int receiverCount) {
-		ConcentusSparkConfig config = new ConcentusSparkConfig(DataCache.SPARK_HOME, DataCache.SPARK_SCRATCH, false, "512m", false);
+		ConcentusSparkConfig config = new ConcentusSparkConfig(DataCache.SPARK_HOME, DataCache.SPARK_SCRATCH, false, _memoryProperty, false);
 		return deploymentSet
 				.addDeployment(new SparkSingleServerServiceDeployment(
 						new SparkMasterServiceDeployment(config, 7077),
