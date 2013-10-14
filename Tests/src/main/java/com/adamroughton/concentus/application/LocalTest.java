@@ -14,7 +14,7 @@ public class LocalTest {
 	public static void main(String[] args) throws Exception {
 		ApplicationVariant.SharedConfig.logUpdatesOneClientPerWorker = true;
 		
-		long[] tickDurations = new long[] { 100 };
+		long[] tickDurations = new long[] { 1000 };
 		
 		ListClientCount clientCountIterable = new ListClientCount(1000);
 		//new SingleDisruptorConfigurator()

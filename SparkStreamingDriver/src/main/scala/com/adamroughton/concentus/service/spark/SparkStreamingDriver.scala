@@ -109,9 +109,13 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
     	Log.info("Creating spark context")
     	val ssc = new StreamingContext(sparkMasterUrl, "Concentus", Milliseconds(tickDuration), config.sparkHome, jarFilePaths, Map())
     	
+    	val variableDefinitions = application.variableDefinitions
+    	val collectiveVarCount = variableDefinitions.length
+    	val collectiveVariablePartitioner = new CollectiveVariablePartitioner(collectiveVarCount)
+    	
     	// broadcast varId => topNCount mapping
     	val topNMap = ssc.sparkContext.broadcast(
-    	    application.variableDefinitions map { v => (v.getVariableId, v.getTopNCount) } toMap)
+    	    variableDefinitions map { v => (v.getVariableId, v.getTopNCount) } toMap)
     	
     	Log.info("Starting streams with receiver count " + receiverCount)
 		val streams = for (i <- 1 to receiverCount) yield {
@@ -119,15 +123,21 @@ class SparkStreamingDriver[TBuffer <: ResizingBuffer](
 			    actionCollectorSendBufferLength, zooKeeperAddress, zooKeeperAppRoot, resolver)
 			ssc.registerInputStream(stream)
 			
-			stream.map(v => (v.groupKey, v))
+			// perform a reduce for the candidate values on each receiver first
+			stream.mapPartitions(it => it.map(v => (v.groupKey, v)), true)
 				.reduceByKey((v1, v2) => v1.union(v2))
 		}
 		streams.reduce((s1, s2) => s1.union(s2))
+			/*
+			 * Do the final reduce for the candidate values across all receivers.
+			 * We use the default HashPartitioner for this on the CandidateValue
+			 * group key.
+			 */ 
 			.reduceByKey((v1, v2) => v1.union(v2))
 			.map { 
 				case (k, v) => (v.getVariableId, new CollectiveVariable(topNMap.value(v.getVariableId), v))
 			}
-			.reduceByKey((v1, v2) => v1.union(v2))
+			.reduceByKey((v1: CollectiveVariable, v2: CollectiveVariable) => v1.union(v2), collectiveVariablePartitioner)
 			.foreach((rdd, time) => {
 				val idVarPairs = rdd.collect
 				val collectiveVarMap = new Int2ObjectOpenHashMap[CollectiveVariable](idVarPairs.length)				
@@ -195,6 +205,17 @@ class KryoRegistrator extends SparkKyroRegistrator {
 	   Util.initialiseKryo(kryo)
 	}
   
+}
+
+/**
+ * Partition collective variables by variable ID
+ */
+class CollectiveVariablePartitioner(collectiveVarCount: Int) extends spark.Partitioner {
+  
+  override def numPartitions: Int = collectiveVarCount
+  
+  override def getPartition(key: Any): Int = key.asInstanceOf[Int]
+
 }
 
 object SparkStreamingDriver {
