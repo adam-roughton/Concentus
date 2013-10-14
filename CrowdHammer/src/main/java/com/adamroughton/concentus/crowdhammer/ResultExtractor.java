@@ -108,7 +108,7 @@ public class ResultExtractor {
 						
 						// get the connected client counts
 						Log.info("Collecting client count stats...");
-						collectMetric(countMetricStatement, test, run, "connectedClientCount", new AggregateDelegate() {
+						collectWorkerMetric(countMetricStatement, test, run, "connectedClientCount", new AggregateDelegate() {
 								
 								int partialCount = 0;
 								boolean hasPartial = false;
@@ -134,7 +134,7 @@ public class ResultExtractor {
 							});
 						
 						// get the sentActionThroughput
-						collectMetric(countMetricStatement, test, run, "sentActionThroughput", new AggregateDelegate() {
+						collectWorkerMetric(countMetricStatement, test, run, "sentActionThroughput", new AggregateDelegate() {
 							
 							int partialCount = 0;
 							long bucketDuration = -1;
@@ -164,7 +164,7 @@ public class ResultExtractor {
 						});
 						
 						// get the action to canonical state latency
-						collectMetric(statsMetricStatement, test, run, "actionToCanonicalStateLatency", new AggregateDelegate() {
+						collectWorkerMetric(statsMetricStatement, test, run, "actionToCanonicalStateLatency", new AggregateDelegate() {
 								
 							private RunningStats partial = new RunningStats();
 							
@@ -190,7 +190,7 @@ public class ResultExtractor {
 						});
 						
 						// get the lateActionToCanonicalStateLatency
-						collectMetric(countMetricStatement, test, run, "lateActionToCanonicalStateCount", new AggregateDelegate() {
+						collectWorkerMetric(countMetricStatement, test, run, "lateActionToCanonicalStateCount", new AggregateDelegate() {
 							
 							private int partialCount = -1;
 							
@@ -213,9 +213,62 @@ public class ResultExtractor {
 							}
 						});
 						
+						/*
+						 * For SingleDisruptor based approaches, we can also collect some aggregation statistics.
+						 */
+						collectMetric(statsMetricStatement, "canonical_state", "directStateProcessor", test, run, "aggregationMillis", new AggregateDelegate() {
+
+							private RunningStats partial = new RunningStats();
+							
+							@Override
+							public void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException {
+								if (isNewBucketId && partial.getCount() > 0) {
+									testRunResultSet.aggregationMillis.merge(partial);
+									partial.reset();
+								}
+								int count = resultSet.getInt("count");
+								double mean = resultSet.getDouble("mean");
+								double sumSqrs = resultSet.getDouble("sumSqrs");
+								double min = resultSet.getDouble("min");
+								double max = resultSet.getDouble("max");
+								partial.merge(count, mean, sumSqrs, min, max);
+							}
+
+							@Override
+							public void dropCurrentBucket() {
+								partial.reset();
+							}
+							
+						});
+						
+						collectMetric(statsMetricStatement, "canonical_state", "directStateProcessor", test, run, "aggregationBatchLength", new AggregateDelegate() {
+
+							private RunningStats partial = new RunningStats();
+							
+							@Override
+							public void push(ResultSet resultSet, boolean isNewBucketId) throws SQLException {
+								if (isNewBucketId && partial.getCount() > 0) {
+									testRunResultSet.aggregationBatchLength.merge(partial);
+									partial.reset();
+								}
+								int count = resultSet.getInt("count");
+								double mean = resultSet.getDouble("mean");
+								double sumSqrs = resultSet.getDouble("sumSqrs");
+								double min = resultSet.getDouble("min");
+								double max = resultSet.getDouble("max");
+								partial.merge(count, mean, sumSqrs, min, max);
+							}
+
+							@Override
+							public void dropCurrentBucket() {
+								partial.reset();
+							}
+							
+						});
+						
 						// write the run to the result file
 						resultFileWriter.write(testRunResultSet.toCSVString() + '\n');
-					}	
+					}						
 					
 				}
 			}
@@ -230,10 +283,15 @@ public class ResultExtractor {
 		void dropCurrentBucket();
 	}
 	
-	private static void collectMetric(PreparedStatement statement, TestInfo test, 
+	private static void collectWorkerMetric(PreparedStatement statement, TestInfo test, 
 			TestRunInfo run, String metricName, AggregateDelegate aggregateDelegate) throws SQLException {
-		statement.setString(1, "worker");
-		statement.setString(2, "clientProcessor");
+		collectMetric(statement, "worker", "clientProcessor", test, run, metricName, aggregateDelegate);
+	}
+	
+	private static void collectMetric(PreparedStatement statement, String serviceType, String reference, TestInfo test,
+			TestRunInfo run, String metricName, AggregateDelegate aggregateDelegate) throws SQLException {
+		statement.setString(1, serviceType);
+		statement.setString(2, reference);
 		statement.setString(3, metricName);
 		statement.setInt(4, run.runId);
 		if (!statement.execute()) {
@@ -353,6 +411,8 @@ public class ResultExtractor {
 		public final RunningStats connectedClientCount = new RunningStats();
 		public final RunningStats sentActionThroughput = new RunningStats();
 		public final RunningStats actionToCanonicalStateLatency = new RunningStats();
+		public final RunningStats aggregationMillis = new RunningStats();
+		public final RunningStats aggregationBatchLength = new RunningStats();
 		public int lateActionToCanonicalStateLatency = 0;
 		public int bucketCount = 0;
 		
@@ -370,7 +430,10 @@ public class ResultExtractor {
 			appendStatsHeader(strBuilder, "connectedClientCount").append(",");
 			appendStatsHeader(strBuilder, "sentActionThroughput").append(",");
 			appendStatsHeader(strBuilder, "actionToCanonicalStateLatency").append(",")
-				.append("lateActionToCanonicalStateLatency");
+				.append("lateActionToCanonicalStateLatency").append(",");
+			appendStatsHeader(strBuilder, "aggregationMillis").append(",");
+			appendStatsHeader(strBuilder, "aggregationBatchLength");
+				
 			return strBuilder.toString();
 		}
 		
@@ -394,7 +457,9 @@ public class ResultExtractor {
 			appendAsCSVString(strBuilder, connectedClientCount).append(",");
 			appendAsCSVString(strBuilder, sentActionThroughput).append(",");
 			appendAsCSVString(strBuilder, actionToCanonicalStateLatency).append(",")
-				.append(lateActionToCanonicalStateLatency);
+				.append(lateActionToCanonicalStateLatency).append(",");
+			appendAsCSVString(strBuilder, aggregationMillis).append(",");
+			appendAsCSVString(strBuilder, aggregationBatchLength);
 			return strBuilder.toString();
 		}
 		

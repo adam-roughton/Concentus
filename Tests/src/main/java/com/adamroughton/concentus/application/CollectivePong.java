@@ -159,7 +159,7 @@ public class CollectivePong implements ApplicationVariant {
 				if (paddleTopPos > _paddleChunkCount - PADDLE_HEIGHT)
 					throw new IllegalStateException("The paddle position must fit " +
 							"in the bounds of the game (0 - " + _paddleChunkCount + "); " +
-							"was [" + paddleTopPos + " - " + paddleTopPos + PADDLE_HEIGHT + "]");
+							"was [" + paddleTopPos + " - " + (paddleTopPos + PADDLE_HEIGHT) + "]");
 				
 				effectSet.newEffect(PADDLE_VAR_ID, EffectType.PADDLE_POS.getId(), actionData.readBytes(0, INT_SIZE));
 			}
@@ -225,7 +225,7 @@ public class CollectivePong implements ApplicationVariant {
 		private long _clientIdBits = -1;
 		private long _inputCountSeq = 0;
 		
-		private int _prevPaddlePos = 512;
+		private int _prevPaddlePos;
 		
 		@SuppressWarnings("unused")
 		private Agent() {
@@ -235,6 +235,7 @@ public class CollectivePong implements ApplicationVariant {
 		
 		public Agent(int paddleChunkCount, boolean logUpdates) {
 			_paddleChunkCount = paddleChunkCount;
+			_prevPaddlePos = _paddleChunkCount / 2;
 			_logUpdates = logUpdates;
 		}
 		
@@ -249,7 +250,7 @@ public class CollectivePong implements ApplicationVariant {
 			actionEvent.setActionTypeId(ActionType.PADDLE_SET.getId());
 			
 			int paddlePosChange = (int) (((inputSeq % 2 == 0)? -1 : 1) * (_clientIdBits % 50));
-			int paddlePos = Math.max(0, Math.min(_prevPaddlePos + paddlePosChange, 1024));
+			int paddlePos = Math.max(0, Math.min(_prevPaddlePos + paddlePosChange, _paddleChunkCount - PADDLE_HEIGHT));
 			
 			actionEvent.getActionDataSlice().writeInt(0, paddlePos);
 			_prevPaddlePos = paddlePos;
