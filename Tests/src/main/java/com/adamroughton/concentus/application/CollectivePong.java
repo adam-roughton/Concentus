@@ -41,7 +41,7 @@ public class CollectivePong implements ApplicationVariant {
 	
 	@Override
 	public String name() {
-		return "CollectivePong";
+		return "CollectivePong(" + _paddleChunkCount + ")";
 	}
 
 	public enum ActionType {
