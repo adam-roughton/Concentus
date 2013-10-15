@@ -37,6 +37,7 @@ import com.adamroughton.concentus.messaging.patterns.SendQueue;
 import com.adamroughton.concentus.metric.CountMetric;
 import com.adamroughton.concentus.metric.MetricContext;
 import com.adamroughton.concentus.metric.MetricGroup;
+import com.adamroughton.concentus.metric.StatsMetric;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
 import com.esotericsoftware.minlog.Log;
@@ -59,6 +60,7 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 	private final CountMetric _clientHandlerRecvThroughputMetric;
 	private final CountMetric _replayRequestThroughputMetric;
 	private final CountMetric _replayOutOfRangeThroughputMetric;
+	private final StatsMetric _replayChunkCountStatsMetric;
 	
 	private long _nextDeadline = 0;
 			
@@ -83,6 +85,7 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 		_clientHandlerRecvThroughputMetric = _metrics.add(metricContext.newThroughputMetric(reference, "clientHandlerRecvThroughput", false));
 		_replayRequestThroughputMetric = _metrics.add(metricContext.newThroughputMetric(reference, "replayRequestThroughout", false));
 		_replayOutOfRangeThroughputMetric = _metrics.add(metricContext.newThroughputMetric(reference, "replayOutOfRangeThroughput", false));
+		_replayChunkCountStatsMetric = _metrics.add(metricContext.newStatsMetric(reference, "replayChunkCountStats", false));
 	}
 	
 	@Override
@@ -98,6 +101,7 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 		
 		int eventTypeId = EventPattern.getEventType(event, _recvHeader);
 		if (eventTypeId == DataType.CLIENT_HANDLER_INPUT_EVENT.getId()) {
+			_clientHandlerRecvThroughputMetric.push(1);
 			final SocketIdentity sender = RouterPattern.getSocketId(event, _recvHeader);
 			EventPattern.readContent(event, _recvHeader, _clientHandlerInputEvent, new EventReader<IncomingEventHeader, ClientHandlerInputEvent>() {
 
@@ -107,7 +111,6 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 				}
 				
 			});
-			_clientHandlerRecvThroughputMetric.push(1);
 		} else if (eventTypeId == DataType.TICK_EVENT.getId()) {
 			EventPattern.readContent(event, _recvHeader, _tickEvent, new EventReader<IncomingEventHeader, TickEvent>() {
 
@@ -183,6 +186,7 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 						actionReceiptMetaData.releaseBuffer();
 					}
 				} else if (handlerEventTypeId == DataType.REPLAY_REQUEST_EVENT.getId()) {
+					_replayRequestThroughputMetric.push(1);
 					ReplayRequestEvent replayRequestEvent = new ReplayRequestEvent();
 					replayRequestEvent.attachToBuffer(clientHandlerInputEvent.getContentSlice());
 					try {
@@ -202,8 +206,6 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 	private void processAction(ActionEvent actionEvent,
 			ActionReceiptMetaData receiptMetaData, 
 			ChunkWriter updateChunkWriter) {	
-		_replayRequestThroughputMetric.push(1);
-		
 		final long effectsStartTime = _actionProcessingLogic.nextTickTime();
 		final long clientId = actionEvent.getClientIdBits();
 		final long actionId = actionEvent.getActionId();
@@ -277,6 +279,7 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 //			Log.warn(String.format("Client Handler %d: requested %d, but %d " +
 //					"was the lowest seq available", clientHandlerId, requestedStartSeq, startSeq));
 		}
+		_replayChunkCountStatsMetric.push(endSeq - startSeq + 1);
 		
 		for (long seq = startSeq; seq <= endSeq; seq++) {
 			ResizingBuffer receiptChunkBuffer = updateChunkWriter.getChunkBuffer();			
