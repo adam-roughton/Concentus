@@ -21,7 +21,6 @@ import java.util.Set;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.FatalExceptionCallback;
-import com.adamroughton.concentus.metric.MetricContext;
 import com.lmax.disruptor.BatchEventProcessor;
 import com.lmax.disruptor.DataProvider;
 import com.lmax.disruptor.EventHandler;
@@ -80,7 +79,6 @@ public class EventQueueImpl<T> implements EventQueue<T> {
 	public EventProcessor createEventProcessor(
 			String processorName,
 			final DeadlineBasedEventHandler<T> eventHandler, 
-			final MetricContext metricContext,
 			final Clock clock,
 			final FatalExceptionCallback exceptionCallback, 
 			Sequence... sequencesToTrack) {
@@ -89,7 +87,7 @@ public class EventQueueImpl<T> implements EventQueue<T> {
 			@Override
 			public DeadlineBasedEventProcessor<T> createProcessor(DataProvider<T> eventProvider,
 					SequenceBarrier barrier) {
-				return new DeadlineBasedEventProcessor<>(metricContext, clock, eventHandler, eventProvider, barrier, exceptionCallback);
+				return new DeadlineBasedEventProcessor<>(clock, eventHandler, eventProvider, barrier, exceptionCallback);
 			}
 		}, sequencesToTrack);
 	}

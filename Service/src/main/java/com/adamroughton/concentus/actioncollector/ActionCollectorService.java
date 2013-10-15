@@ -110,6 +110,7 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 	private final TickDelegate _tickDelegate;
 	private final long _startTime;
 	private final long _tickDuration;
+	private final MetricContext _metricContext;
 	
 	private final IncomingEventHeader _recvHeader;
 	private final OutgoingEventHeader _sendHeader;
@@ -147,6 +148,7 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 		_tickDelegate = Objects.requireNonNull(tickDelegate);
 		_startTime = startTime;
 		_tickDuration = tickDuration;
+		_metricContext = Objects.requireNonNull(metricContext);
 		
 		_recvHeader = new IncomingEventHeader(0, 2);
 		_sendHeader = new OutgoingEventHeader(0, 2);
@@ -264,7 +266,7 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 				new SendQueue<OutgoingEventHeader, TBuffer>("sendQueue", _sendHeader, _sendQueue);
 		
 		ActionCollectorProcessor<TBuffer> processor = new ActionCollectorProcessor<>(_actionCollectorId, _recvHeader, 
-				_application, _tickDelegate, sendQueueWrapper, _startTime, _tickDuration);
+				_application, _tickDelegate, sendQueueWrapper, _startTime, _tickDuration, _metricContext);
 		
 		Mutex<Messenger<TBuffer>> dealerSetMessenger = _socketManager.getSocketMutex(dealerSetSocketId);
 		EventProcessor dealerSetPublisher = MessagingUtil.asSocketOwner("dealerSetPub", _sendQueue, 
@@ -277,7 +279,8 @@ public class ActionCollectorService<TBuffer extends ResizingBuffer> extends Conc
 						_socketManager.getSocketMutex(routerSocketId), _recvQueue, _concentusHandle), _concentusHandle.getClock())
 				.thenConnector(_recvQueue)
 				.join(tickSection)
-				.into(_recvQueue.createEventProcessor("actionProcessor", processor))
+				.into(_recvQueue.createEventProcessor("actionProcessor", processor, 
+						_concentusHandle.getClock(), _concentusHandle))
 				.thenConnector(_sendQueue)
 				.then(dealerSetPublisher)
 				.createPipeline(_executor);

@@ -294,7 +294,7 @@ public final class WorkerService<TBuffer extends ResizingBuffer> extends Concent
 		
 		_pipeline = ProcessingPipeline.<TBuffer>build(_routerListener, _concentusHandle.getClock())
 				.thenConnector(_clientRecvQueue)
-				.then(_clientRecvQueue.createEventProcessor("clientProcessor", _clientProcessor, _metricContext, 
+				.then(_clientRecvQueue.createEventProcessor("clientProcessor", _clientProcessor, 
 						_concentusHandle.getClock(), _concentusHandle))
 				.thenConnector(_clientSendQueue)
 				.then(_dealerSetPublisher)

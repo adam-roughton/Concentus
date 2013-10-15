@@ -24,6 +24,7 @@ import com.adamroughton.concentus.data.events.bufferbacked.ReplayRequestEvent;
 import com.adamroughton.concentus.data.events.bufferbacked.TickEvent;
 import com.adamroughton.concentus.data.model.bufferbacked.BufferBackedEffect;
 import com.adamroughton.concentus.data.model.kryo.CandidateValue;
+import com.adamroughton.concentus.disruptor.DeadlineBasedEventHandler;
 import com.adamroughton.concentus.messaging.EventHeader;
 import com.adamroughton.concentus.messaging.IncomingEventHeader;
 import com.adamroughton.concentus.messaging.OutgoingEventHeader;
@@ -33,12 +34,14 @@ import com.adamroughton.concentus.messaging.patterns.EventReader;
 import com.adamroughton.concentus.messaging.patterns.EventWriter;
 import com.adamroughton.concentus.messaging.patterns.RouterPattern;
 import com.adamroughton.concentus.messaging.patterns.SendQueue;
+import com.adamroughton.concentus.metric.CountMetric;
+import com.adamroughton.concentus.metric.MetricContext;
+import com.adamroughton.concentus.metric.MetricGroup;
 import com.adamroughton.concentus.model.CollectiveApplication;
 import com.adamroughton.concentus.util.StructuredSlidingWindowMap;
 import com.esotericsoftware.minlog.Log;
-import com.lmax.disruptor.EventHandler;
 
-public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> implements EventHandler<TBuffer> {
+public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> implements DeadlineBasedEventHandler<TBuffer> {
 
 	private final int _actionCollectorId;
 	private final ActionProcessingLogic _actionProcessingLogic;
@@ -52,6 +55,13 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 	private final Int2ObjectMap<StructuredSlidingWindowMap<ResizingBuffer>> _clientHandlerReliableEventStoreLookup = 
 			new Int2ObjectOpenHashMap<>();
 			
+	private final MetricGroup _metrics;
+	private final CountMetric _clientHandlerRecvThroughputMetric;
+	private final CountMetric _replayRequestThroughputMetric;
+	private final CountMetric _replayOutOfRangeThroughputMetric;
+	
+	private long _nextDeadline = 0;
+			
 	public ActionCollectorProcessor(
 			int actionCollectorId,
 			IncomingEventHeader recvHeader,
@@ -59,13 +69,20 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 			TickDelegate tickDelegate, 
 			SendQueue<OutgoingEventHeader, TBuffer> sendQueue,
 			long startTime, 
-			long tickDuration) {
+			long tickDuration,
+			MetricContext metricContext) {
 		_actionCollectorId = actionCollectorId;
 		_recvHeader = Objects.requireNonNull(recvHeader);
 		_actionProcessingLogic = new ActionProcessingLogic(application, tickDuration, startTime);
 		_tickDelegate = Objects.requireNonNull(tickDelegate);
 
 		_sendQueue = Objects.requireNonNull(sendQueue);
+		
+		_metrics = new MetricGroup();
+		String reference = "actionCollector";
+		_clientHandlerRecvThroughputMetric = _metrics.add(metricContext.newThroughputMetric(reference, "clientHandlerRecvThroughput", false));
+		_replayRequestThroughputMetric = _metrics.add(metricContext.newThroughputMetric(reference, "replayRequestThroughout", false));
+		_replayOutOfRangeThroughputMetric = _metrics.add(metricContext.newThroughputMetric(reference, "replayOutOfRangeThroughput", false));
 	}
 	
 	@Override
@@ -90,6 +107,7 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 				}
 				
 			});
+			_clientHandlerRecvThroughputMetric.push(1);
 		} else if (eventTypeId == DataType.TICK_EVENT.getId()) {
 			EventPattern.readContent(event, _recvHeader, _tickEvent, new EventReader<IncomingEventHeader, TickEvent>() {
 
@@ -102,6 +120,27 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 		} else {
 			Log.warn(String.format("Unknown event type %d received. Contents = %s", eventTypeId, event.toString()));
 		}
+	}
+	
+	@Override
+	public void onDeadline() {
+		_metrics.publishPending();
+	}
+	
+	@Override
+	public long moveToNextDeadline(long pendingEventCount) {
+		_nextDeadline = _metrics.nextBucketReadyTime();
+		return _nextDeadline;
+	}
+	
+	@Override
+	public long getDeadline() {
+		return _nextDeadline;
+	}
+
+	@Override
+	public String name() {
+		return "ActionCollectorProcessor";
 	}
 	
 	private void processClientHandlerInputEvent(SocketIdentity sender, final ClientHandlerInputEvent clientHandlerInputEvent) {
@@ -162,7 +201,9 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 	
 	private void processAction(ActionEvent actionEvent,
 			ActionReceiptMetaData receiptMetaData, 
-			ChunkWriter updateChunkWriter) {			
+			ChunkWriter updateChunkWriter) {	
+		_replayRequestThroughputMetric.push(1);
+		
 		final long effectsStartTime = _actionProcessingLogic.nextTickTime();
 		final long clientId = actionEvent.getClientIdBits();
 		final long actionId = actionEvent.getActionId();
@@ -232,8 +273,9 @@ public final class ActionCollectorProcessor<TBuffer extends ResizingBuffer> impl
 		long endSeq = Math.min(headSeq, requestedEndSeq); 
 		
 		if (startSeq > requestedStartSeq) {
-			Log.warn(String.format("Client Handler %d: requested %d, but %d " +
-					"was the lowest seq available", clientHandlerId, requestedStartSeq, startSeq));
+			_replayOutOfRangeThroughputMetric.push(1);
+//			Log.warn(String.format("Client Handler %d: requested %d, but %d " +
+//					"was the lowest seq available", clientHandlerId, requestedStartSeq, startSeq));
 		}
 		
 		for (long seq = startSeq; seq <= endSeq; seq++) {

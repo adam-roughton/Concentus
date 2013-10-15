@@ -13,7 +13,6 @@ import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.DrivableClock;
 import com.adamroughton.concentus.FatalExceptionCallback;
 import com.adamroughton.concentus.data.BytesUtil;
-import com.adamroughton.concentus.metric.NullMetricContext;
 import com.lmax.disruptor.BlockingWaitStrategy;
 import com.lmax.disruptor.EventFactory;
 import com.lmax.disruptor.RingBuffer;
@@ -49,7 +48,7 @@ public class TestDeadlineBasedEventProcessor {
 		};
 		_drivableClock = new DrivableClock();
 		_validatingEventHandler = new ValidatingEventHandler(_drivableClock);
-		_eventProcessor = new DeadlineBasedEventProcessor<>(new NullMetricContext(), _drivableClock, 
+		_eventProcessor = new DeadlineBasedEventProcessor<>(_drivableClock, 
 				_validatingEventHandler, _ringBuffer, barrier, _exceptionCallback);
 		_executor = Executors.newCachedThreadPool();
 	}

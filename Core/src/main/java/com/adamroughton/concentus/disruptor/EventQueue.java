@@ -17,7 +17,6 @@ package com.adamroughton.concentus.disruptor;
 
 import com.adamroughton.concentus.Clock;
 import com.adamroughton.concentus.FatalExceptionCallback;
-import com.adamroughton.concentus.metric.MetricContext;
 import com.lmax.disruptor.DataProvider;
 import com.lmax.disruptor.EventHandler;
 import com.lmax.disruptor.EventProcessor;
@@ -44,7 +43,7 @@ public interface EventQueue<T> {
 	 */
 	EventProcessor createEventProcessor(String processorName, EventHandler<T> eventHandler, Sequence... sequencesToTrack);
 	
-	EventProcessor createEventProcessor(String processorName, DeadlineBasedEventHandler<T> eventHandler, MetricContext metricContext, Clock clock, 
+	EventProcessor createEventProcessor(String processorName, DeadlineBasedEventHandler<T> eventHandler, Clock clock, 
 			FatalExceptionCallback exceptionCallback, Sequence... sequencesToTrack);
 	
 	<TProcessor extends EventProcessor> TProcessor createEventProcessor(String processorName, EventProcessorFactory<T, TProcessor> processorFactory, Sequence...sequencesToTrack);

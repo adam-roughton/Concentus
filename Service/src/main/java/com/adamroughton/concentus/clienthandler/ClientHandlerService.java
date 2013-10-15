@@ -264,7 +264,7 @@ public class ClientHandlerService<TBuffer extends ResizingBuffer> extends Concen
 		_pipeline = ProcessingPipeline.<TBuffer>build(_routerListener, _concentusHandle.getClock())
 				.thenConnector(_recvQueue)
 				.join(subRecvSection)
-				.into(_recvQueue.createEventProcessor("processor", _processor, _metricContext, 
+				.into(_recvQueue.createEventProcessor("processor", _processor, 
 						_concentusHandle.getClock(), _concentusHandle))
 				.thenConnector(_routerSendQueue)
 				.then(_dealerSetPublisher)

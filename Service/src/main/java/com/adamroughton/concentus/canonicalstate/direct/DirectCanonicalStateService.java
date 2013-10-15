@@ -246,7 +246,7 @@ public class DirectCanonicalStateService<TBuffer extends ResizingBuffer> extends
 		_recvPipeline = ProcessingPipeline.<ComputeStateEvent>build(startPoint, clock)
 				.thenConnector(_recvQueue)
 				.then(_recvQueue.createEventProcessor("Direct Canonical State Processor", _stateProcessor,
-						_metricContext, clock, _concentusHandle))
+						clock, _concentusHandle))
 				.createPipeline(_executor);
 		_pubPipeline = ProcessingPipeline.<TBuffer>build(startPoint, clock)
 				.thenConnector(_outputQueue)

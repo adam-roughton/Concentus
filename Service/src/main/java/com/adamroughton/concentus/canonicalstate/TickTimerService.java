@@ -77,7 +77,6 @@ public class TickTimerService<TBuffer extends ResizingBuffer> extends ConcentusS
 	
 	private final ExecutorService _executor = Executors.newCachedThreadPool();
 	private final ConcentusHandle _concentusHandle;
-	private final MetricContext _metricContext;
 	private final long _tickDuration;
 	private final long _simStartTime;
 	
@@ -107,7 +106,6 @@ public class TickTimerService<TBuffer extends ResizingBuffer> extends ConcentusS
 		
 		_concentusHandle = Objects.requireNonNull(concentusHandle);
 		_socketManager = resolver.newSocketManager(concentusHandle.getClock());
-		_metricContext = Objects.requireNonNull(metricContext);
 		
 		MessageQueueFactory<TBuffer> messageQueueFactory = _socketManager
 				.newMessageQueueFactory(resolver.getEventQueueFactory());
@@ -149,7 +147,7 @@ public class TickTimerService<TBuffer extends ResizingBuffer> extends ConcentusS
 		
 		_tickPipeline = ProcessingPipeline.<TBuffer>build(updateListener, _concentusHandle.getClock())
 				.thenConnector(_canonicalStateRecvQueue)
-				.then(_canonicalStateRecvQueue.createEventProcessor("TickTimerProcessor", tickTimerProcessor, _metricContext, 
+				.then(_canonicalStateRecvQueue.createEventProcessor("TickTimerProcessor", tickTimerProcessor, 
 						_concentusHandle.getClock(), _concentusHandle))
 				.thenConnector(_tickPubEventQueue)
 				.then(MessagingUtil.asSocketOwner("tickPub", _tickPubEventQueue, new Publisher<TBuffer>(_tickSendHeader), 
