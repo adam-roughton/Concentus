@@ -422,7 +422,7 @@ public class MetricCollector<TBuffer extends ResizingBuffer> implements Closeabl
 		
 		public CollectWindow(long startBucketId, int bucketCount) {
 			this.startBucketId = startBucketId;
-			this.lastBucketId = startBucketId + bucketCount * Constants.METRIC_TICK;
+			this.lastBucketId = startBucketId + bucketCount;
 		}
 		
 	}
