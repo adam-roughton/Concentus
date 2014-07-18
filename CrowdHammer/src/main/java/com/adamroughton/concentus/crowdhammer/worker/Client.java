@@ -95,6 +95,7 @@ public final class Client {
 	private final ActionReceipt _receipt = new ActionReceipt();
 	
 	private CountMetric _connectedClientCountMetric;
+	private CountMetric _sentClientInputThroughputMetric;
 	private CountMetric _sentActionThroughputMetric;
 	private StatsMetric _actionToCanonicalStateLatencyMetric;
 	private CountMetric _lateActionToCanonicalStateCountMetric;	
@@ -121,11 +122,13 @@ public final class Client {
 	
 	public void setMetricCollectors(
 			CountMetric connectedClientCountMetric,
+			CountMetric sentClientInputThroughputMetric,
 			CountMetric sentActionThroughputMetric,
 			StatsMetric actionToCanonicalStateLatencyMetric,
 			CountMetric lateActionToCanonicalStateCountMetric,	
 			CountMetric droppedActionThroughputMetric) {
 		_connectedClientCountMetric = connectedClientCountMetric;
+		_sentClientInputThroughputMetric = sentClientInputThroughputMetric;
 		_sentActionThroughputMetric = sentActionThroughputMetric;
 		_actionToCanonicalStateLatencyMetric = actionToCanonicalStateLatencyMetric;
 		_lateActionToCanonicalStateCountMetric = lateActionToCanonicalStateCountMetric;
@@ -134,6 +137,7 @@ public final class Client {
 	
 	public void unsetMetricCollectors() {
 		_connectedClientCountMetric = null;
+		_sentClientInputThroughputMetric = null;
 		_sentActionThroughputMetric = null;
 		_actionToCanonicalStateLatencyMetric = null;
 		_lateActionToCanonicalStateCountMetric = null;
@@ -240,7 +244,7 @@ public final class Client {
 		}))) {
 			_droppedActionThroughputMetric.push(1);
 		}
-		_sentActionThroughputMetric.push(1);
+		_sentClientInputThroughputMetric.push(1);
 	}
 	
 	private <TBuffer extends ResizingBuffer> void connect(SendQueue<OutgoingEventHeader, TBuffer> clientSendQueue) {
@@ -337,6 +341,8 @@ public final class Client {
 		SentActionInfo actionInfo = _actionIdToSentActionInfoLookup.get(nextActionId);
 		actionInfo.sentTime = sendTime;
 		actionInfo.actionId = nextActionId;
+		
+		_sentActionThroughputMetric.push(1);
 		
 		return actionInfo;
 	}

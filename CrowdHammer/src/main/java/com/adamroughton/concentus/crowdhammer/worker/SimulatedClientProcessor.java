@@ -58,6 +58,7 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 	private final MetricGroup _metrics;
 	private final CountMetric _connectedClientCountMetric;
 	private final CountMetric _connectResRecvCountMetric;
+	private final CountMetric _sentClientInputThroughputMetric;
 	private final CountMetric _sentActionThroughputMetric;
 	private final StatsMetric _actionToCanonicalStateLatencyMetric;
 	private final CountMetric _lateActionToCanonicalStateCountMetric;	
@@ -88,6 +89,7 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 		_metrics = new MetricGroup();
 		String reference = name();
 		_connectedClientCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "connectedClientCount", true));
+		_sentClientInputThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "sentClientInputThroughput", false));
 		_sentActionThroughputMetric = _metrics.add(_metricContext.newThroughputMetric(reference, "sentActionThroughput", false));
 		_actionToCanonicalStateLatencyMetric = _metrics.add(_metricContext.newStatsMetric(reference, "actionToCanonicalStateLatency", false));
 		_lateActionToCanonicalStateCountMetric = _metrics.add(_metricContext.newCountMetric(reference, "lateActionToCanonicalStateCount", false));
@@ -96,7 +98,8 @@ public class SimulatedClientProcessor<TBuffer extends ResizingBuffer> implements
 		
 		for (Client client : clients) {
 			client.setMetricCollectors(_connectedClientCountMetric, 
-					_sentActionThroughputMetric, 
+					_sentClientInputThroughputMetric, 
+					_sentActionThroughputMetric,
 					_actionToCanonicalStateLatencyMetric, 
 					_lateActionToCanonicalStateCountMetric,
 					_droppedActionThroughputMetric);
